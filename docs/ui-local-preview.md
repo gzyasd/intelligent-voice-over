@@ -45,7 +45,7 @@ api_key=YOUR_API_KEY
 1. 选择导出路径。
 2. 勾选素材处理和导出权利确认。
 3. 按需启用可见水印并填写水印文字。
-4. 主窗口会根据当前项目的源视频、`work/background.wav`、`work/generated_segments/*.wav` 和时间线片段生成导出请求。
+4. 主窗口会根据当前项目的源视频、`work/background.wav`、`work/generated_segments/*.wav` 和时间线片段生成导出请求，并通过后台 worker 执行最终 FFmpeg 导出。
 
 最终导出会写入 AI 配音元数据；未勾选权利确认时，核心导出函数会拒绝导出。如果导出路径或权利确认缺失，主窗口会弹出提示；如果 FFmpeg 或导出命令失败，也会显示失败状态并弹出错误提示。
 
@@ -60,5 +60,5 @@ api_key=YOUR_API_KEY
 
 ## 当前限制
 
-- 当前 UI 已接入核心流水线，并对本地命令预览和单句重生成提供 `PipelineWorker` 后台执行入口；真实模型运行时间较长时，可以避免直接阻塞主线程。
+- 当前 UI 已接入核心流水线，并对本地命令预览、单句重生成和最终导出提供 `PipelineWorker` 后台执行入口；真实模型或 FFmpeg 导出运行时间较长时，可以避免直接阻塞主线程。
 - `real_dry_run` profile 只验证命令合约，不代表真实模型质量。去掉 `--dry-run` 前，需要先按 `docs/local-model-command-profiles.md` 安装依赖并调整模型参数。

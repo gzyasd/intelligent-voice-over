@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ivo.compliance.confirmation import ExportConfirmation
 from ivo.adapters.http import ApiAdapterProfile
 from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
@@ -51,6 +52,7 @@ class MainWindow(QMainWindow):
         self.local_preview_worker: PipelineWorker | None = None
         self.segment_regeneration_worker: PipelineWorker | None = None
         self.regenerating_segment_id: str | None = None
+        self.final_export_worker: PipelineWorker | None = None
         self.create_project_button.clicked.connect(self.open_project_wizard)
         self.open_project_button.clicked.connect(self.open_existing_project)
         self.export_button.clicked.connect(self.open_export_dialog)
@@ -187,6 +189,36 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25", message)
 
     def run_final_export(self, dialog: ExportDialog) -> Path:
+        request, confirmation = self._build_export_request(dialog)
+        output = export_dubbed_video(request, confirmation)
+        self.progress_label.setText("\u6700\u7ec8\u5bfc\u51fa\u5df2\u5b8c\u6210")
+        return output
+
+    def create_final_export_worker(self, dialog: ExportDialog) -> PipelineWorker:
+        request, confirmation = self._build_export_request(dialog)
+        self.progress_label.setText("\u6b63\u5728\u6700\u7ec8\u5bfc\u51fa")
+        self.export_button.setEnabled(False)
+        worker = PipelineWorker(lambda: export_dubbed_video(request, confirmation))
+        worker.succeeded.connect(self.handle_final_export_succeeded)
+        worker.failed.connect(self.handle_final_export_failed)
+        self.final_export_worker = worker
+        return worker
+
+    def start_final_export_background(self, dialog: ExportDialog) -> PipelineWorker:
+        worker = self.create_final_export_worker(dialog)
+        worker.start()
+        return worker
+
+    def handle_final_export_succeeded(self) -> None:
+        self.export_button.setEnabled(True)
+        self.progress_label.setText("\u6700\u7ec8\u5bfc\u51fa\u5df2\u5b8c\u6210")
+
+    def handle_final_export_failed(self, message: str) -> None:
+        self.export_button.setEnabled(True)
+        self.progress_label.setText(f"\u6700\u7ec8\u5bfc\u51fa\u5931\u8d25: {message}")
+        QMessageBox.warning(self, "\u6700\u7ec8\u5bfc\u51fa\u5931\u8d25", message)
+
+    def _build_export_request(self, dialog: ExportDialog) -> tuple[ExportRequest, ExportConfirmation]:
         if self.current_project is None:
             raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
         if self.source_video_path is None:
@@ -195,24 +227,20 @@ class MainWindow(QMainWindow):
             raise ValueError("Export output path is required.")
 
         watermark_options = dialog.watermark_options()
-        output = export_dubbed_video(
-            ExportRequest(
-                source_video=self.source_video_path,
-                background_audio=self.current_project.path / "work" / "background.wav",
-                segment_audio=self._collect_rendered_segment_audio(),
-                output_path=dialog.output_path(),
-                metadata=build_ai_dubbing_metadata(
-                    source_language=self.current_project.source_language,
-                    target_language=self.current_project.target_language,
-                ),
-                watermark_text=watermark_options.text if watermark_options.enabled else None,
+        request = ExportRequest(
+            source_video=self.source_video_path,
+            background_audio=self.current_project.path / "work" / "background.wav",
+            segment_audio=self._collect_rendered_segment_audio(),
+            output_path=dialog.output_path(),
+            metadata=build_ai_dubbing_metadata(
+                source_language=self.current_project.source_language,
+                target_language=self.current_project.target_language,
             ),
-            dialog.confirmation(),
+            watermark_text=watermark_options.text if watermark_options.enabled else None,
         )
-        self.progress_label.setText("\u6700\u7ec8\u5bfc\u51fa\u5df2\u5b8c\u6210")
-        return output
+        return request, dialog.confirmation()
 
-    def open_export_dialog(self) -> Path | None:
+    def open_export_dialog(self) -> PipelineWorker | None:
         dialog = ExportDialog(self)
         if dialog.exec() != ExportDialog.DialogCode.Accepted:
             return None
@@ -224,7 +252,7 @@ class MainWindow(QMainWindow):
             )
             return None
         try:
-            return self.run_final_export(dialog)
+            return self.start_final_export_background(dialog)
         except Exception as exc:
             self.progress_label.setText(f"\u6700\u7ec8\u5bfc\u51fa\u5931\u8d25: {exc}")
             QMessageBox.warning(self, "\u6700\u7ec8\u5bfc\u51fa\u5931\u8d25", str(exc))
