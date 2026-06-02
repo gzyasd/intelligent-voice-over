@@ -128,9 +128,11 @@ def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tm
 
     local_profile = tmp_path / "local.json"
     translation_profile = tmp_path / "translation.json"
+    tts_profile = tmp_path / "tts.json"
     local_profile.write_text("{}", encoding="utf-8")
     translation_profile.write_text("{}", encoding="utf-8")
-    selected_paths = [str(local_profile), str(translation_profile)]
+    tts_profile.write_text("{}", encoding="utf-8")
+    selected_paths = [str(local_profile), str(translation_profile), str(tts_profile)]
 
     def fake_get_open_file_name(*args, **kwargs):
         return selected_paths.pop(0), "JSON files (*.json)"
@@ -145,6 +147,8 @@ def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tm
 
     settings.browse_local_command_profiles()
     settings.browse_translation_profile()
+    settings.browse_tts_profile()
 
     assert settings.local_command_profiles_path_edit.text() == str(local_profile)
     assert settings.translation_profile_path_edit.text() == str(translation_profile)
+    assert settings.tts_profile_path_edit.text() == str(tts_profile)

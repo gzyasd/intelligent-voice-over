@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QLabel, QLineEdit, QListWidget, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ivo.adapters.http import ApiAdapterProfile
 from ivo.adapters.profiles import AdapterProfileStore
@@ -17,16 +25,21 @@ class ModelSettings(QWidget):
         self.translation_profile_path_edit = QLineEdit()
         self.translation_profile_browse_button = QPushButton("浏览翻译 profile")
         self.translation_vars_edit = QLineEdit()
+        self.tts_profile_path_edit = QLineEdit()
+        self.tts_profile_browse_button = QPushButton("浏览 TTS profile")
+        self.tts_vars_edit = QLineEdit()
         self.http_adapter_path_edit = QLineEdit()
         self.profile_id_edit = QLineEdit()
         self.stage_edit = QLineEdit("translation")
         self.url_edit = QLineEdit()
         self.response_mapping_edit = QLineEdit("target_text=$.text")
         self.adapter_list = QListWidget()
+
         self.local_command_profiles_browse_button.clicked.connect(
             self.browse_local_command_profiles
         )
         self.translation_profile_browse_button.clicked.connect(self.browse_translation_profile)
+        self.tts_profile_browse_button.clicked.connect(self.browse_tts_profile)
 
         layout = QVBoxLayout()
         layout.addWidget(QLabel("本地模型路径"))
@@ -39,6 +52,11 @@ class ModelSettings(QWidget):
         layout.addWidget(self.translation_profile_browse_button)
         layout.addWidget(QLabel("翻译变量 KEY=VALUE"))
         layout.addWidget(self.translation_vars_edit)
+        layout.addWidget(QLabel("TTS HTTP profile JSON"))
+        layout.addWidget(self.tts_profile_path_edit)
+        layout.addWidget(self.tts_profile_browse_button)
+        layout.addWidget(QLabel("TTS 变量 KEY=VALUE"))
+        layout.addWidget(self.tts_vars_edit)
         layout.addWidget(QLabel("HTTP adapter 配置文件"))
         layout.addWidget(self.http_adapter_path_edit)
         layout.addWidget(QLabel("Profile ID"))
@@ -100,6 +118,16 @@ class ModelSettings(QWidget):
         )
         if path:
             self.translation_profile_path_edit.setText(path)
+
+    def browse_tts_profile(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "选择 TTS HTTP profile JSON",
+            "",
+            "JSON files (*.json);;All files (*)",
+        )
+        if path:
+            self.tts_profile_path_edit.setText(path)
 
     def _parse_response_mapping(self) -> dict[str, str]:
         mapping: dict[str, str] = {}

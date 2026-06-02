@@ -28,7 +28,7 @@ api_key=YOUR_API_KEY
 
 6. 点击“本地命令预览”。
 
-命令行模式已经支持通过 `--tts-profile` 把 TTS / 音色克隆阶段切到线上 HTTP API；桌面 UI 的 TTS HTTP profile 选择入口会继续补齐。
+命令行模式支持通过 `--tts-profile` 把 TTS / 音色克隆阶段切到线上 HTTP API；桌面 UI 也可以在“模型设置”页填写或浏览选择 TTS HTTP profile，并填写 `KEY=VALUE` 形式的 TTS 变量。
 
 ## 时间线编辑
 

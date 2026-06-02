@@ -26,7 +26,13 @@ from ivo.pipeline.local_command_preview import (
     run_local_command_preview,
 )
 from ivo.pipeline.mock_pipeline import MockPipelineResult, run_mock_dubbing_pipeline
-from ivo.pipeline.synthesize import LocalCommandTtsAdapter, SynthesisResult, synthesize_segment
+from ivo.pipeline.synthesize import (
+    HttpTtsAdapter,
+    LocalCommandTtsAdapter,
+    SynthesisResult,
+    TtsAdapter,
+    synthesize_segment,
+)
 from ivo.pipeline.translate import HttpTranslationAdapter
 from ivo.ui.export_dialog import ExportDialog
 from ivo.ui.model_settings import ModelSettings
@@ -322,6 +328,7 @@ class MainWindow(QMainWindow):
             source_video=self.source_video_path,
             profiles=self._load_local_command_profiles(),
             translation_adapter=self._build_translation_adapter(),
+            tts_adapter=self._build_http_tts_adapter(),
         )
 
     def _refresh_after_local_preview(self) -> None:
@@ -334,7 +341,7 @@ class MainWindow(QMainWindow):
             raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
 
         segment = self.current_project.timeline.get_segment(segment_id)
-        adapter = LocalCommandTtsAdapter(self._load_local_command_profiles().tts)
+        adapter = self._build_regeneration_tts_adapter()
         return synthesize_segment(self.current_project, segment, adapter)
 
     def _refresh_after_segment_regeneration(self, segment_id: str) -> None:
@@ -383,6 +390,30 @@ class MainWindow(QMainWindow):
             project_path=self.current_project.path,
             target_language=self.current_project.target_language,
             extra=_parse_key_value_text(self.model_settings.translation_vars_edit.text()),
+        )
+
+    def _build_regeneration_tts_adapter(self) -> TtsAdapter:
+        http_adapter = self._build_http_tts_adapter()
+        if http_adapter is not None:
+            return http_adapter
+        return LocalCommandTtsAdapter(self._load_local_command_profiles().tts)
+
+    def _build_http_tts_adapter(self) -> HttpTtsAdapter | None:
+        if self.current_project is None:
+            return None
+
+        raw_path = self.model_settings.tts_profile_path_edit.text().strip()
+        if not raw_path:
+            return None
+
+        profile_path = Path(raw_path)
+        if not profile_path.is_file():
+            raise FileNotFoundError(profile_path)
+
+        return HttpTtsAdapter(
+            ApiAdapterProfile.model_validate(json.loads(profile_path.read_text(encoding="utf-8"))),
+            project_path=self.current_project.path,
+            extra=_parse_key_value_text(self.model_settings.tts_vars_edit.text()),
         )
 
 
