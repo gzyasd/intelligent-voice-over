@@ -1,0 +1,94 @@
+# 智能视频配音
+
+这是一个本地优先的 Windows 桌面端项目，目标是把英文、日文、韩文视频对白重新配成自然的中文配音，并支持本地模型与自定义线上模型 API 两种模式。
+
+当前状态：已完成 v1 的可测试工程骨架、mock 端到端流水线、本地命令 adapter、HTTP adapter、基础桌面 UI、时间线编辑/单句后台重生成、最终导出和导出合规闸门。详细计划见 `docs/superpowers/plans/2026-06-01-intelligent-video-dubbing-v1.md`。
+
+## 快速开始
+
+请在项目目录执行命令：
+
+```powershell
+cd F:\GZYproject\Intelligent-Voice-Over
+uv run ivo doctor
+uv run pytest
+```
+
+如果你在其他目录执行，可以显式指定项目：
+
+```powershell
+uv run --project F:\GZYproject\Intelligent-Voice-Over ivo doctor
+```
+
+## 常用开发命令
+
+```powershell
+uv run pytest
+uv run ruff check .
+uv run mypy src
+uv run ivo doctor
+uv run ivo doctor-models
+```
+
+启动桌面 UI：
+
+```powershell
+uv run python -m ivo.app
+```
+
+运行 mock 端到端测试：
+
+```powershell
+uv run pytest tests/test_e2e_mock_pipeline.py -v
+```
+
+## CLI 预览
+
+生成一个不依赖真实 AI 模型的 mock 预览项目：
+
+```powershell
+uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" --source-language en
+```
+
+使用本地命令 profile 跑预览链路：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --project-name "Episode 01" --source-language en --no-watermark
+```
+
+使用真实模型接入脚本的 dry-run profile 验证命令合约：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --target-text "seg-001=嗯，你好。" --no-watermark
+```
+
+## 自定义线上 API
+
+自定义线上模型 API 通过 `ApiAdapterProfile` 描述，并可保存为 JSON profile。当前 CLI 支持添加和查看 HTTP adapter profile：
+
+```powershell
+uv run ivo adapter add-http .\adapters.json --id translator --stage translation --url https://api.example.test/translate --response target_text=$.text
+uv run ivo adapter list .\adapters.json
+```
+
+本地命令预览也可以把翻译阶段切到 HTTP API：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --translation-profile .\examples\http_translation_profile.example.json --translation-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
+```
+
+## 本地模型
+
+项目不默认打包模型权重。你可以先登记本地模型路径和许可证确认：
+
+```powershell
+uv run ivo model add-local .\models.json --id cosyvoice-local --stage tts --name "CosyVoice Local" --path .\models\cosyvoice --language zh --confirm-license
+uv run ivo model list .\models.json
+```
+
+真实本地模型可通过 `LocalCommandAdapter` 接入：把 ASR、人声分离、TTS/音色克隆模型包装成命令行脚本，输出标准 JSON 文件，流水线即可继续处理。示例脚本在 `examples/local_commands/`。
+
+更多说明见：
+
+- `docs/local-model-command-profiles.md`
+- `docs/ui-local-preview.md`
