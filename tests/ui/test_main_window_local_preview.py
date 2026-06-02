@@ -92,6 +92,24 @@ def test_main_window_builds_background_worker_for_local_preview(monkeypatch, qtb
     assert window.progress_label.text() == "本地命令预览已完成"
 
 
+def test_main_window_local_preview_button_starts_background_worker(monkeypatch, qtbot) -> None:
+    from ivo.ui.main_window import MainWindow
+
+    started: list[bool] = []
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    def fake_start_local_preview_background():
+        started.append(True)
+
+    monkeypatch.setattr(window, "start_local_preview_background", fake_start_local_preview_background)
+
+    window.local_preview_button.click()
+
+    assert started == [True]
+
+
 def _write_local_profiles(tmp_path):
     profiles_path = tmp_path / "local-profiles.json"
     profiles_path.write_text(

@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         self.final_export_worker: PipelineWorker | None = None
         self.create_project_button.clicked.connect(self.open_project_wizard)
         self.open_project_button.clicked.connect(self.open_existing_project)
+        self.local_preview_button.clicked.connect(lambda: self.start_local_preview_background())
         self.export_button.clicked.connect(self.open_export_dialog)
         self.timeline_editor.regenerate_requested.connect(self.start_segment_regeneration_background)
 
