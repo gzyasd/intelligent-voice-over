@@ -130,6 +130,29 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 }
 ```
 
+## 混合线上 TTS API
+
+如果只想让 TTS / 音色克隆阶段走线上模型 API，同时 ASR、分离、翻译走本地命令或 mock 覆盖，可以搭配 `examples/http_tts_profile.example.json`：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --tts-profile .\examples\http_tts_profile.example.json --tts-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
+```
+
+TTS HTTP profile 可使用这些模板变量：
+
+- `{{ segment_text }}`：要合成的中文台词
+- `{{ speaker_id }}`：说话人 ID
+- `{{ style_prompt }}`：情绪、语气或风格提示
+- `{{ target_duration_ms }}`：目标片段时长
+- `{{ output_audio_path }}`：期望写入的本地音频路径
+
+响应映射支持两种音频返回方式：
+
+- `audio_base64`：推荐方式，服务端直接返回 base64 编码音频，客户端写入 `work/generated_segments/`。
+- `audio_path`：服务端返回本机可读音频路径，客户端复制到目标片段音频路径。
+
+无论哪种方式，都建议返回 `duration_ms`，用于后续时长质量标记。
+
 ## 环境检查
 
 ```powershell

@@ -77,6 +77,12 @@ uv run ivo adapter list .\adapters.json
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --translation-profile .\examples\http_translation_profile.example.json --translation-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
 ```
 
+也可以把 TTS / 音色克隆阶段切到 HTTP API。TTS API profile 可以返回 `audio_base64`，也可以返回本地可读的 `audio_path`：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --tts-profile .\examples\http_tts_profile.example.json --tts-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
+```
+
 ## 本地模型
 
 项目不默认打包模型权重。你可以先登记本地模型路径和许可证确认：

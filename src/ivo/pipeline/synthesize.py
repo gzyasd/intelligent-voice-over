@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import base64
 import wave
 from pathlib import Path
 from typing import Protocol
 
+import httpx
 from pydantic import BaseModel
 
 from ivo.adapters.base import AdapterContext
+from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter
 from ivo.adapters.local import CommandRunner, LocalCommandAdapter, LocalCommandProfile
 from ivo.core.project import DubbingProject
 from ivo.core.timeline import DubbingSegment, TimelineStore
@@ -93,6 +96,74 @@ class LocalCommandTtsAdapter:
             raise RuntimeError(f"{self.profile.id}: TTS output audio not found: {output_path}")
         duration = result.payload.get("duration_ms", target_duration_ms)
         return int(duration)
+
+
+class TtsProviderError(RuntimeError):
+    """Raised when a TTS provider cannot produce normalized audio."""
+
+
+class HttpTtsAdapter:
+    def __init__(
+        self,
+        profile: ApiAdapterProfile,
+        *,
+        project_path: Path,
+        client: httpx.Client | None = None,
+        extra: dict[str, object] | None = None,
+    ) -> None:
+        self.profile = profile
+        self.project_path = project_path
+        self.extra = extra or {}
+        self.adapter = HttpStageAdapter(profile, client=client)
+
+    def synthesize(
+        self,
+        *,
+        text: str,
+        speaker_id: str,
+        output_path: Path,
+        style_prompt: str | None,
+        target_duration_ms: int,
+    ) -> int:
+        result = self.adapter.run(
+            AdapterContext(
+                project_path=self.project_path,
+                segment_text=text,
+                source_language="",
+                target_language="zh",
+                speaker_id=speaker_id,
+                extra={
+                    "output_audio_path": str(output_path),
+                    "style_prompt": style_prompt or "",
+                    "target_duration_ms": target_duration_ms,
+                    **self.extra,
+                },
+            )
+        )
+        if not result.ok:
+            message = result.error.message if result.error is not None else "unknown TTS error"
+            raise TtsProviderError(f"{self.profile.id}: {message}")
+
+        self._write_audio_payload(result.payload, output_path)
+        duration = result.payload.get("duration_ms", target_duration_ms)
+        return int(duration)
+
+    def _write_audio_payload(self, payload: dict[str, object], output_path: Path) -> None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        audio_base64 = payload.get("audio_base64")
+        if isinstance(audio_base64, str) and audio_base64:
+            output_path.write_bytes(base64.b64decode(audio_base64))
+            return
+
+        audio_path = payload.get("audio_path")
+        if isinstance(audio_path, str) and audio_path:
+            source_path = Path(audio_path)
+            output_path.write_bytes(source_path.read_bytes())
+            return
+
+        raise TtsProviderError(
+            f"{self.profile.id}: missing audio_base64 or audio_path in response"
+        )
 
 
 def select_reference_segments(

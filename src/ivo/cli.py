@@ -15,6 +15,7 @@ from ivo.environment import collect_environment_diagnostics, collect_optional_mo
 from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
 from ivo.pipeline.mock_pipeline import run_mock_dubbing_pipeline
+from ivo.pipeline.synthesize import HttpTtsAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
 
 app = typer.Typer(help="Intelligent Voice Over developer tools.", no_args_is_help=True)
@@ -96,6 +97,11 @@ def local_preview(
         typer.Option("--translation-profile", exists=True, dir_okay=False, readable=True),
     ] = None,
     translation_var: Annotated[list[str] | None, typer.Option("--translation-var")] = None,
+    tts_profile: Annotated[
+        Path | None,
+        typer.Option("--tts-profile", exists=True, dir_okay=False, readable=True),
+    ] = None,
+    tts_var: Annotated[list[str] | None, typer.Option("--tts-var")] = None,
     ffmpeg_path: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     watermark: Annotated[bool, typer.Option("--watermark/--no-watermark")] = True,
 ) -> None:
@@ -113,6 +119,9 @@ def local_preview(
     translation_extra: dict[str, object] = {
         key: value for key, value in _parse_key_value_options(translation_var or []).items()
     }
+    tts_extra: dict[str, object] = {
+        key: value for key, value in _parse_key_value_options(tts_var or []).items()
+    }
     translation_adapter = (
         HttpTranslationAdapter(
             ApiAdapterProfile.model_validate(
@@ -125,12 +134,22 @@ def local_preview(
         if translation_profile is not None
         else None
     )
+    tts_adapter = (
+        HttpTtsAdapter(
+            ApiAdapterProfile.model_validate(json.loads(tts_profile.read_text(encoding="utf-8"))),
+            project_path=project.path,
+            extra=tts_extra,
+        )
+        if tts_profile is not None
+        else None
+    )
     result = run_local_command_preview(
         project,
         source_video=source_video,
         profiles=profiles,
         translation_overrides=_parse_key_value_options(target_text or []),
         translation_adapter=translation_adapter,
+        tts_adapter=tts_adapter,
         ffmpeg_path=str(ffmpeg_path) if ffmpeg_path is not None else None,
         watermark_text="AI Dubbed" if watermark else None,
     )

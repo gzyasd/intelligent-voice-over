@@ -11,7 +11,7 @@ from ivo.core.project import DubbingProject
 from ivo.pipeline.import_video import extract_normalized_audio, import_source_video
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
 from ivo.pipeline.separate_audio import LocalCommandSeparationAdapter, separate_audio
-from ivo.pipeline.synthesize import LocalCommandTtsAdapter, synthesize_segment
+from ivo.pipeline.synthesize import LocalCommandTtsAdapter, TtsAdapter, synthesize_segment
 from ivo.pipeline.transcribe import LocalCommandAsrAdapter, TranscriptionSegment, transcribe_audio
 from ivo.pipeline.translate import (
     MockTranslationAdapter,
@@ -40,6 +40,7 @@ def run_local_command_preview(
     profiles: LocalCommandPipelineProfiles,
     translation_overrides: dict[str, str] | None = None,
     translation_adapter: TranslationAdapter | None = None,
+    tts_adapter: TtsAdapter | None = None,
     ffmpeg_path: str | None = None,
     watermark_text: str | None = "AI Dubbed",
 ) -> LocalCommandPreviewResult:
@@ -63,10 +64,10 @@ def run_local_command_preview(
 
     generated_segments: list[Path] = []
     segment_audio: list[SegmentAudio] = []
-    tts_adapter = LocalCommandTtsAdapter(profiles.tts)
+    active_tts_adapter = tts_adapter or LocalCommandTtsAdapter(profiles.tts)
     for segment in dubbed_segments:
         project.timeline.update_segment(segment.id, status="approved")
-        synthesis = synthesize_segment(project, segment, tts_adapter)
+        synthesis = synthesize_segment(project, segment, active_tts_adapter)
         generated_segments.append(synthesis.audio_path)
         segment_audio.append(SegmentAudio(path=synthesis.audio_path, start_ms=segment.start_ms))
 

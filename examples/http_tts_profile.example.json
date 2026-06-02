@@ -1,0 +1,20 @@
+{
+  "id": "online-tts",
+  "stage": "tts",
+  "method": "POST",
+  "url": "https://api.example.test/tts",
+  "headers": {
+    "Authorization": "Bearer {{ api_key }}"
+  },
+  "request_template": {
+    "text": "{{ segment_text }}",
+    "speaker_id": "{{ speaker_id }}",
+    "style_prompt": "{{ style_prompt }}",
+    "target_duration_ms": "{{ target_duration_ms }}"
+  },
+  "response_mapping": {
+    "audio_base64": "$.audio_base64",
+    "duration_ms": "$.duration_ms"
+  },
+  "timeout_seconds": 120
+}
