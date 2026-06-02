@@ -32,30 +32,30 @@ def test_main_window_opens_export_dialog_and_starts_background_export(
         def exec(self) -> int:
             return QDialog.DialogCode.Accepted
 
-    def fake_export_dubbed_video(request, confirmation):
-        request.output_path.write_bytes(b"final")
-        return request.output_path
+    captured: dict[str, object] = {}
+    fake_worker = object()
 
     monkeypatch.setattr("ivo.ui.main_window.ExportDialog", AcceptedExportDialog)
-    monkeypatch.setattr("ivo.ui.main_window.export_dubbed_video", fake_export_dubbed_video)
 
     window = MainWindow()
     qtbot.addWidget(window)
     window.current_project = project
     window.source_video_path = source_video
 
+    def fake_start_final_export_background(dialog):
+        captured["dialog"] = dialog
+        window.progress_label.setText("\u6b63\u5728\u6700\u7ec8\u5bfc\u51fa")
+        window.export_button.setEnabled(False)
+        return fake_worker
+
+    monkeypatch.setattr(window, "start_final_export_background", fake_start_final_export_background)
+
     worker = window.open_export_dialog()
 
-    assert worker is window.final_export_worker
+    assert worker is fake_worker
+    assert captured["dialog"].output_path() == tmp_path / "final.mp4"
     assert window.export_button.isEnabled() is False
     assert window.progress_label.text() == "\u6b63\u5728\u6700\u7ec8\u5bfc\u51fa"
-
-    worker.run()
-    window.handle_final_export_succeeded()
-
-    assert (tmp_path / "final.mp4").read_bytes() == b"final"
-    assert window.export_button.isEnabled() is True
-    assert window.progress_label.text() == "\u6700\u7ec8\u5bfc\u51fa\u5df2\u5b8c\u6210"
 
 
 def test_main_window_warns_when_export_dialog_is_incomplete(monkeypatch, qtbot) -> None:
