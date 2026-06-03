@@ -670,6 +670,7 @@ def test_local_preview_command_runs_real_dry_run_profile(tmp_path) -> None:
 
 def test_adapter_profile_cli_adds_and_lists_http_profile(tmp_path) -> None:
     from ivo.cli import app
+    from ivo.adapters.profiles import AdapterProfileStore
 
     store_path = tmp_path / "adapters.json"
     add_result = CliRunner().invoke(
@@ -686,6 +687,8 @@ def test_adapter_profile_cli_adds_and_lists_http_profile(tmp_path) -> None:
             "https://api.example.test/translate",
             "--response",
             "target_text=$.text",
+            "--optional-response",
+            "style_prompt",
         ],
     )
     list_result = CliRunner().invoke(app, ["adapter", "list", str(store_path)])
@@ -694,6 +697,7 @@ def test_adapter_profile_cli_adds_and_lists_http_profile(tmp_path) -> None:
     assert list_result.exit_code == 0
     assert "translator" in list_result.output
     assert "translation" in list_result.output
+    assert AdapterProfileStore(store_path).load()[0].optional_response_keys == ["style_prompt"]
 
 
 def test_model_cli_registers_and_lists_local_model(tmp_path) -> None:

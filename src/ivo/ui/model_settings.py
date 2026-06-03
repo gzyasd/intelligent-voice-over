@@ -42,6 +42,7 @@ class ModelSettings(QWidget):
         self.stage_edit = QLineEdit("translation")
         self.url_edit = QLineEdit()
         self.response_mapping_edit = QLineEdit("target_text=$.text")
+        self.optional_response_keys_edit = QLineEdit()
         self.adapter_list = QListWidget()
 
         self.local_command_profiles_browse_button.clicked.connect(
@@ -94,6 +95,8 @@ class ModelSettings(QWidget):
         layout.addWidget(self.url_edit)
         layout.addWidget(QLabel("响应映射"))
         layout.addWidget(self.response_mapping_edit)
+        layout.addWidget(QLabel("Optional response keys"))
+        layout.addWidget(self.optional_response_keys_edit)
         layout.addWidget(QLabel("已配置 adapter"))
         layout.addWidget(self.adapter_list)
         self.setLayout(layout)
@@ -116,6 +119,7 @@ class ModelSettings(QWidget):
                     "speaker_id": "{{ speaker_id }}",
                 },
                 response_mapping=self._parse_response_mapping(),
+                optional_response_keys=self._parse_optional_response_keys(),
             )
         )
         store.save(profiles)
@@ -199,3 +203,10 @@ class ModelSettings(QWidget):
                 raise ValueError(f"响应映射需要 KEY=JSONPATH 格式：{item}")
             mapping[key] = value
         return mapping
+
+    def _parse_optional_response_keys(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.optional_response_keys_edit.text().replace("\n", ",").split(",")
+            if item.strip()
+        ]

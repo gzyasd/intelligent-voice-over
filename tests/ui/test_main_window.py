@@ -103,6 +103,7 @@ def test_background_worker_stores_task_result() -> None:
 
 
 def test_model_settings_saves_and_loads_http_adapter_profile(qtbot, tmp_path) -> None:
+    from ivo.adapters.profiles import AdapterProfileStore
     from ivo.ui.model_settings import ModelSettings
 
     store_path = tmp_path / "adapters.json"
@@ -113,6 +114,7 @@ def test_model_settings_saves_and_loads_http_adapter_profile(qtbot, tmp_path) ->
     settings.stage_edit.setText("translation")
     settings.url_edit.setText("https://api.example.test/translate")
     settings.response_mapping_edit.setText("target_text=$.text")
+    settings.optional_response_keys_edit.setText("style_prompt,duration_ms")
     settings.save_adapter_profile(store_path)
 
     reloaded = ModelSettings()
@@ -121,6 +123,8 @@ def test_model_settings_saves_and_loads_http_adapter_profile(qtbot, tmp_path) ->
 
     assert reloaded.adapter_list.count() == 1
     assert reloaded.adapter_list.item(0).text() == "translator translation"
+    profile = AdapterProfileStore(store_path).load()[0]
+    assert profile.optional_response_keys == ["style_prompt", "duration_ms"]
 
 
 def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tmp_path) -> None:

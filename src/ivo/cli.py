@@ -224,6 +224,7 @@ def adapter_add_http(
     url: Annotated[str, typer.Option()],
     method: Annotated[str, typer.Option()] = "POST",
     response: Annotated[list[str] | None, typer.Option("--response")] = None,
+    optional_response: Annotated[list[str] | None, typer.Option("--optional-response")] = None,
 ) -> None:
     """Add a simple HTTP adapter profile to a JSON store."""
     response_mapping = _parse_key_value_options(response or [])
@@ -241,6 +242,7 @@ def adapter_add_http(
             "speaker_id": "{{ speaker_id }}",
         },
         response_mapping=response_mapping,
+        optional_response_keys=optional_response or [],
     )
     store = AdapterProfileStore(store_path)
     profiles = [existing for existing in store.load() if existing.id != profile.id]
