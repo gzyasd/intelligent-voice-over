@@ -49,6 +49,16 @@ class JobStore:
             return None
         return JobRecord(stage=row["stage"], status=row["status"], message=row["message"])
 
+    def list_records(self) -> list[JobRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT stage, status, message FROM jobs ORDER BY stage ASC"
+            ).fetchall()
+        return [
+            JobRecord(stage=row["stage"], status=row["status"], message=row["message"])
+            for row in rows
+        ]
+
     def mark_running(self, stage: str, message: str = "running") -> None:
         self._upsert(stage, "running", message)
 

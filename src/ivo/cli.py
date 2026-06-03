@@ -12,6 +12,7 @@ from ivo.adapters.profiles import AdapterProfileStore
 from ivo.core.project import DubbingProject
 from ivo.core.timeline import SourceLanguage, TargetLanguage
 from ivo.environment import collect_environment_diagnostics, collect_optional_model_dependencies
+from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
 from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
 from ivo.pipeline.mock_pipeline import run_mock_dubbing_pipeline
@@ -132,6 +133,36 @@ def batch_mock_preview(
         )
         typer.echo(f"{source_video.name}: {result.final_video}")
     typer.echo(f"Processed {len(video_paths)} videos")
+
+
+@app.command("evaluate-project")
+def evaluate_project(
+    project_path: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
+    output_format: Annotated[
+        str,
+        typer.Option("--format", help="Output format: markdown or json."),
+    ] = "markdown",
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", dir_okay=False, help="Optional report output path."),
+    ] = None,
+) -> None:
+    """Summarize timeline quality flags, statuses, and job records for a project."""
+    project = DubbingProject.load(project_path)
+    report = build_project_evaluation_report(project)
+    if output_format == "json":
+        rendered = report.model_dump_json(indent=2)
+    elif output_format == "markdown":
+        rendered = render_evaluation_markdown(report)
+    else:
+        raise typer.BadParameter("Expected --format markdown or json")
+
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered, encoding="utf-8")
+        typer.echo(f"Evaluation report written: {output}")
+        return
+    typer.echo(rendered)
 
 
 @app.command("local-preview")

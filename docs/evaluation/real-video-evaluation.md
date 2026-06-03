@@ -50,7 +50,8 @@
 uv run ivo doctor
 uv run ivo doctor-models --models-dir .\models
 uv run ivo local-preview .\sample_media\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_diarization.json --translation-profile .\examples\http_translation_openai_compatible.example.json --translation-var api_key=LOCAL_TOKEN --translation-var base_url=http://127.0.0.1:8000 --translation-var model=Qwen3-8B --project-name "Eval" --source-language en --no-watermark
-````
+uv run ivo evaluate-project ".\demo-output\Eval.ivoproj" --format markdown --output ".\docs\evaluation\runs\YYYY-MM-DD-eval.md"
+```
 
 ## 评分
 
@@ -78,7 +79,7 @@ uv run ivo local-preview .\sample_media\sample.mp4 .\demo-output --profiles .\ex
 - 本轮是否通过 P0：
 - 最影响观看体验的问题：
 - 下一轮优先修改：
-```
+````
 
 ## P0 通过标准
 
@@ -86,6 +87,7 @@ uv run ivo local-preview .\sample_media\sample.mp4 .\demo-output --profiles .\ex
 - 输出视频包含中文配音、背景音、AI 配音元数据。
 - 主要对白可理解，没有大面积空白音频。
 - CLI 或 UI 失败时能指出具体阶段和 provider。
+- `uv run ivo evaluate-project <project.ivoproj> --format markdown` 能输出状态、质量标记和作业状态摘要。
 - 相关变更通过 `uv run pytest`、`uv run ruff check .`、`uv run mypy src`。
 
 ## P1 通过标准

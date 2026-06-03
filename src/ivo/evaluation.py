@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import BaseModel
+
+from ivo.core.jobs import JobRecord
+from ivo.core.project import DubbingProject
+from ivo.core.timeline import SourceLanguage, TargetLanguage
+
+
+class ProjectEvaluationReport(BaseModel):
+    project_name: str
+    project_path: Path
+    source_language: SourceLanguage
+    target_language: TargetLanguage
+    segment_count: int
+    speaker_count: int
+    status_counts: dict[str, int]
+    quality_flag_counts: dict[str, int]
+    jobs: list[JobRecord]
+
+
+def build_project_evaluation_report(project: DubbingProject) -> ProjectEvaluationReport:
+    segments = project.timeline.list_segments()
+    status_counts: dict[str, int] = {}
+    quality_flag_counts: dict[str, int] = {}
+    speakers: set[str] = set()
+
+    for segment in segments:
+        status_counts[segment.status] = status_counts.get(segment.status, 0) + 1
+        speakers.add(segment.speaker_id)
+        for flag in segment.quality_flags:
+            quality_flag_counts[flag] = quality_flag_counts.get(flag, 0) + 1
+
+    return ProjectEvaluationReport(
+        project_name=project.name,
+        project_path=project.path,
+        source_language=project.source_language,
+        target_language=project.target_language,
+        segment_count=len(segments),
+        speaker_count=len(speakers),
+        status_counts=dict(sorted(status_counts.items())),
+        quality_flag_counts=dict(sorted(quality_flag_counts.items())),
+        jobs=project.jobs.list_records(),
+    )
+
+
+def render_evaluation_markdown(report: ProjectEvaluationReport) -> str:
+    lines = [
+        f"# 项目评估报告：{report.project_name}",
+        "",
+        "## 基本信息",
+        "",
+        f"- 项目路径：`{report.project_path}`",
+        f"- 源语言：{report.source_language}",
+        f"- 目标语言：{report.target_language}",
+        f"- 片段数：{report.segment_count}",
+        f"- 说话人数：{report.speaker_count}",
+        "",
+        "## 片段状态",
+        "",
+        "| 状态 | 数量 |",
+        "| --- | --- |",
+    ]
+    lines.extend(
+        f"| {status} | {count} |" for status, count in report.status_counts.items()
+    )
+    if not report.status_counts:
+        lines.append("| none | 0 |")
+
+    lines.extend(["", "## 质量标记", "", "| 标记 | 数量 |", "| --- | --- |"])
+    lines.extend(
+        f"| {flag} | {count} |" for flag, count in report.quality_flag_counts.items()
+    )
+    if not report.quality_flag_counts:
+        lines.append("| none | 0 |")
+
+    lines.extend(["", "## 作业状态", "", "| 阶段 | 状态 | 信息 |", "| --- | --- | --- |"])
+    lines.extend(f"| {job.stage} | {job.status} | {job.message} |" for job in report.jobs)
+    if not report.jobs:
+        lines.append("| none | none | no job records |")
+    lines.append("")
+    return "\n".join(lines)
