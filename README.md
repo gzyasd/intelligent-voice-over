@@ -113,3 +113,4 @@ uv run ivo model list .\models.json
 
 - `docs/local-model-command-profiles.md`
 - `docs/ui-local-preview.md`
+- `docs/windows-packaging.md`
