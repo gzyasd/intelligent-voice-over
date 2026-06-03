@@ -105,7 +105,12 @@ class HttpStageAdapter:
         with ExitStack() as stack:
             files: dict[str, tuple[str, Any]] = {}
             for field_name, value_name in self.profile.file_upload_fields.items():
-                path = Path(str(values[value_name]))
+                raw_path = values.get(value_name)
+                if raw_path is None:
+                    raise ValueError(f"file upload variable not found: {value_name}")
+                path = Path(str(raw_path))
+                if not path.is_file():
+                    raise ValueError(f"file upload path not found: {path}")
                 handle = stack.enter_context(path.open("rb"))
                 files[field_name] = (path.name, handle)
             return self._client.post(

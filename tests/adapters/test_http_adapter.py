@@ -173,3 +173,71 @@ def test_http_adapter_skips_missing_optional_response_mapping(tmp_path) -> None:
 
     assert result.ok is True
     assert result.payload == {"target_text": "Hello there."}
+
+
+def test_http_adapter_returns_clear_error_for_missing_file_upload_variable(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter
+
+    adapter = HttpStageAdapter(
+        ApiAdapterProfile(
+            id="upload-provider",
+            stage="asr",
+            method="POST",
+            url="https://api.example.test/asr",
+            headers={},
+            request_template={},
+            response_mapping={"segments": "$.segments"},
+            file_upload_fields={"audio": "audio_path"},
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200))),
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="",
+            source_language="en",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error is not None
+    assert "file upload variable not found: audio_path" in result.error.message
+
+
+def test_http_adapter_returns_clear_error_for_missing_file_upload_path(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter
+
+    missing_audio = tmp_path / "missing.wav"
+    adapter = HttpStageAdapter(
+        ApiAdapterProfile(
+            id="upload-provider",
+            stage="asr",
+            method="POST",
+            url="https://api.example.test/asr",
+            headers={},
+            request_template={},
+            response_mapping={"segments": "$.segments"},
+            file_upload_fields={"audio": "audio_path"},
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200))),
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="",
+            source_language="en",
+            target_language="zh",
+            speaker_id="speaker-1",
+            extra={"audio_path": str(missing_audio)},
+        )
+    )
+
+    assert result.ok is False
+    assert result.error is not None
+    assert "file upload path not found" in result.error.message
