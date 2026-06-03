@@ -4,6 +4,18 @@
 
 当前状态：已完成 v1 的可测试工程骨架、mock 端到端流水线、本地命令 adapter、HTTP adapter、基础桌面 UI、时间线编辑/单句后台重生成、最终导出和导出合规闸门。详细计划见 `docs/superpowers/plans/2026-06-01-intelligent-video-dubbing-v1.md`。
 
+## 开源许可
+
+本项目已完全开源，采用 MIT License。你可以自由使用、复制、修改、分发和二次开发，但需要保留许可证和版权声明。
+
+参与贡献前请阅读：
+
+- `CONTRIBUTING.md`
+- `CODE_OF_CONDUCT.md`
+- `SECURITY.md`
+
+请不要向仓库提交真实 API key、token、未授权视频/音频素材或模型权重。
+
 ## 快速开始
 
 请在项目目录执行命令：
