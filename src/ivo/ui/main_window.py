@@ -26,6 +26,7 @@ from ivo.pipeline.local_command_preview import (
     run_local_command_preview,
 )
 from ivo.pipeline.mock_pipeline import MockPipelineResult, run_mock_dubbing_pipeline
+from ivo.pipeline.separate_audio import HttpSeparationAdapter
 from ivo.pipeline.synthesize import (
     HttpTtsAdapter,
     LocalCommandTtsAdapter,
@@ -328,6 +329,7 @@ class MainWindow(QMainWindow):
             self.current_project,
             source_video=self.source_video_path,
             profiles=self._load_local_command_profiles(),
+            separation_adapter=self._build_http_separation_adapter(),
             asr_adapter=self._build_http_asr_adapter(),
             diarization_adapter=self._build_http_diarization_adapter(),
             translation_adapter=self._build_translation_adapter(),
@@ -393,6 +395,24 @@ class MainWindow(QMainWindow):
             project_path=self.current_project.path,
             target_language=self.current_project.target_language,
             extra=_parse_key_value_text(self.model_settings.translation_vars_edit.text()),
+        )
+
+    def _build_http_separation_adapter(self) -> HttpSeparationAdapter | None:
+        if self.current_project is None:
+            return None
+
+        raw_path = self.model_settings.separation_profile_path_edit.text().strip()
+        if not raw_path:
+            return None
+
+        profile_path = Path(raw_path)
+        if not profile_path.is_file():
+            raise FileNotFoundError(profile_path)
+
+        return HttpSeparationAdapter(
+            ApiAdapterProfile.model_validate(json.loads(profile_path.read_text(encoding="utf-8"))),
+            project_path=self.current_project.path,
+            extra=_parse_key_value_text(self.model_settings.separation_vars_edit.text()),
         )
 
     def _build_http_asr_adapter(self) -> HttpAsrAdapter | None:

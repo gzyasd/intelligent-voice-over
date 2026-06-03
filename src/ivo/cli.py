@@ -15,6 +15,7 @@ from ivo.environment import collect_environment_diagnostics, collect_optional_mo
 from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
 from ivo.pipeline.mock_pipeline import run_mock_dubbing_pipeline
+from ivo.pipeline.separate_audio import HttpSeparationAdapter
 from ivo.pipeline.synthesize import HttpTtsAdapter
 from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
@@ -93,6 +94,11 @@ def local_preview(
     source_language: Annotated[SourceLanguage, typer.Option()] = "en",
     target_language: Annotated[TargetLanguage, typer.Option()] = "zh",
     target_text: Annotated[list[str] | None, typer.Option("--target-text")] = None,
+    separation_profile: Annotated[
+        Path | None,
+        typer.Option("--separation-profile", exists=True, dir_okay=False, readable=True),
+    ] = None,
+    separation_var: Annotated[list[str] | None, typer.Option("--separation-var")] = None,
     asr_profile: Annotated[
         Path | None,
         typer.Option("--asr-profile", exists=True, dir_okay=False, readable=True),
@@ -127,6 +133,9 @@ def local_preview(
     profiles = LocalCommandPipelineProfiles.model_validate(
         json.loads(profiles_path.read_text(encoding="utf-8"))
     )
+    separation_extra: dict[str, object] = {
+        key: value for key, value in _parse_key_value_options(separation_var or []).items()
+    }
     asr_extra: dict[str, object] = {
         key: value for key, value in _parse_key_value_options(asr_var or []).items()
     }
@@ -139,6 +148,17 @@ def local_preview(
     tts_extra: dict[str, object] = {
         key: value for key, value in _parse_key_value_options(tts_var or []).items()
     }
+    separation_adapter = (
+        HttpSeparationAdapter(
+            ApiAdapterProfile.model_validate(
+                json.loads(separation_profile.read_text(encoding="utf-8"))
+            ),
+            project_path=project.path,
+            extra=separation_extra,
+        )
+        if separation_profile is not None
+        else None
+    )
     translation_adapter = (
         HttpTranslationAdapter(
             ApiAdapterProfile.model_validate(
@@ -185,6 +205,7 @@ def local_preview(
         source_video=source_video,
         profiles=profiles,
         translation_overrides=_parse_key_value_options(target_text or []),
+        separation_adapter=separation_adapter,
         asr_adapter=asr_adapter,
         diarization_adapter=diarization_adapter,
         translation_adapter=translation_adapter,

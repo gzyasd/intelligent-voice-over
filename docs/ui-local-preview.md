@@ -1,6 +1,6 @@
 # 桌面 UI 本地命令预览说明
 
-主窗口提供“本地命令预览”入口，可以从“模型设置”页读取本地命令 profiles JSON，以及可选的 ASR、说话人分离、翻译、TTS HTTP profile，然后调用与 CLI 相同的 `run_local_command_preview` 流水线。
+主窗口提供“本地命令预览”入口，可以从“模型设置”页读取本地命令 profiles JSON，以及可选的人声分离、ASR、说话人分离、翻译、TTS HTTP profile，然后调用与 CLI 相同的 `run_local_command_preview` 流水线。
 
 ## 使用步骤
 
@@ -12,31 +12,37 @@
 F:\GZYproject\Intelligent-Voice-Over\examples\local_command_profiles.real_dry_run.json
 ```
 
-4. 如果 ASR / 转写阶段使用线上 API，在“ASR HTTP profile JSON”填写或浏览选择：
+4. 如果人声分离阶段使用线上 API，在“人声分离 HTTP profile JSON”填写或浏览选择：
+
+```text
+F:\GZYproject\Intelligent-Voice-Over\examples\http_separation_profile.example.json
+```
+
+5. 如果 ASR / 转写阶段使用线上 API，在“ASR HTTP profile JSON”填写或浏览选择：
 
 ```text
 F:\GZYproject\Intelligent-Voice-Over\examples\http_asr_profile.example.json
 ```
 
-5. 如果说话人分离阶段使用线上 API，在“说话人分离 HTTP profile JSON”填写或浏览选择：
+6. 如果说话人分离阶段使用线上 API，在“说话人分离 HTTP profile JSON”填写或浏览选择：
 
 ```text
 F:\GZYproject\Intelligent-Voice-Over\examples\http_diarization_profile.example.json
 ```
 
-6. 如果翻译阶段使用线上 API，在“翻译 HTTP profile JSON”填写或浏览选择：
+7. 如果翻译阶段使用线上 API，在“翻译 HTTP profile JSON”填写或浏览选择：
 
 ```text
 F:\GZYproject\Intelligent-Voice-Over\examples\http_translation_profile.example.json
 ```
 
-7. 如果 TTS / 音色克隆阶段使用线上 API，在“TTS HTTP profile JSON”填写或浏览选择：
+8. 如果 TTS / 音色克隆阶段使用线上 API，在“TTS HTTP profile JSON”填写或浏览选择：
 
 ```text
 F:\GZYproject\Intelligent-Voice-Over\examples\http_tts_profile.example.json
 ```
 
-8. 如果 HTTP profile 使用了 `{{ api_key }}` 等变量，在对应阶段的“变量 KEY=VALUE”输入框填写，例如：
+9. 如果 HTTP profile 使用了 `{{ api_key }}` 等变量，在对应阶段的“变量 KEY=VALUE”输入框填写，例如：
 
 ```text
 api_key=YOUR_API_KEY
@@ -44,9 +50,9 @@ api_key=YOUR_API_KEY
 
 多个变量可以用逗号或换行分隔。
 
-9. 点击“本地命令预览”。
+10. 点击“本地命令预览”。
 
-命令行模式和桌面 UI 都支持把 ASR、说话人分离、翻译、TTS 任一阶段切到线上 HTTP API；未配置 HTTP profile 的阶段会继续使用本地命令 profiles。
+命令行模式和桌面 UI 都支持把人声分离、ASR、说话人分离、翻译、TTS 任一阶段切到线上 HTTP API；未配置 HTTP profile 的阶段会继续使用本地命令 profiles。
 
 ## 时间线编辑
 
@@ -75,7 +81,7 @@ api_key=YOUR_API_KEY
 
 - profiles 路径不存在；
 - 本地命令脚本运行失败；
-- HTTP ASR、说话人分离、翻译或 TTS API 超时，或返回非成功状态；
+- HTTP 人声分离、ASR、说话人分离、翻译或 TTS API 超时，或返回非成功状态；
 - FFmpeg 不可用或导出失败。
 
 ## 当前限制

@@ -10,7 +10,11 @@ from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
 from ivo.pipeline.import_video import extract_normalized_audio, import_source_video
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
-from ivo.pipeline.separate_audio import LocalCommandSeparationAdapter, separate_audio
+from ivo.pipeline.separate_audio import (
+    LocalCommandSeparationAdapter,
+    SeparationAdapter,
+    separate_audio,
+)
 from ivo.pipeline.synthesize import LocalCommandTtsAdapter, TtsAdapter, synthesize_segment
 from ivo.pipeline.transcribe import (
     AsrAdapter,
@@ -49,6 +53,7 @@ def run_local_command_preview(
     source_video: Path,
     profiles: LocalCommandPipelineProfiles,
     translation_overrides: dict[str, str] | None = None,
+    separation_adapter: SeparationAdapter | None = None,
     asr_adapter: AsrAdapter | None = None,
     diarization_adapter: DiarizationAdapter | None = None,
     translation_adapter: TranslationAdapter | None = None,
@@ -61,7 +66,7 @@ def run_local_command_preview(
     separation = separate_audio(
         project,
         extracted_audio,
-        LocalCommandSeparationAdapter(profiles.separation),
+        separation_adapter or LocalCommandSeparationAdapter(profiles.separation),
     )
     active_asr_adapter = asr_adapter or LocalCommandAsrAdapter(profiles.asr)
     source_segments = transcribe_audio(

@@ -127,17 +127,20 @@ def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tm
     from ivo.ui.model_settings import ModelSettings
 
     local_profile = tmp_path / "local.json"
+    separation_profile = tmp_path / "separation.json"
     asr_profile = tmp_path / "asr.json"
     diarization_profile = tmp_path / "diarization.json"
     translation_profile = tmp_path / "translation.json"
     tts_profile = tmp_path / "tts.json"
     local_profile.write_text("{}", encoding="utf-8")
+    separation_profile.write_text("{}", encoding="utf-8")
     asr_profile.write_text("{}", encoding="utf-8")
     diarization_profile.write_text("{}", encoding="utf-8")
     translation_profile.write_text("{}", encoding="utf-8")
     tts_profile.write_text("{}", encoding="utf-8")
     selected_paths = [
         str(local_profile),
+        str(separation_profile),
         str(asr_profile),
         str(diarization_profile),
         str(translation_profile),
@@ -156,12 +159,14 @@ def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tm
     qtbot.addWidget(settings)
 
     settings.browse_local_command_profiles()
+    settings.browse_separation_profile()
     settings.browse_asr_profile()
     settings.browse_diarization_profile()
     settings.browse_translation_profile()
     settings.browse_tts_profile()
 
     assert settings.local_command_profiles_path_edit.text() == str(local_profile)
+    assert settings.separation_profile_path_edit.text() == str(separation_profile)
     assert settings.asr_profile_path_edit.text() == str(asr_profile)
     assert settings.diarization_profile_path_edit.text() == str(diarization_profile)
     assert settings.translation_profile_path_edit.text() == str(translation_profile)

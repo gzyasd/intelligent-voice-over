@@ -198,6 +198,54 @@ def test_main_window_runs_local_preview_with_http_asr_profile(monkeypatch, qtbot
     assert adapter.extra == {"api_key": "test-token"}
 
 
+def test_main_window_runs_local_preview_with_http_separation_profile(
+    monkeypatch,
+    qtbot,
+    tmp_path,
+) -> None:
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+    from ivo.ui.main_window import MainWindow
+
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
+    profiles_path = _write_local_profiles(tmp_path)
+    separation_profile_path = _write_separation_profile(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_run_local_command_preview(project, **kwargs):
+        captured["separation_adapter"] = kwargs["separation_adapter"]
+        _add_rendered_segment(project)
+        final_video = project.path / "renders" / "local-preview.mp4"
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr("ivo.ui.main_window.run_local_command_preview", fake_run_local_command_preview)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.create_project_from_inputs(
+        project_name="Episode 01",
+        source_video=source,
+        output_dir=tmp_path,
+        source_language="en",
+    )
+    window.model_settings.local_command_profiles_path_edit.setText(str(profiles_path))
+    window.model_settings.separation_profile_path_edit.setText(str(separation_profile_path))
+    window.model_settings.separation_vars_edit.setText("api_key=test-token")
+
+    result = window.run_local_preview()
+
+    adapter = captured["separation_adapter"]
+    assert result.final_video.is_file()
+    assert adapter.__class__.__name__ == "HttpSeparationAdapter"
+    assert adapter.profile.id == "online-separation"
+    assert adapter.extra == {"api_key": "test-token"}
+
+
 def test_main_window_runs_local_preview_with_http_diarization_profile(
     monkeypatch,
     qtbot,
@@ -312,6 +360,28 @@ def _write_asr_profile(tmp_path):
         encoding="utf-8",
     )
     return asr_profile_path
+
+
+def _write_separation_profile(tmp_path):
+    separation_profile_path = tmp_path / "separation-http.json"
+    separation_profile_path.write_text(
+        json.dumps(
+            {
+                "id": "online-separation",
+                "stage": "separation",
+                "method": "POST",
+                "url": "https://api.example.test/separate",
+                "headers": {"Authorization": "Bearer {{ api_key }}"},
+                "request_template": {"audio_path": "{{ audio_path }}"},
+                "response_mapping": {
+                    "vocals_base64": "$.vocals_base64",
+                    "background_base64": "$.background_base64",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return separation_profile_path
 
 
 def _write_diarization_profile(tmp_path):

@@ -77,6 +77,11 @@ uv run ivo adapter list .\adapters.json
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --translation-profile .\examples\http_translation_profile.example.json --translation-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
 ```
 
+人声分离阶段也可以切到 HTTP API。示例 profile 使用 `vocals_base64` 和 `background_base64` 返回两路音频：
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --separation-profile .\examples\http_separation_profile.example.json --separation-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
+```
+
 也可以把 ASR / 转写阶段切到 HTTP API。ASR profile 需要返回 `segments` 列表，字段格式与本地 ASR 命令输出一致：
 ```powershell
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --asr-profile .\examples\http_asr_profile.example.json --asr-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en

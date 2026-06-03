@@ -152,6 +152,15 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 }
 ```
 
+## 混合线上人声分离 API
+
+如果只想让人声分离阶段走线上模型 API，同时 ASR、说话人分离、翻译、TTS 走本地命令或 mock 覆盖，可以搭配 `examples/http_separation_profile.example.json`：
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --separation-profile .\examples\http_separation_profile.example.json --separation-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
+```
+
+人声分离 HTTP profile 可使用 `{{ audio_path }}`、`{{ vocals_path }}` 和 `{{ background_path }}`。响应映射可以返回 `vocals_base64` / `background_base64`，客户端会写入项目 `work/` 目录；也可以返回本地可读的 `vocals_path` / `background_path`。
+
 ## 混合线上 ASR API
 
 如果只想让 ASR / 转写阶段走线上模型 API，同时分离、翻译、TTS 走本地命令或 mock 覆盖，可以搭配 `examples/http_asr_profile.example.json`：
