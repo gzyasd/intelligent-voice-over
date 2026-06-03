@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -53,10 +54,12 @@ class TimelineEditor(QWidget):
         self.project: DubbingProject | None = None
         self.save_buttons: list[QPushButton] = []
         self.regenerate_buttons: list[QPushButton] = []
+        self.quality_summary_label = QLabel("质量摘要：暂无质量问题")
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
 
         layout = QVBoxLayout()
+        layout.addWidget(self.quality_summary_label)
         layout.addWidget(self.table)
         self.setLayout(layout)
 
@@ -67,6 +70,7 @@ class TimelineEditor(QWidget):
     def set_segments(self, segments: list[DubbingSegment]) -> None:
         self.save_buttons = []
         self.regenerate_buttons = []
+        self.quality_summary_label.setText(_build_quality_summary(segments))
         self.table.setRowCount(len(segments))
         for row, segment in enumerate(segments):
             values = [
@@ -132,3 +136,14 @@ class TimelineEditor(QWidget):
     def _optional_cell_text(self, row: int, column: int) -> str | None:
         value = self._cell_text(row, column)
         return value or None
+
+
+def _build_quality_summary(segments: list[DubbingSegment]) -> str:
+    counts: dict[str, int] = {}
+    for segment in segments:
+        for flag in segment.quality_flags:
+            counts[flag] = counts.get(flag, 0) + 1
+    if not counts:
+        return "质量摘要：暂无质量问题"
+    joined = "; ".join(f"{flag}: {count}" for flag, count in counts.items())
+    return f"质量摘要：{joined}"

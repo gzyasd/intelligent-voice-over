@@ -79,3 +79,60 @@ def test_timeline_editor_rejects_invalid_status(qtbot, tmp_path) -> None:
 
     with pytest.raises(ValueError, match="invalid segment status"):
         editor.save_row(0)
+
+
+def test_timeline_editor_summarizes_quality_flags(qtbot, tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.ui.timeline_editor import TimelineEditor
+
+    project = DubbingProject.create(
+        tmp_path / "timeline-quality.ivoproj",
+        name="Timeline Quality",
+        source_language="en",
+        target_language="zh",
+    )
+    for segment_id, flags in [
+        ("seg-001", ["duration_mismatch", "speaker_unmatched"]),
+        ("seg-002", ["duration_mismatch"]),
+    ]:
+        project.timeline.add_segment(
+            DubbingSegment(
+                id=segment_id,
+                start_ms=0,
+                end_ms=1_000,
+                speaker_id="speaker-1",
+                source_language="en",
+                source_text="Hello.",
+                target_language="zh",
+                target_text="你好。",
+                status="needs_review",
+                quality_flags=flags,
+            )
+        )
+
+    editor = TimelineEditor()
+    qtbot.addWidget(editor)
+    editor.set_project(project)
+
+    assert editor.quality_summary_label.text() == (
+        "质量摘要：duration_mismatch: 2; speaker_unmatched: 1"
+    )
+
+
+def test_timeline_editor_shows_empty_quality_summary(qtbot, tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.ui.timeline_editor import TimelineEditor
+
+    project = DubbingProject.create(
+        tmp_path / "timeline-quality-empty.ivoproj",
+        name="Timeline Quality Empty",
+        source_language="en",
+        target_language="zh",
+    )
+    editor = TimelineEditor()
+    qtbot.addWidget(editor)
+
+    editor.set_project(project)
+
+    assert editor.quality_summary_label.text() == "质量摘要：暂无质量问题"
