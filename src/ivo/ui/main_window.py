@@ -19,6 +19,7 @@ from ivo.adapters.http import ApiAdapterProfile
 from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
 from ivo.core.timeline import SourceLanguage
+from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
 from ivo.pipeline.local_command_preview import (
     LocalCommandPipelineProfiles,
@@ -51,6 +52,7 @@ class MainWindow(QMainWindow):
         self.create_project_button = QPushButton("\u65b0\u5efa\u9879\u76ee")
         self.open_project_button = QPushButton("\u6253\u5f00\u9879\u76ee")
         self.local_preview_button = QPushButton("\u672c\u5730\u547d\u4ee4\u9884\u89c8")
+        self.evaluation_report_button = QPushButton("\u751f\u6210\u8bc4\u4f30\u62a5\u544a")
         self.export_button = QPushButton("\u6700\u7ec8\u5bfc\u51fa")
         self.progress_label = QLabel("\u5c1a\u672a\u5f00\u59cb")
         self.timeline_editor = TimelineEditor()
@@ -64,6 +66,7 @@ class MainWindow(QMainWindow):
         self.create_project_button.clicked.connect(self.open_project_wizard)
         self.open_project_button.clicked.connect(self.open_existing_project)
         self.local_preview_button.clicked.connect(lambda: self.start_local_preview_background())
+        self.evaluation_report_button.clicked.connect(self.write_evaluation_report)
         self.export_button.clicked.connect(self.open_export_dialog)
         self.timeline_editor.regenerate_requested.connect(self.start_segment_regeneration_background)
 
@@ -76,6 +79,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.create_project_button)
         layout.addWidget(self.open_project_button)
         layout.addWidget(self.local_preview_button)
+        layout.addWidget(self.evaluation_report_button)
         layout.addWidget(self.export_button)
         layout.addWidget(self.progress_label)
         layout.addWidget(tabs)
@@ -196,6 +200,17 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25: {message}")
         self.local_preview_button.setEnabled(True)
         QMessageBox.warning(self, "\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25", message)
+
+    def write_evaluation_report(self) -> Path:
+        if self.current_project is None:
+            raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
+
+        report = build_project_evaluation_report(self.current_project)
+        output_path = self.current_project.path / "renders" / "evaluation-report.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(render_evaluation_markdown(report), encoding="utf-8")
+        self.progress_label.setText(f"\u8bc4\u4f30\u62a5\u544a\u5df2\u751f\u6210: {output_path}")
+        return output_path
 
     def run_final_export(self, dialog: ExportDialog) -> Path:
         request, confirmation = self._build_export_request(dialog)

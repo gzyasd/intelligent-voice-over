@@ -11,6 +11,7 @@ def test_main_window_shows_project_controls(qtbot) -> None:
     assert window.create_project_button.text() == "新建项目"
     assert window.open_project_button.text() == "打开项目"
     assert window.local_preview_button.text() == "本地命令预览"
+    assert window.evaluation_report_button.text() == "生成评估报告"
     assert window.progress_label.text() == "尚未开始"
 
 
