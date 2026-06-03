@@ -144,7 +144,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 - `{{ output_audio_path }}`：生成音频输出路径
 - `{{ target_duration_ms }}`：目标片段时长
 - `{{ style_prompt }}`：情感、语气或风格提示
-- `{{ reference_audio_path }}`：从同说话人已审核片段切出的参考音频路径；没有可用参考时为空字符串
+- `{{ reference_audio_path }}`：优先从同说话人已审核片段切出的参考音频路径；首次预览没有已审核片段时，会用当前片段兜底；没有可用源音频时为空字符串
 
 `--engine-command-json` 是一个 JSON 数组，数组中的每个字符串会用下面的占位符渲染后执行：
 

@@ -231,7 +231,7 @@ def extract_reference_audio(project: DubbingProject, segment: DubbingSegment) ->
 
     references = select_reference_segments(project.timeline, speaker_id=segment.speaker_id, limit=1)
     if not references:
-        return None
+        references = [segment]
 
     reference = references[0]
     output_dir = project.path / "work" / "reference_segments"

@@ -226,6 +226,40 @@ def test_local_command_tts_receives_extracted_reference_audio(tmp_path) -> None:
     assert duration_ms == 1000
 
 
+def test_extract_reference_audio_falls_back_to_current_unapproved_segment(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import extract_reference_audio
+
+    project = DubbingProject.create(
+        tmp_path / "preview-reference.ivoproj",
+        name="Preview Reference",
+        source_language="en",
+        target_language="zh",
+    )
+    _write_test_wav(project.path / "assets" / "extracted_audio.wav", duration_ms=2_000)
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=250,
+        end_ms=1_250,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Hello.",
+        target_language="zh",
+        target_text="Hello.",
+        status="needs_review",
+    )
+    project.timeline.add_segment(segment)
+
+    reference_path = extract_reference_audio(project, segment)
+
+    assert reference_path is not None
+    assert reference_path.is_file()
+    with wave.open(str(reference_path), "rb") as wav_file:
+        duration_ms = int(wav_file.getnframes() / wav_file.getframerate() * 1000)
+    assert duration_ms == 1000
+
+
 def _write_test_wav(output_path: Path, *, duration_ms: int) -> None:
     sample_rate = 16_000
     sample_count = int(sample_rate * duration_ms / 1000)
