@@ -15,9 +15,12 @@
   },
   "response_mapping": {
     "audio_base64": "$.audio_base64",
+    "audio_path": "$.audio_path",
     "duration_ms": "$.duration_ms"
   },
   "optional_response_keys": [
+    "audio_base64",
+    "audio_path",
     "duration_ms"
   ],
   "timeout_seconds": 120

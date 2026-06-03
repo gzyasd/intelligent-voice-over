@@ -198,7 +198,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --separation-profile .\examples\http_separation_profile.example.json --separation-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
 ```
 
-人声分离 HTTP profile 可使用 `{{ audio_path }}`、`{{ vocals_path }}` 和 `{{ background_path }}`。响应映射可以返回 `vocals_base64` / `background_base64`，客户端会写入项目 `work/` 目录；也可以返回本地可读的 `vocals_path` / `background_path`。
+人声分离 HTTP profile 可使用 `{{ audio_path }}`、`{{ vocals_path }}` 和 `{{ background_path }}`。响应映射可以返回 `vocals_base64` / `background_base64`，客户端会写入项目 `work/` 目录；也可以返回本地可读的 `vocals_path` / `background_path`。示例 profile 已把 base64 和 path 两组字段都放进 `optional_response_keys`，适配器会分别检查人声和背景音至少各有一种可用输出。
 
 ## 混合线上 ASR API
 
@@ -260,6 +260,8 @@ TTS HTTP profile 可使用这些模板变量：
 
 - `audio_base64`：推荐方式，服务端直接返回 base64 编码音频，客户端写入 `work/generated_segments/`。
 - `audio_path`：服务端返回本机可读音频路径，客户端复制到目标片段音频路径。
+
+示例 profile 同时映射了 `audio_base64` 和 `audio_path`，并把二者都放进 `optional_response_keys`；适配器会在最终写入音频前检查至少存在一种。
 
 无论哪种方式，都建议返回 `duration_ms`，用于后续时长质量标记。若服务暂时只返回音频，可以把 `duration_ms` 放进 `optional_response_keys`；客户端会用片段目标时长作为兜底值。
 

@@ -42,6 +42,12 @@ def test_http_separation_profile_maps_base64_outputs() -> None:
     assert profile.request_template["audio_path"] == "{{ audio_path }}"
     assert profile.response_mapping["vocals_base64"] == "$.vocals_base64"
     assert profile.response_mapping["background_base64"] == "$.background_base64"
+    assert profile.response_mapping["vocals_path"] == "$.vocals_path"
+    assert profile.response_mapping["background_path"] == "$.background_path"
+    assert "vocals_base64" in profile.optional_response_keys
+    assert "background_base64" in profile.optional_response_keys
+    assert "vocals_path" in profile.optional_response_keys
+    assert "background_path" in profile.optional_response_keys
 
 
 def test_http_diarization_profile_maps_segments() -> None:
@@ -74,5 +80,9 @@ def test_http_tts_profile_marks_duration_optional() -> None:
     )
 
     assert profile.stage == "tts"
+    assert profile.response_mapping["audio_base64"] == "$.audio_base64"
+    assert profile.response_mapping["audio_path"] == "$.audio_path"
+    assert "audio_base64" in profile.optional_response_keys
+    assert "audio_path" in profile.optional_response_keys
     assert profile.response_mapping["duration_ms"] == "$.duration_ms"
     assert "duration_ms" in profile.optional_response_keys

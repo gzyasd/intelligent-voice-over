@@ -131,3 +131,58 @@ def test_http_tts_adapter_uses_target_duration_when_optional_duration_missing(tm
 
     assert result.generated_duration_ms == 1000
     assert result.audio_path.read_bytes() == audio_bytes
+
+
+def test_http_tts_adapter_copies_audio_path_from_online_api(tmp_path) -> None:
+    from ivo.adapters.http import ApiAdapterProfile
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import HttpTtsAdapter, synthesize_segment
+
+    project = DubbingProject.create(
+        tmp_path / "http-tts-path.ivoproj",
+        name="HTTP TTS Path",
+        source_language="en",
+        target_language="zh",
+    )
+    provided_audio = tmp_path / "provider-audio.wav"
+    provided_audio.write_bytes(b"provider-wav")
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Hello.",
+        target_language="zh",
+        target_text="Hello.",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+    adapter = HttpTtsAdapter(
+        ApiAdapterProfile(
+            id="online-voice-clone",
+            stage="tts",
+            method="POST",
+            url="https://api.example.test/tts",
+            headers={},
+            request_template={"text": "{{ segment_text }}"},
+            response_mapping={
+                "audio_base64": "$.audio_base64",
+                "audio_path": "$.audio_path",
+                "duration_ms": "$.duration_ms",
+            },
+            optional_response_keys=["audio_base64", "audio_path", "duration_ms"],
+        ),
+        project_path=project.path,
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json={"audio_path": str(provided_audio)})
+            )
+        ),
+    )
+
+    result = synthesize_segment(project, segment, adapter)
+
+    assert result.generated_duration_ms == 1000
+    assert result.audio_path.read_bytes() == b"provider-wav"
