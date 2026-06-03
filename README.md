@@ -123,6 +123,8 @@ uv run ivo model list .\models.json
 
 更多说明见：
 
+- `docs/local-model-setup.md`
 - `docs/local-model-command-profiles.md`
+- `docs/evaluation/real-video-evaluation.md`
 - `docs/ui-local-preview.md`
 - `docs/windows-packaging.md`

@@ -206,10 +206,15 @@ def synthesize_segment(
         reference_audio_path=reference_audio_path,
         target_duration_ms=target_duration_ms,
     )
-    quality_flags = (
-        ["duration_ok"]
+    duration_flag = (
+        "duration_ok"
         if abs(generated_duration_ms - target_duration_ms) <= tolerance_ms
-        else ["duration_mismatch"]
+        else "duration_mismatch"
+    )
+    quality_flags = _merge_synthesis_quality_flags(
+        segment.quality_flags,
+        duration_flag=duration_flag,
+        reference_missing=reference_audio_path is None,
     )
     project.timeline.update_segment(
         segment.id,
@@ -273,6 +278,23 @@ def _copy_wav_slice(source_path: Path, output_path: Path, *, start_ms: int, end_
 def _safe_filename(value: str) -> str:
     safe = "".join(char if char.isalnum() or char in "-_." else "_" for char in value)
     return safe or "reference"
+
+
+def _merge_synthesis_quality_flags(
+    existing_flags: list[str],
+    *,
+    duration_flag: str,
+    reference_missing: bool,
+) -> list[str]:
+    refreshed = [
+        flag
+        for flag in existing_flags
+        if flag not in {"duration_ok", "duration_mismatch", "missing_reference_audio"}
+    ]
+    refreshed.append(duration_flag)
+    if reference_missing:
+        refreshed.append("missing_reference_audio")
+    return refreshed
 
 
 def _write_silent_wav(output_path: Path, *, duration_ms: int) -> None:

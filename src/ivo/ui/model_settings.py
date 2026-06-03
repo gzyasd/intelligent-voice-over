@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -14,6 +15,8 @@ from PySide6.QtWidgets import (
 
 from ivo.adapters.http import ApiAdapterProfile
 from ivo.adapters.profiles import AdapterProfileStore
+from ivo.environment import collect_optional_model_dependencies
+from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
 
 
 class ModelSettings(QWidget):
@@ -22,6 +25,8 @@ class ModelSettings(QWidget):
         self.local_model_path_edit = QLineEdit()
         self.local_command_profiles_path_edit = QLineEdit()
         self.local_command_profiles_browse_button = QPushButton("浏览本地命令 profile")
+        self.local_profile_summary_list = QListWidget()
+        self.model_diagnostics_list = QListWidget()
         self.separation_profile_path_edit = QLineEdit()
         self.separation_profile_browse_button = QPushButton("浏览人声分离 profile")
         self.separation_vars_edit = QLineEdit()
@@ -61,6 +66,10 @@ class ModelSettings(QWidget):
         layout.addWidget(QLabel("本地命令 profiles JSON"))
         layout.addWidget(self.local_command_profiles_path_edit)
         layout.addWidget(self.local_command_profiles_browse_button)
+        layout.addWidget(QLabel("本地命令 profile 阶段摘要"))
+        layout.addWidget(self.local_profile_summary_list)
+        layout.addWidget(QLabel("本地模型环境诊断"))
+        layout.addWidget(self.model_diagnostics_list)
         layout.addWidget(QLabel("人声分离 HTTP profile JSON"))
         layout.addWidget(self.separation_profile_path_edit)
         layout.addWidget(self.separation_profile_browse_button)
@@ -134,6 +143,32 @@ class ModelSettings(QWidget):
         for profile in AdapterProfileStore(store_path).load():
             self.adapter_list.addItem(f"{profile.id} {profile.stage}")
 
+    def load_local_command_profile_summary(self, profiles_path: Path) -> None:
+        self.local_profile_summary_list.clear()
+        try:
+            profiles = LocalCommandPipelineProfiles.model_validate(
+                json.loads(profiles_path.read_text(encoding="utf-8"))
+            )
+        except (OSError, ValueError) as exc:
+            self.local_profile_summary_list.addItem(f"profile 读取失败: {exc}")
+            return
+
+        self.local_profile_summary_list.addItem(f"separation: {profiles.separation.id}")
+        self.local_profile_summary_list.addItem(f"asr: {profiles.asr.id}")
+        if profiles.diarization is not None:
+            self.local_profile_summary_list.addItem(f"diarization: {profiles.diarization.id}")
+        self.local_profile_summary_list.addItem(f"tts: {profiles.tts.id}")
+
+    def load_model_diagnostics(self, model_root: Path) -> None:
+        self.model_diagnostics_list.clear()
+        for dependency in collect_optional_model_dependencies(model_root):
+            package_status = "installed" if dependency.installed else "missing"
+            model_status = "found" if dependency.model_dir_exists else "missing"
+            self.model_diagnostics_list.addItem(
+                f"{dependency.stage} / {dependency.name}: package: {package_status}; "
+                f"model dir: {model_status}"
+            )
+
     def browse_local_command_profiles(self) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(
             self,
@@ -143,6 +178,7 @@ class ModelSettings(QWidget):
         )
         if path:
             self.local_command_profiles_path_edit.setText(path)
+            self.load_local_command_profile_summary(Path(path))
 
     def browse_separation_profile(self) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(

@@ -17,6 +17,7 @@ def main() -> int:
     parser.add_argument("--json-out", required=True)
     parser.add_argument("--model", default="htdemucs")
     parser.add_argument("--device", default="cuda")
+    parser.add_argument("--two-stems", default="vocals", choices=["vocals"])
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -45,7 +46,7 @@ def main() -> int:
             "-d",
             args.device,
             "--two-stems",
-            "vocals",
+            args.two_stems,
             "-o",
             temp_dir,
             str(source),

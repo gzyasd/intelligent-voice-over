@@ -50,6 +50,17 @@ dist\IntelligentVoiceOver\IntelligentVoiceOver.exe
 - 目标机器仍需要可用的 FFmpeg，因为导入、预览和最终导出都依赖 FFmpeg。
 - 本地模型权重不会被打包进程序。需要在目标机器上按 `docs/local-model-command-profiles.md` 配置模型目录、许可证确认和本地命令 profile。
 - 自定义线上 API profile 可以直接随 `examples/` 或项目配置文件分发，但 API key 建议通过 UI 的 `KEY=VALUE` 输入框或 CLI 的 `--*-var` 参数填写，不要写死在公开 profile 文件中。
+- 发布包、示例目录和 GitHub Release 不能包含未授权影视素材、真实人声音频、分离后音轨、TTS 生成音频、模型权重或真实密钥。
+
+## GitHub Release 草稿说明
+
+创建 GitHub Release 草稿时，建议在说明中明确：
+
+- 本 release 只包含应用代码、示例 profile 和文档。
+- 模型权重不会被打包，用户需要自行下载并确认第三方模型许可证。
+- FFmpeg、GPU 驱动和本地模型运行环境需要用户在目标机器上自行准备。
+- 请只处理自己拥有授权的视频和音频素材，不要上传或分发未授权剧集片段。
+- API key、Hugging Face token 和 ModelScope token 应通过本机环境变量、UI 变量输入或私有配置提供。
 
 ## 验收检查
 

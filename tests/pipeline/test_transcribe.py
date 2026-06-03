@@ -54,6 +54,50 @@ def test_assign_speakers_maps_diarization_ranges_to_asr_segments() -> None:
     assert [segment.speaker_id for segment in assigned] == ["speaker-a", "speaker-b"]
 
 
+def test_assign_speakers_prefers_largest_overlap_over_midpoint() -> None:
+    from ivo.pipeline.transcribe import DiarizationSegment, TranscriptionSegment, assign_speakers
+
+    segments = [
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            source_language="ko",
+            source_text="안녕.",
+        )
+    ]
+    diarization = [
+        DiarizationSegment(start_ms=0, end_ms=400, speaker_id="speaker-a"),
+        DiarizationSegment(start_ms=450, end_ms=550, speaker_id="speaker-b"),
+    ]
+
+    assigned = assign_speakers(segments, diarization)
+
+    assert assigned[0].speaker_id == "speaker-a"
+    assert assigned[0].quality_flags == []
+
+
+def test_assign_speakers_flags_segments_without_diarization_overlap() -> None:
+    from ivo.pipeline.transcribe import DiarizationSegment, TranscriptionSegment, assign_speakers
+
+    segments = [
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            source_language="en",
+            source_text="Well, hi.",
+            speaker_id="unknown",
+        )
+    ]
+    diarization = [DiarizationSegment(start_ms=1_500, end_ms=2_000, speaker_id="speaker-a")]
+
+    assigned = assign_speakers(segments, diarization)
+
+    assert assigned[0].speaker_id == "unknown"
+    assert assigned[0].quality_flags == ["speaker_unmatched"]
+
+
 def test_local_command_asr_adapter_reads_segments_from_json(tmp_path) -> None:
     from ivo.adapters.local import LocalCommandProfile
     from ivo.pipeline.transcribe import LocalCommandAsrAdapter, transcribe_audio

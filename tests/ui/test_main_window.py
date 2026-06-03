@@ -177,3 +177,67 @@ def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tm
     assert settings.diarization_profile_path_edit.text() == str(diarization_profile)
     assert settings.translation_profile_path_edit.text() == str(translation_profile)
     assert settings.tts_profile_path_edit.text() == str(tts_profile)
+
+
+def test_model_settings_loads_local_command_profile_summary(qtbot, tmp_path) -> None:
+    import json
+
+    from ivo.ui.model_settings import ModelSettings
+
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(
+        json.dumps(
+            {
+                "separation": {
+                    "id": "sep",
+                    "stage": "separation",
+                    "command": ["sep"],
+                    "output_json_path": "sep.json",
+                },
+                "asr": {
+                    "id": "asr",
+                    "stage": "asr",
+                    "command": ["asr"],
+                    "output_json_path": "asr.json",
+                },
+                "diarization": {
+                    "id": "dia",
+                    "stage": "diarization",
+                    "command": ["dia"],
+                    "output_json_path": "dia.json",
+                },
+                "tts": {
+                    "id": "tts",
+                    "stage": "tts",
+                    "command": ["tts"],
+                    "output_json_path": "tts.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+
+    settings.load_local_command_profile_summary(profiles_path)
+
+    assert settings.local_profile_summary_list.count() == 4
+    assert settings.local_profile_summary_list.item(0).text() == "separation: sep"
+    assert settings.local_profile_summary_list.item(2).text() == "diarization: dia"
+
+
+def test_model_settings_loads_model_diagnostics(qtbot, tmp_path) -> None:
+    from ivo.ui.model_settings import ModelSettings
+
+    (tmp_path / "models" / "asr" / "faster-whisper-large-v3").mkdir(parents=True)
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+
+    settings.load_model_diagnostics(tmp_path / "models")
+
+    texts = [
+        settings.model_diagnostics_list.item(index).text()
+        for index in range(settings.model_diagnostics_list.count())
+    ]
+    assert any("asr / faster-whisper" in text and "model dir: found" in text for text in texts)
+    assert any("tts / CosyVoice" in text for text in texts)

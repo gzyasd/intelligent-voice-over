@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Protocol
 
@@ -62,18 +63,23 @@ class HttpTranslationAdapter:
                 source_language=segment.source_language,
                 target_language=self.target_language,
                 speaker_id=segment.speaker_id,
-                extra={"prompt": prompt, **self.extra},
+                extra={
+                    "prompt": prompt,
+                    "duration_ms": segment.end_ms - segment.start_ms,
+                    **self.extra,
+                },
             )
         )
         if not result.ok:
             message = result.error.message if result.error is not None else "unknown provider error"
             raise TranslationProviderError(f"{self.profile.id}: {message}")
 
-        target_text = result.payload.get("target_text", result.payload.get("text"))
+        payload = _expand_content_json(result.payload, provider_id=self.profile.id)
+        target_text = payload.get("target_text", payload.get("text"))
         if not isinstance(target_text, str) or not target_text:
             raise TranslationProviderError(f"{self.profile.id}: missing target_text in response")
-        emotion = result.payload.get("emotion")
-        style_prompt = result.payload.get("style_prompt")
+        emotion = payload.get("emotion")
+        style_prompt = payload.get("style_prompt")
         return TranslationResult(
             segment_id=segment.id,
             target_text=target_text,
@@ -118,7 +124,25 @@ def translate_segments(
             emotion=translation.emotion,
             style_prompt=translation.style_prompt or translation.emotion,
             status="needs_review",
+            quality_flags=source_segment.quality_flags,
         )
-        project.timeline.add_segment(segment)
-        created.append(segment)
+    project.timeline.add_segment(segment)
+    created.append(segment)
     return created
+
+
+def _expand_content_json(payload: dict[str, object], *, provider_id: str) -> dict[str, object]:
+    content_json = payload.get("content_json")
+    if content_json is None:
+        return payload
+    if isinstance(content_json, dict):
+        return {**payload, **content_json}
+    if not isinstance(content_json, str):
+        raise TranslationProviderError(f"{provider_id}: content_json must be a JSON object or string")
+    try:
+        parsed = json.loads(content_json)
+    except json.JSONDecodeError as exc:
+        raise TranslationProviderError(f"{provider_id}: content_json is not valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise TranslationProviderError(f"{provider_id}: content_json must decode to an object")
+    return {**payload, **parsed}

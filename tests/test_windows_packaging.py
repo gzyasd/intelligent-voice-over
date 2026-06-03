@@ -45,3 +45,6 @@ def test_windows_packaging_documentation_mentions_build_command() -> None:
     assert "uv tool run pyinstaller" in document
     assert "ffmpeg" in document.lower()
     assert "IntelligentVoiceOver.exe" in document
+    assert "模型权重不会被打包" in document
+    assert "未授权" in document
+    assert "GitHub Release" in document

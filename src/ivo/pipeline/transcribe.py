@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Protocol
 
 import httpx
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ivo.adapters.base import AdapterContext
 from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter
@@ -19,6 +19,7 @@ class TranscriptionSegment(BaseModel):
     source_language: SourceLanguage
     source_text: str
     speaker_id: str = "unknown"
+    quality_flags: list[str] = Field(default_factory=list)
 
     @field_validator("start_ms", "end_ms")
     @classmethod
@@ -106,6 +107,7 @@ class LocalCommandAsrAdapter:
                     source_language=source_language,
                     source_text=str(raw_segment.get("source_text", raw_segment.get("text", ""))),
                     speaker_id=str(raw_segment.get("speaker_id", "unknown")),
+                    quality_flags=_read_quality_flags(raw_segment),
                 )
             )
         return segments
@@ -261,6 +263,7 @@ class HttpAsrAdapter:
                     source_language=source_language,
                     source_text=str(raw_segment.get("source_text", raw_segment.get("text", ""))),
                     speaker_id=str(raw_segment.get("speaker_id", "unknown")),
+                    quality_flags=_read_quality_flags(raw_segment),
                 )
             )
         return segments
@@ -288,11 +291,28 @@ def assign_speakers(
 ) -> list[TranscriptionSegment]:
     assigned: list[TranscriptionSegment] = []
     for segment in segments:
-        midpoint = segment.start_ms + ((segment.end_ms - segment.start_ms) // 2)
         speaker_id = segment.speaker_id
+        best_overlap_ms = 0
         for diarization in diarization_segments:
-            if diarization.start_ms <= midpoint < diarization.end_ms:
+            overlap_ms = _overlap_ms(segment, diarization)
+            if overlap_ms > best_overlap_ms:
+                best_overlap_ms = overlap_ms
                 speaker_id = diarization.speaker_id
-                break
-        assigned.append(segment.model_copy(update={"speaker_id": speaker_id}))
+        quality_flags = list(segment.quality_flags)
+        if best_overlap_ms == 0 and "speaker_unmatched" not in quality_flags:
+            quality_flags.append("speaker_unmatched")
+        assigned.append(segment.model_copy(update={"speaker_id": speaker_id, "quality_flags": quality_flags}))
     return assigned
+
+
+def _overlap_ms(segment: TranscriptionSegment, diarization: DiarizationSegment) -> int:
+    start_ms = max(segment.start_ms, diarization.start_ms)
+    end_ms = min(segment.end_ms, diarization.end_ms)
+    return max(0, end_ms - start_ms)
+
+
+def _read_quality_flags(raw_segment: dict[object, object]) -> list[str]:
+    raw_flags = raw_segment.get("quality_flags", [])
+    if not isinstance(raw_flags, list):
+        return []
+    return [str(flag) for flag in raw_flags]

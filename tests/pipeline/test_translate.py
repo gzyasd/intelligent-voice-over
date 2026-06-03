@@ -45,6 +45,7 @@ def test_translate_segments_writes_needs_review_timeline_entries(tmp_path) -> No
             source_language="ko",
             source_text="안녕.",
             speaker_id="speaker-1",
+            quality_flags=["speaker_unmatched"],
         )
     ]
 
@@ -66,6 +67,7 @@ def test_translate_segments_writes_needs_review_timeline_entries(tmp_path) -> No
     assert created[0].target_text == "你好。"
     assert created[0].emotion == "warm"
     assert created[0].style_prompt == "warm"
+    assert created[0].quality_flags == ["speaker_unmatched"]
     assert project.timeline.get_segment("seg-001") == created[0]
 
 
@@ -247,3 +249,75 @@ def test_http_translation_adapter_allows_missing_optional_style_prompt(tmp_path)
 
     assert result.emotion == "warm"
     assert result.style_prompt is None
+
+
+def test_http_translation_adapter_parses_openai_compatible_content_json(tmp_path) -> None:
+    from ivo.adapters.http import ApiAdapterProfile
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import HttpTranslationAdapter
+
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.read().decode("utf-8")
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"target_text":"嗯，你好。","emotion":"warm",'
+                                '"style_prompt":"温和、自然，带轻微笑意"}'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    adapter = HttpTranslationAdapter(
+        ApiAdapterProfile(
+            id="qwen-openai-compatible",
+            stage="translation",
+            method="POST",
+            url="http://127.0.0.1:8000/v1/chat/completions",
+            headers={"Authorization": "Bearer {{ api_key }}"},
+            request_template={
+                "model": "{{ model }}",
+                "messages": [
+                    {"role": "system", "content": "translate naturally"},
+                    {
+                        "role": "user",
+                        "content": (
+                            "source_language={{ source_language }}; "
+                            "target_language={{ target_language }}; "
+                            "speaker_id={{ speaker_id }}; duration_ms={{ duration_ms }}; "
+                            "text={{ segment_text }}"
+                        ),
+                    },
+                ],
+            },
+            response_mapping={"content_json": "$.choices[0].message.content"},
+        ),
+        project_path=tmp_path,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        extra={"api_key": "local-token", "model": "Qwen3-8B"},
+    )
+
+    result = adapter.translate(
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=100,
+            end_ms=1_600,
+            source_language="ja",
+            source_text="えっと、こんにちは。",
+            speaker_id="speaker-a",
+        ),
+        prompt="translate",
+    )
+
+    assert result.target_text == "嗯，你好。"
+    assert result.emotion == "warm"
+    assert result.style_prompt == "温和、自然，带轻微笑意"
+    assert "duration_ms=1500" in captured["body"]

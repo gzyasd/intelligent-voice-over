@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+from dataclasses import dataclass
 from importlib.util import find_spec
 from os import getenv
 from pathlib import Path
@@ -19,9 +20,27 @@ class EnvironmentDiagnostics(BaseModel):
 
 class OptionalDependencyStatus(BaseModel):
     name: str
+    stage: str
     import_name: str
     installed: bool
     install_hint: str
+    download_hint: str
+    license_hint: str
+    model_dir: Path
+    model_dir_exists: bool
+    verify_hint: str
+
+
+@dataclass(frozen=True)
+class OptionalDependencySpec:
+    name: str
+    stage: str
+    import_name: str
+    install_hint: str
+    download_hint: str
+    license_hint: str
+    model_subdir: Path
+    verify_hint: str
 
 
 def collect_environment_diagnostics() -> EnvironmentDiagnostics:
@@ -52,22 +71,124 @@ def resolve_executable(name: str, *, env_var: str | None = None) -> str | None:
     return shutil.which(name)
 
 
-def collect_optional_model_dependencies() -> list[OptionalDependencyStatus]:
+def collect_optional_model_dependencies(
+    model_root: Path | str = Path("models"),
+) -> list[OptionalDependencyStatus]:
+    root = Path(model_root)
     dependencies = [
-        ("faster-whisper", "faster_whisper", "uv pip install faster-whisper"),
-        ("demucs", "demucs", "uv pip install demucs"),
-        (
-            "f5_tts",
-            "f5_tts",
-            "install the F5-TTS package matching your chosen checkpoint and inference script",
+        OptionalDependencySpec(
+            name="faster-whisper",
+            stage="asr",
+            import_name="faster_whisper",
+            install_hint="uv pip install faster-whisper",
+            download_hint=(
+                "huggingface-cli download Systran/faster-whisper-large-v3 "
+                "--local-dir models/asr/faster-whisper-large-v3"
+            ),
+            license_hint="MIT package; confirm the selected Whisper checkpoint license.",
+            model_subdir=Path("asr") / "faster-whisper-large-v3",
+            verify_hint="uv run python examples/local_commands/faster_whisper_asr.py --help",
+        ),
+        OptionalDependencySpec(
+            name="demucs",
+            stage="separation",
+            import_name="demucs",
+            install_hint="uv pip install demucs",
+            download_hint="Demucs downloads named checkpoints on first use.",
+            license_hint="MIT; confirm checkpoint terms before distribution.",
+            model_subdir=Path("separation") / "demucs",
+            verify_hint="uv run python examples/local_commands/demucs_separate.py --help",
+        ),
+        OptionalDependencySpec(
+            name="pyannote.audio",
+            stage="diarization",
+            import_name="pyannote.audio",
+            install_hint="uv pip install pyannote.audio",
+            download_hint=(
+                "huggingface-cli download pyannote/speaker-diarization-community-1 "
+                "--local-dir models/diarization/pyannote-community-1"
+            ),
+            license_hint=(
+                "Requires Hugging Face login and accepted model terms; keep HF_TOKEN out of Git."
+            ),
+            model_subdir=Path("diarization") / "pyannote-community-1",
+            verify_hint="uv run python examples/local_commands/pyannote_diarization.py --help",
+        ),
+        OptionalDependencySpec(
+            name="CosyVoice",
+            stage="tts",
+            import_name="cosyvoice",
+            install_hint="install CosyVoice from https://github.com/FunAudioLLM/CosyVoice",
+            download_hint=(
+                "huggingface-cli download FunAudioLLM/Fun-CosyVoice3-0.5B-2512 "
+                "--local-dir models/tts/Fun-CosyVoice3-0.5B"
+            ),
+            license_hint="Fun-CosyVoice3 model card currently lists Apache-2.0; re-check before use.",
+            model_subdir=Path("tts") / "Fun-CosyVoice3-0.5B",
+            verify_hint="uv run python examples/local_commands/cosyvoice_tts.py --help",
+        ),
+        OptionalDependencySpec(
+            name="f5_tts",
+            stage="tts",
+            import_name="f5_tts",
+            install_hint="install the F5-TTS package matching your chosen checkpoint and script",
+            download_hint="huggingface-cli download SWivid/F5-TTS --local-dir models/tts/F5-TTS",
+            license_hint="Code is MIT; pretrained checkpoints are CC-BY-NC.",
+            model_subdir=Path("tts") / "F5-TTS",
+            verify_hint="uv run python examples/local_commands/f5_tts_command.py --help",
+        ),
+        OptionalDependencySpec(
+            name="Qwen local LLM",
+            stage="translation",
+            import_name="transformers",
+            install_hint="uv pip install transformers accelerate",
+            download_hint="huggingface-cli download Qwen/Qwen3-8B --local-dir models/llm/Qwen3-8B",
+            license_hint=(
+                "Confirm the selected Qwen model license before redistribution or commercial use."
+            ),
+            model_subdir=Path("llm") / "Qwen3-8B",
+            verify_hint="Run Qwen through vLLM/SGLang/OpenAI-compatible HTTP profile first.",
+        ),
+        OptionalDependencySpec(
+            name="vLLM",
+            stage="translation",
+            import_name="vllm",
+            install_hint="uv pip install vllm",
+            download_hint="Uses the selected local LLM directory, for example models/llm/Qwen3-8B.",
+            license_hint="Serving framework license differs from model license; confirm both.",
+            model_subdir=Path("llm") / "Qwen3-8B",
+            verify_hint="Start an OpenAI-compatible local server and use the HTTP translation profile.",
+        ),
+        OptionalDependencySpec(
+            name="SGLang",
+            stage="translation",
+            import_name="sglang",
+            install_hint="uv pip install sglang",
+            download_hint="Uses the selected local LLM directory, for example models/llm/Qwen3-8B.",
+            license_hint="Serving framework license differs from model license; confirm both.",
+            model_subdir=Path("llm") / "Qwen3-8B",
+            verify_hint="Start an OpenAI-compatible local server and use the HTTP translation profile.",
         ),
     ]
     return [
         OptionalDependencyStatus(
-            name=name,
-            import_name=import_name,
-            installed=find_spec(import_name) is not None,
-            install_hint=hint,
+            name=dependency.name,
+            stage=dependency.stage,
+            import_name=dependency.import_name,
+            installed=_is_importable(dependency.import_name),
+            install_hint=dependency.install_hint,
+            download_hint=dependency.download_hint,
+            license_hint=dependency.license_hint,
+            model_dir=root / dependency.model_subdir,
+            model_dir_exists=(root / dependency.model_subdir).is_dir(),
+            verify_hint=dependency.verify_hint,
         )
-        for name, import_name, hint in dependencies
+        for dependency in dependencies
     ]
+
+
+def _is_importable(import_name: str) -> bool:
+    try:
+        return find_spec(import_name) is not None
+    except ModuleNotFoundError:
+        return False

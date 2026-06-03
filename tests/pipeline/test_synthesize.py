@@ -80,11 +80,49 @@ def test_mock_tts_generates_wav_and_duration_quality_flags(tmp_path) -> None:
     )
 
     assert result.audio_path == project.path / "work" / "generated_segments" / "seg-001.wav"
-    assert result.quality_flags == ["duration_mismatch"]
-    assert project.timeline.get_segment("seg-001").quality_flags == ["duration_mismatch"]
+    assert result.quality_flags == ["duration_mismatch", "missing_reference_audio"]
+    assert project.timeline.get_segment("seg-001").quality_flags == [
+        "duration_mismatch",
+        "missing_reference_audio",
+    ]
     with wave.open(str(result.audio_path), "rb") as wav_file:
         assert wav_file.getnchannels() == 1
         assert wav_file.getframerate() == 16000
+
+
+def test_synthesize_preserves_existing_quality_flags(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import MockTtsAdapter, synthesize_segment
+
+    project = DubbingProject.create(
+        tmp_path / "quality-flags.ivoproj",
+        name="Quality Flags",
+        source_language="en",
+        target_language="zh",
+    )
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        speaker_id="unknown",
+        source_language="en",
+        source_text="Hello.",
+        target_language="zh",
+        target_text="你好。",
+        status="approved",
+        quality_flags=["speaker_unmatched"],
+    )
+    project.timeline.add_segment(segment)
+
+    result = synthesize_segment(project, segment, MockTtsAdapter())
+
+    assert result.quality_flags == [
+        "speaker_unmatched",
+        "duration_ok",
+        "missing_reference_audio",
+    ]
+    assert project.timeline.get_segment("seg-001").quality_flags == result.quality_flags
 
 
 def test_local_command_tts_adapter_generates_audio_from_json_contract(tmp_path) -> None:

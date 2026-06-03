@@ -50,11 +50,23 @@ def doctor() -> None:
 
 
 @app.command("doctor-models")
-def doctor_models() -> None:
+def doctor_models(
+    models_dir: Annotated[
+        Path,
+        typer.Option("--models-dir", file_okay=False, help="Local model cache root to inspect."),
+    ] = Path("models"),
+) -> None:
     """Report optional local model bridge dependencies."""
-    for dependency in collect_optional_model_dependencies():
+    for dependency in collect_optional_model_dependencies(models_dir):
         status = "installed" if dependency.installed else "missing"
-        typer.echo(f"{dependency.name}: {status} ({dependency.install_hint})")
+        model_status = "found" if dependency.model_dir_exists else "missing"
+        typer.echo(f"{dependency.stage} / {dependency.name}: {status}")
+        typer.echo(f"  import: {dependency.import_name}")
+        typer.echo(f"  install: {dependency.install_hint}")
+        typer.echo(f"  model dir: {dependency.model_dir} ({model_status})")
+        typer.echo(f"  download: {dependency.download_hint}")
+        typer.echo(f"  license: {dependency.license_hint}")
+        typer.echo(f"  verify: {dependency.verify_hint}")
 
 
 @app.command("mock-preview")
@@ -74,6 +86,37 @@ def mock_preview(
     )
     result = run_mock_dubbing_pipeline(project, source_video=source_video)
     typer.echo(f"Mock preview created: {result.final_video}")
+
+
+@app.command("batch-mock-preview")
+def batch_mock_preview(
+    input_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
+    output_dir: Annotated[Path, typer.Argument(file_okay=False)],
+    source_language: Annotated[SourceLanguage, typer.Option()] = "en",
+    watermark: Annotated[bool, typer.Option("--watermark/--no-watermark")] = True,
+) -> None:
+    """Run mock preview for every video file in a directory."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    video_paths = [
+        path
+        for path in sorted(input_dir.iterdir())
+        if path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".mov", ".avi"}
+    ]
+    for source_video in video_paths:
+        project = DubbingProject.create(
+            output_dir / f"{source_video.stem}.ivoproj",
+            name=source_video.stem,
+            source_language=source_language,
+            target_language="zh",
+            source_video=source_video,
+        )
+        result = run_mock_dubbing_pipeline(
+            project,
+            source_video=source_video,
+            watermark_text="AI Dubbed" if watermark else "",
+        )
+        typer.echo(f"{source_video.name}: {result.final_video}")
+    typer.echo(f"Processed {len(video_paths)} videos")
 
 
 @app.command("local-preview")

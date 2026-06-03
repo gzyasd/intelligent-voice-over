@@ -76,6 +76,34 @@ def test_mock_preview_command_creates_project_and_preview(tmp_path) -> None:
     assert (output_dir / "Episode 01.ivoproj" / "renders" / "preview.mp4").is_file()
 
 
+def test_batch_mock_preview_command_creates_projects_for_each_video(tmp_path) -> None:
+    from ivo.cli import app
+
+    input_dir = tmp_path / "episodes"
+    input_dir.mkdir()
+    (input_dir / "episode-01.mp4").write_bytes(b"video-1")
+    (input_dir / "episode-02.mkv").write_bytes(b"video-2")
+    (input_dir / "notes.txt").write_text("ignored", encoding="utf-8")
+    output_dir = tmp_path / "out"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "batch-mock-preview",
+            str(input_dir),
+            str(output_dir),
+            "--source-language",
+            "en",
+            "--no-watermark",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Processed 2 videos" in result.output
+    assert (output_dir / "episode-01.ivoproj" / "renders" / "preview.mp4").is_file()
+    assert (output_dir / "episode-02.ivoproj" / "renders" / "preview.mp4").is_file()
+
+
 def test_local_preview_command_loads_profiles_and_reports_output(monkeypatch, tmp_path) -> None:
     from ivo.cli import app
     from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
@@ -747,3 +775,24 @@ def test_doctor_models_reports_optional_dependency_status() -> None:
     assert "faster-whisper" in result.output
     assert "demucs" in result.output
     assert "f5_tts" in result.output
+    assert "pyannote.audio" in result.output
+    assert "CosyVoice" in result.output
+    assert "Qwen" in result.output
+    assert "download:" in result.output
+    assert "license:" in result.output
+    assert "model dir:" in result.output
+
+
+def test_optional_model_dependency_status_includes_model_directory(tmp_path) -> None:
+    from ivo.environment import collect_optional_model_dependencies
+
+    model_dir = tmp_path / "models" / "asr" / "faster-whisper-large-v3"
+    model_dir.mkdir(parents=True)
+
+    statuses = collect_optional_model_dependencies(tmp_path / "models")
+
+    faster_whisper = next(status for status in statuses if status.name == "faster-whisper")
+    assert faster_whisper.stage == "asr"
+    assert faster_whisper.model_dir == model_dir
+    assert faster_whisper.model_dir_exists is True
+    assert "huggingface-cli download" in faster_whisper.download_hint
