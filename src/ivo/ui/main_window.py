@@ -33,7 +33,7 @@ from ivo.pipeline.synthesize import (
     TtsAdapter,
     synthesize_segment,
 )
-from ivo.pipeline.transcribe import HttpAsrAdapter
+from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
 from ivo.ui.export_dialog import ExportDialog
 from ivo.ui.model_settings import ModelSettings
@@ -329,6 +329,7 @@ class MainWindow(QMainWindow):
             source_video=self.source_video_path,
             profiles=self._load_local_command_profiles(),
             asr_adapter=self._build_http_asr_adapter(),
+            diarization_adapter=self._build_http_diarization_adapter(),
             translation_adapter=self._build_translation_adapter(),
             tts_adapter=self._build_http_tts_adapter(),
         )
@@ -410,6 +411,24 @@ class MainWindow(QMainWindow):
             ApiAdapterProfile.model_validate(json.loads(profile_path.read_text(encoding="utf-8"))),
             project_path=self.current_project.path,
             extra=_parse_key_value_text(self.model_settings.asr_vars_edit.text()),
+        )
+
+    def _build_http_diarization_adapter(self) -> HttpDiarizationAdapter | None:
+        if self.current_project is None:
+            return None
+
+        raw_path = self.model_settings.diarization_profile_path_edit.text().strip()
+        if not raw_path:
+            return None
+
+        profile_path = Path(raw_path)
+        if not profile_path.is_file():
+            raise FileNotFoundError(profile_path)
+
+        return HttpDiarizationAdapter(
+            ApiAdapterProfile.model_validate(json.loads(profile_path.read_text(encoding="utf-8"))),
+            project_path=self.current_project.path,
+            extra=_parse_key_value_text(self.model_settings.diarization_vars_edit.text()),
         )
 
     def _build_regeneration_tts_adapter(self) -> TtsAdapter:

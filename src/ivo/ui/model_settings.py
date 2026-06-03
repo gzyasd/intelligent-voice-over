@@ -25,6 +25,9 @@ class ModelSettings(QWidget):
         self.asr_profile_path_edit = QLineEdit()
         self.asr_profile_browse_button = QPushButton("浏览 ASR profile")
         self.asr_vars_edit = QLineEdit()
+        self.diarization_profile_path_edit = QLineEdit()
+        self.diarization_profile_browse_button = QPushButton("浏览说话人分离 profile")
+        self.diarization_vars_edit = QLineEdit()
         self.translation_profile_path_edit = QLineEdit()
         self.translation_profile_browse_button = QPushButton("浏览翻译 profile")
         self.translation_vars_edit = QLineEdit()
@@ -42,6 +45,7 @@ class ModelSettings(QWidget):
             self.browse_local_command_profiles
         )
         self.asr_profile_browse_button.clicked.connect(self.browse_asr_profile)
+        self.diarization_profile_browse_button.clicked.connect(self.browse_diarization_profile)
         self.translation_profile_browse_button.clicked.connect(self.browse_translation_profile)
         self.tts_profile_browse_button.clicked.connect(self.browse_tts_profile)
 
@@ -56,6 +60,11 @@ class ModelSettings(QWidget):
         layout.addWidget(self.asr_profile_browse_button)
         layout.addWidget(QLabel("ASR 变量 KEY=VALUE"))
         layout.addWidget(self.asr_vars_edit)
+        layout.addWidget(QLabel("说话人分离 HTTP profile JSON"))
+        layout.addWidget(self.diarization_profile_path_edit)
+        layout.addWidget(self.diarization_profile_browse_button)
+        layout.addWidget(QLabel("说话人分离变量 KEY=VALUE"))
+        layout.addWidget(self.diarization_vars_edit)
         layout.addWidget(QLabel("翻译 HTTP profile JSON"))
         layout.addWidget(self.translation_profile_path_edit)
         layout.addWidget(self.translation_profile_browse_button)
@@ -127,6 +136,16 @@ class ModelSettings(QWidget):
         )
         if path:
             self.asr_profile_path_edit.setText(path)
+
+    def browse_diarization_profile(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "选择说话人分离 HTTP profile JSON",
+            "",
+            "JSON files (*.json);;All files (*)",
+        )
+        if path:
+            self.diarization_profile_path_edit.setText(path)
 
     def browse_translation_profile(self) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(

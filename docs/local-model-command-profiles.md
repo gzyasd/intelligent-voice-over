@@ -166,6 +166,15 @@ ASR HTTP profile 可使用这些模板变量：
 
 响应映射必须提供 `segments`，每个片段建议包含 `id`、`start_ms`、`end_ms`、`text` 或 `source_text`、`speaker_id`。字段格式与本地 ASR 命令输出保持一致。
 
+## 混合线上说话人分离 API
+
+如果只想让说话人分离阶段走线上模型 API，同时分离、ASR、翻译、TTS 走本地命令或 mock 覆盖，可以搭配 `examples/http_diarization_profile.example.json`：
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --diarization-profile .\examples\http_diarization_profile.example.json --diarization-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
+```
+
+说话人分离 HTTP profile 可使用 `{{ audio_path }}`，响应映射必须提供 `segments`。每个片段需要包含 `start_ms`、`end_ms` 和 `speaker_id`。
+
 ## 混合线上翻译 API
 
 如果只想让翻译阶段走线上模型 API，同时 ASR、分离、TTS 走本地命令，可以搭配 `examples/http_translation_profile.example.json`：

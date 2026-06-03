@@ -82,6 +82,11 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --asr-profile .\examples\http_asr_profile.example.json --asr-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
 ```
 
+说话人分离阶段也可以切到 HTTP API。该 profile 返回说话人时间范围，流水线会映射到 ASR 片段：
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --diarization-profile .\examples\http_diarization_profile.example.json --diarization-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
+```
+
 也可以把 TTS / 音色克隆阶段切到 HTTP API。TTS API profile 可以返回 `audio_base64`，也可以返回本地可读的 `audio_path`：
 
 ```powershell

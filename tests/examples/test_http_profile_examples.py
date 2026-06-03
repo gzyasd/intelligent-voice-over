@@ -10,6 +10,7 @@ def test_http_profile_examples_are_valid() -> None:
     for profile_path in [
         Path("examples/http_translation_profile.example.json"),
         Path("examples/http_asr_profile.example.json"),
+        Path("examples/http_diarization_profile.example.json"),
         Path("examples/http_tts_profile.example.json"),
     ]:
         profile = ApiAdapterProfile.model_validate(
@@ -27,5 +28,17 @@ def test_http_asr_profile_maps_segments() -> None:
     )
 
     assert profile.stage == "asr"
+    assert profile.request_template["audio_path"] == "{{ audio_path }}"
+    assert profile.response_mapping["segments"] == "$.segments"
+
+
+def test_http_diarization_profile_maps_segments() -> None:
+    profile = ApiAdapterProfile.model_validate(
+        json.loads(
+            Path("examples/http_diarization_profile.example.json").read_text(encoding="utf-8")
+        )
+    )
+
+    assert profile.stage == "diarization"
     assert profile.request_template["audio_path"] == "{{ audio_path }}"
     assert profile.response_mapping["segments"] == "$.segments"

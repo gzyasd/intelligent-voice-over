@@ -156,6 +156,55 @@ class LocalCommandDiarizationAdapter:
         return segments
 
 
+class HttpDiarizationAdapter:
+    def __init__(
+        self,
+        profile: ApiAdapterProfile,
+        *,
+        project_path: Path,
+        client: httpx.Client | None = None,
+        extra: dict[str, object] | None = None,
+    ) -> None:
+        self.profile = profile
+        self.project_path = project_path
+        self.extra = extra or {}
+        self.adapter = HttpStageAdapter(profile, client=client)
+
+    def diarize(self, audio_path: Path) -> list[DiarizationSegment]:
+        if not audio_path.is_file():
+            raise FileNotFoundError(audio_path)
+        result = self.adapter.run(
+            AdapterContext(
+                project_path=self.project_path,
+                segment_text="",
+                source_language="en",
+                target_language="zh",
+                speaker_id="unknown",
+                extra={"audio_path": str(audio_path), **self.extra},
+            )
+        )
+        if not result.ok:
+            message = result.error.message if result.error is not None else "unknown diarization error"
+            raise AsrProviderError(f"{self.profile.id}: {message}")
+
+        raw_segments = result.payload.get("segments")
+        if not isinstance(raw_segments, list):
+            raise AsrProviderError(f"{self.profile.id}: diarization output missing segments list")
+
+        segments: list[DiarizationSegment] = []
+        for raw_segment in raw_segments:
+            if not isinstance(raw_segment, dict):
+                raise AsrProviderError(f"{self.profile.id}: diarization segment must be an object")
+            segments.append(
+                DiarizationSegment(
+                    start_ms=int(raw_segment["start_ms"]),
+                    end_ms=int(raw_segment["end_ms"]),
+                    speaker_id=str(raw_segment["speaker_id"]),
+                )
+            )
+        return segments
+
+
 class AsrProviderError(RuntimeError):
     """Raised when an ASR provider cannot produce normalized segments."""
 
