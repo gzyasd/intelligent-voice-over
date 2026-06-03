@@ -135,13 +135,49 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 
 脚本：`examples/local_commands/f5_tts_command.py`
 
-当前脚本已经提供 dry-run 合约验证，但真实推理部分仍需要按本机 F5-TTS 项目、checkpoint 和参考音频格式补上具体调用。它已经预留这些变量：
+当前脚本已经提供 dry-run 合约验证，也支持通过 `--engine-command-json` 把本机 F5-TTS、CosyVoice 或其他中文音色克隆推理脚本接进来。它会把外部命令生成的音频规范化为流水线需要的 JSON 合约。
+
+它已经预留这些变量：
 
 - `{{ segment_text }}`：目标语言台词
 - `{{ speaker_id }}`：说话人 ID
 - `{{ output_audio_path }}`：生成音频输出路径
 - `{{ target_duration_ms }}`：目标片段时长
 - `{{ style_prompt }}`：情感、语气或风格提示
+
+`--engine-command-json` 是一个 JSON 数组，数组中的每个字符串会用下面的占位符渲染后执行：
+
+- `{text}`：目标语言台词。
+- `{speaker}`：说话人 ID。
+- `{audio_out}`：外部推理命令应写入的 WAV 路径。
+- `{json_out}`：本脚本最终写入的合约 JSON 路径。
+- `{reference_audio}`：可选参考音频路径。
+- `{reference_text}`：可选参考音频文本。
+- `{style_prompt}`：情绪、语气或风格提示。
+- `{duration_ms}`：目标片段时长。
+
+示例命令片段：
+
+```json
+[
+  "python",
+  "examples/local_commands/f5_tts_command.py",
+  "--text",
+  "{{ segment_text }}",
+  "--speaker",
+  "{{ speaker_id }}",
+  "--audio-out",
+  "{{ output_audio_path }}",
+  "--duration-ms",
+  "{{ target_duration_ms }}",
+  "--style-prompt",
+  "{{ style_prompt }}",
+  "--json-out",
+  "{{ output_json_path }}",
+  "--engine-command-json",
+  "[\"python\", \"path/to/your_tts_infer.py\", \"--text\", \"{text}\", \"--speaker\", \"{speaker}\", \"--out\", \"{audio_out}\"]"
+]
+```
 
 输出 JSON 合约：
 

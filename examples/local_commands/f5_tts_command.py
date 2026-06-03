@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import wave
 from pathlib import Path
+from typing import Any
 
 
 def main() -> int:
@@ -16,12 +18,24 @@ def main() -> int:
     parser.add_argument("--reference-text", default="")
     parser.add_argument("--style-prompt", default="")
     parser.add_argument("--duration-ms", type=int, default=1000)
+    parser.add_argument("--engine-command-json")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     audio_path = Path(args.audio_out)
     if args.dry_run:
         write_silent_wav(audio_path, duration_ms=args.duration_ms)
+        write_contract(Path(args.json_out), audio_path, args.duration_ms)
+        return 0
+
+    if args.engine_command_json:
+        command = render_engine_command(args.engine_command_json, args)
+        try:
+            subprocess.run(command, check=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise SystemExit(f"TTS engine command failed: {command}") from exc
+        if not audio_path.is_file():
+            raise SystemExit(f"TTS engine did not create audio output: {audio_path}")
         write_contract(Path(args.json_out), audio_path, args.duration_ms)
         return 0
 
@@ -37,6 +51,24 @@ def main() -> int:
         "F5-TTS package import succeeded, but this skeleton still needs the local model-specific "
         "inference call wired for your checkpoint and voice reference format."
     )
+
+
+def render_engine_command(raw_json: str, args: argparse.Namespace) -> list[str]:
+    raw_command = json.loads(raw_json)
+    if not isinstance(raw_command, list) or not raw_command:
+        raise SystemExit("--engine-command-json must be a non-empty JSON array")
+
+    values: dict[str, Any] = {
+        "text": args.text,
+        "speaker": args.speaker,
+        "audio_out": args.audio_out,
+        "json_out": args.json_out,
+        "reference_audio": args.reference_audio or "",
+        "reference_text": args.reference_text,
+        "style_prompt": args.style_prompt,
+        "duration_ms": args.duration_ms,
+    }
+    return [str(item).format(**values) for item in raw_command]
 
 
 def write_silent_wav(output_path: Path, *, duration_ms: int) -> None:
