@@ -23,6 +23,7 @@ class ModelSettings(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.local_model_path_edit = QLineEdit()
+        self.refresh_model_diagnostics_button = QPushButton("刷新本地模型诊断")
         self.local_command_profiles_path_edit = QLineEdit()
         self.local_command_profiles_browse_button = QPushButton("浏览本地命令 profile")
         self.local_profile_summary_list = QListWidget()
@@ -59,10 +60,12 @@ class ModelSettings(QWidget):
         self.diarization_profile_browse_button.clicked.connect(self.browse_diarization_profile)
         self.translation_profile_browse_button.clicked.connect(self.browse_translation_profile)
         self.tts_profile_browse_button.clicked.connect(self.browse_tts_profile)
+        self.refresh_model_diagnostics_button.clicked.connect(self.refresh_model_diagnostics)
 
         layout = QVBoxLayout()
         layout.addWidget(QLabel("本地模型路径"))
         layout.addWidget(self.local_model_path_edit)
+        layout.addWidget(self.refresh_model_diagnostics_button)
         layout.addWidget(QLabel("本地命令 profiles JSON"))
         layout.addWidget(self.local_command_profiles_path_edit)
         layout.addWidget(self.local_command_profiles_browse_button)
@@ -168,6 +171,10 @@ class ModelSettings(QWidget):
                 f"{dependency.stage} / {dependency.name}: package: {package_status}; "
                 f"model dir: {model_status}"
             )
+
+    def refresh_model_diagnostics(self) -> None:
+        raw_path = self.local_model_path_edit.text().strip()
+        self.load_model_diagnostics(Path(raw_path) if raw_path else Path("models"))
 
     def browse_local_command_profiles(self) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(

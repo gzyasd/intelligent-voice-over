@@ -39,6 +39,9 @@ scratch/
 uv run ivo doctor
 uv run ivo doctor-models
 uv run ivo doctor-models --models-dir .\models
+uv run ivo doctor-models --models-dir .\models --json
+uv run ivo model setup-plan --models-dir .\models
+uv run ivo model setup-plan --models-dir .\models --stage tts
 ```
 
 `doctor-models` 会检查以下信息：
@@ -50,6 +53,8 @@ uv run ivo doctor-models --models-dir .\models
 - 下载命令或下载渠道。
 - 许可证和 token 注意事项。
 - 最小验证命令。
+
+`uv run ivo doctor-models --json` 适合脚本或 UI 读取结构化诊断结果。`uv run ivo model setup-plan` 会按阶段输出安装、下载、许可证和验证命令；可以用 `--stage asr`、`--stage separation`、`--stage diarization`、`--stage translation` 或 `--stage tts` 缩小范围。
 
 ## 推荐下载命令
 

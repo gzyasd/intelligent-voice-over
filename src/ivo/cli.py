@@ -55,9 +55,24 @@ def doctor_models(
         Path,
         typer.Option("--models-dir", file_okay=False, help="Local model cache root to inspect."),
     ] = Path("models"),
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output machine-readable model diagnostics."),
+    ] = False,
 ) -> None:
     """Report optional local model bridge dependencies."""
-    for dependency in collect_optional_model_dependencies(models_dir):
+    dependencies = collect_optional_model_dependencies(models_dir)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                [dependency.model_dump(mode="json") for dependency in dependencies],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    for dependency in dependencies:
         status = "installed" if dependency.installed else "missing"
         model_status = "found" if dependency.model_dir_exists else "missing"
         typer.echo(f"{dependency.stage} / {dependency.name}: {status}")
@@ -344,6 +359,33 @@ def model_list(store_path: Annotated[Path, typer.Argument(dir_okay=False)]) -> N
     for profile in profiles:
         license_status = "yes" if manager.can_use(profile.id) else "no"
         typer.echo(f"{profile.id}\t{profile.stage}\t{profile.backend}\tlicense: {license_status}")
+
+
+@model_app.command("setup-plan")
+def model_setup_plan(
+    models_dir: Annotated[
+        Path,
+        typer.Option("--models-dir", file_okay=False, help="Local model cache root to inspect."),
+    ] = Path("models"),
+    stage: Annotated[
+        str | None,
+        typer.Option("--stage", help="Only show setup plan entries for one stage."),
+    ] = None,
+) -> None:
+    """Print install/download/verify steps for recommended local model dependencies."""
+    dependencies = collect_optional_model_dependencies(models_dir)
+    for dependency in dependencies:
+        if stage is not None and dependency.stage != stage:
+            continue
+        package_status = "installed" if dependency.installed else "missing"
+        model_status = "found" if dependency.model_dir_exists else "missing"
+        typer.echo(f"{dependency.stage} / {dependency.name}")
+        typer.echo(f"  package: {package_status}")
+        typer.echo(f"  model dir: {dependency.model_dir} ({model_status})")
+        typer.echo(f"  install: {dependency.install_hint}")
+        typer.echo(f"  download: {dependency.download_hint}")
+        typer.echo(f"  license: {dependency.license_hint}")
+        typer.echo(f"  verify: {dependency.verify_hint}")
 
 
 def _parse_key_value_options(options: list[str]) -> dict[str, str]:

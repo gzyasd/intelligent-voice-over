@@ -241,3 +241,21 @@ def test_model_settings_loads_model_diagnostics(qtbot, tmp_path) -> None:
     ]
     assert any("asr / faster-whisper" in text and "model dir: found" in text for text in texts)
     assert any("tts / CosyVoice" in text for text in texts)
+
+
+def test_model_settings_refresh_button_loads_model_diagnostics(qtbot, tmp_path) -> None:
+    from ivo.ui.model_settings import ModelSettings
+
+    models_dir = tmp_path / "models"
+    (models_dir / "tts" / "Fun-CosyVoice3-0.5B").mkdir(parents=True)
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+    settings.local_model_path_edit.setText(str(models_dir))
+
+    settings.refresh_model_diagnostics_button.click()
+
+    texts = [
+        settings.model_diagnostics_list.item(index).text()
+        for index in range(settings.model_diagnostics_list.count())
+    ]
+    assert any("tts / CosyVoice" in text and "model dir: found" in text for text in texts)

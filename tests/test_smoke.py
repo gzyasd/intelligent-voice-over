@@ -783,6 +783,22 @@ def test_doctor_models_reports_optional_dependency_status() -> None:
     assert "model dir:" in result.output
 
 
+def test_doctor_models_can_output_json(tmp_path) -> None:
+    from ivo.cli import app
+
+    models_dir = tmp_path / "models"
+    (models_dir / "asr" / "faster-whisper-large-v3").mkdir(parents=True)
+
+    result = CliRunner().invoke(app, ["doctor-models", "--models-dir", str(models_dir), "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    faster_whisper = next(item for item in payload if item["name"] == "faster-whisper")
+    assert faster_whisper["stage"] == "asr"
+    assert faster_whisper["model_dir_exists"] is True
+    assert "huggingface-cli download" in faster_whisper["download_hint"]
+
+
 def test_optional_model_dependency_status_includes_model_directory(tmp_path) -> None:
     from ivo.environment import collect_optional_model_dependencies
 
@@ -796,3 +812,33 @@ def test_optional_model_dependency_status_includes_model_directory(tmp_path) -> 
     assert faster_whisper.model_dir == model_dir
     assert faster_whisper.model_dir_exists is True
     assert "huggingface-cli download" in faster_whisper.download_hint
+
+
+def test_model_setup_plan_lists_install_download_and_verify_commands(tmp_path) -> None:
+    from ivo.cli import app
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "model",
+            "setup-plan",
+            "--models-dir",
+            str(tmp_path / "models"),
+            "--stage",
+            "tts",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "tts / CosyVoice" in result.output
+    assert "install:" in result.output
+    assert "download:" in result.output
+    assert "verify:" in result.output
+    assert "faster-whisper" not in result.output
+
+
+def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
+    document = Path("docs/local-model-setup.md").read_text(encoding="utf-8")
+
+    assert "uv run ivo doctor-models --json" in document
+    assert "uv run ivo model setup-plan" in document
