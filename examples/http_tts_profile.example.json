@@ -10,6 +10,7 @@
     "text": "{{ segment_text }}",
     "speaker_id": "{{ speaker_id }}",
     "style_prompt": "{{ style_prompt }}",
+    "reference_audio_path": "{{ reference_audio_path }}",
     "target_duration_ms": "{{ target_duration_ms }}"
   },
   "response_mapping": {

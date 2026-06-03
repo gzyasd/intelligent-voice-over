@@ -144,6 +144,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 - `{{ output_audio_path }}`：生成音频输出路径
 - `{{ target_duration_ms }}`：目标片段时长
 - `{{ style_prompt }}`：情感、语气或风格提示
+- `{{ reference_audio_path }}`：从同说话人已审核片段切出的参考音频路径；没有可用参考时为空字符串
 
 `--engine-command-json` 是一个 JSON 数组，数组中的每个字符串会用下面的占位符渲染后执行：
 
@@ -172,6 +173,8 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
   "{{ target_duration_ms }}",
   "--style-prompt",
   "{{ style_prompt }}",
+  "--reference-audio",
+  "{{ reference_audio_path }}",
   "--json-out",
   "{{ output_json_path }}",
   "--engine-command-json",
@@ -249,6 +252,7 @@ TTS HTTP profile 可使用这些模板变量：
 - `{{ segment_text }}`：要合成的中文台词
 - `{{ speaker_id }}`：说话人 ID
 - `{{ style_prompt }}`：情绪、语气或风格提示
+- `{{ reference_audio_path }}`：本地参考 WAV 路径。若线上服务运行在同一台机器，可以直接读取；若需要上传文件，请在自定义 HTTP profile 中结合 `file_upload_fields` 改造成 multipart 请求
 - `{{ target_duration_ms }}`：目标片段时长
 - `{{ output_audio_path }}`：期望写入的本地音频路径
 

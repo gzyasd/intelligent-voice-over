@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import wave
+from pathlib import Path
 
 
 def test_select_reference_segments_returns_approved_speaker_segments(tmp_path) -> None:
@@ -151,4 +152,86 @@ def test_local_command_tts_adapter_generates_audio_from_json_contract(tmp_path) 
 
     assert result.generated_duration_ms == 1000
     assert result.audio_path.is_file()
-    assert commands[0][commands[0].index("--text") + 1] == "你好。"
+    assert commands[0][commands[0].index("--text") + 1] == segment.target_text
+
+
+def test_local_command_tts_receives_extracted_reference_audio(tmp_path) -> None:
+    from ivo.adapters.local import LocalCommandProfile
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import LocalCommandTtsAdapter, synthesize_segment
+
+    project = DubbingProject.create(
+        tmp_path / "reference-tts.ivoproj",
+        name="Reference TTS",
+        source_language="en",
+        target_language="zh",
+    )
+    source_audio = project.path / "assets" / "extracted_audio.wav"
+    _write_test_wav(source_audio, duration_ms=2_000)
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=500,
+        end_ms=1_500,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Hello.",
+        target_language="zh",
+        target_text="Hello.",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+    output_json = tmp_path / "tts-result.json"
+    captured_reference_paths: list[Path] = []
+
+    def runner(command: list[str]) -> None:
+        reference_path = Path(command[command.index("--reference-audio") + 1])
+        captured_reference_paths.append(reference_path)
+        assert reference_path.is_file()
+        audio_path = command[command.index("--audio-out") + 1]
+        _write_test_wav(Path(audio_path), duration_ms=1000)
+        output_json.write_text(
+            json.dumps({"audio_path": audio_path, "duration_ms": 1000}),
+            encoding="utf-8",
+        )
+
+    adapter = LocalCommandTtsAdapter(
+        LocalCommandProfile(
+            id="voice-clone-command",
+            stage="tts",
+            command=[
+                "python",
+                "tts.py",
+                "--text",
+                "{{ segment_text }}",
+                "--speaker",
+                "{{ speaker_id }}",
+                "--reference-audio",
+                "{{ reference_audio_path }}",
+                "--audio-out",
+                "{{ output_audio_path }}",
+                "--json-out",
+                "{{ output_json_path }}",
+            ],
+            output_json_path=str(output_json),
+        ),
+        runner=runner,
+    )
+
+    synthesize_segment(project, segment, adapter)
+
+    assert len(captured_reference_paths) == 1
+    with wave.open(str(captured_reference_paths[0]), "rb") as wav_file:
+        duration_ms = int(wav_file.getnframes() / wav_file.getframerate() * 1000)
+    assert duration_ms == 1000
+
+
+def _write_test_wav(output_path: Path, *, duration_ms: int) -> None:
+    sample_rate = 16_000
+    sample_count = int(sample_rate * duration_ms / 1000)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(output_path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(b"\x00\x00" * sample_count)

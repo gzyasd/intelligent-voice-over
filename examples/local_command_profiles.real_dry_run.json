@@ -59,6 +59,8 @@
       "{{ target_duration_ms }}",
       "--style-prompt",
       "{{ style_prompt }}",
+      "--reference-audio",
+      "{{ reference_audio_path }}",
       "--json-out",
       "{{ output_json_path }}",
       "--dry-run"

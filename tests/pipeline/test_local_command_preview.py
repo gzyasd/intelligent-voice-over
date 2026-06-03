@@ -205,8 +205,9 @@ def test_local_command_preview_can_use_custom_tts_adapter(tmp_path) -> None:
             speaker_id: str,
             output_path: Path,
             style_prompt: str | None,
+            reference_audio_path: Path | None,
             target_duration_ms: int,
-        ) -> int:
+            ) -> int:
             self.texts.append(text)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with wave.open(str(output_path), "wb") as wav_file:

@@ -30,6 +30,7 @@ class TtsAdapter(Protocol):
         speaker_id: str,
         output_path: Path,
         style_prompt: str | None,
+        reference_audio_path: Path | None,
         target_duration_ms: int,
     ) -> int: ...
 
@@ -45,6 +46,7 @@ class MockTtsAdapter:
         speaker_id: str,
         output_path: Path,
         style_prompt: str | None,
+        reference_audio_path: Path | None,
         target_duration_ms: int,
     ) -> int:
         duration_ms = self.generated_duration_ms or target_duration_ms
@@ -69,6 +71,7 @@ class LocalCommandTtsAdapter:
         speaker_id: str,
         output_path: Path,
         style_prompt: str | None,
+        reference_audio_path: Path | None,
         target_duration_ms: int,
     ) -> int:
         result = self.adapter.run(
@@ -78,6 +81,7 @@ class LocalCommandTtsAdapter:
                 source_language="",
                 target_language="zh",
                 speaker_id=speaker_id,
+                reference_audio_path=reference_audio_path,
                 extra={
                     "output_audio_path": str(output_path),
                     "style_prompt": style_prompt or "",
@@ -123,6 +127,7 @@ class HttpTtsAdapter:
         speaker_id: str,
         output_path: Path,
         style_prompt: str | None,
+        reference_audio_path: Path | None,
         target_duration_ms: int,
     ) -> int:
         result = self.adapter.run(
@@ -132,6 +137,7 @@ class HttpTtsAdapter:
                 source_language="",
                 target_language="zh",
                 speaker_id=speaker_id,
+                reference_audio_path=reference_audio_path,
                 extra={
                     "output_audio_path": str(output_path),
                     "style_prompt": style_prompt or "",
@@ -191,11 +197,13 @@ def synthesize_segment(
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{segment.id}.wav"
     target_duration_ms = segment.end_ms - segment.start_ms
+    reference_audio_path = extract_reference_audio(project, segment)
     generated_duration_ms = adapter.synthesize(
         text=segment.target_text,
         speaker_id=segment.speaker_id,
         output_path=output_path,
         style_prompt=segment.style_prompt,
+        reference_audio_path=reference_audio_path,
         target_duration_ms=target_duration_ms,
     )
     quality_flags = (
@@ -214,6 +222,57 @@ def synthesize_segment(
         generated_duration_ms=generated_duration_ms,
         quality_flags=quality_flags,
     )
+
+
+def extract_reference_audio(project: DubbingProject, segment: DubbingSegment) -> Path | None:
+    source_audio = project.path / "assets" / "extracted_audio.wav"
+    if not source_audio.is_file():
+        return None
+
+    references = select_reference_segments(project.timeline, speaker_id=segment.speaker_id, limit=1)
+    if not references:
+        return None
+
+    reference = references[0]
+    output_dir = project.path / "work" / "reference_segments"
+    output_path = output_dir / (
+        f"{_safe_filename(reference.speaker_id)}-{_safe_filename(reference.id)}.wav"
+    )
+    if output_path.is_file():
+        return output_path
+
+    try:
+        _copy_wav_slice(
+            source_audio,
+            output_path,
+            start_ms=reference.start_ms,
+            end_ms=reference.end_ms,
+        )
+    except (EOFError, OSError, wave.Error):
+        return None
+    return output_path
+
+
+def _copy_wav_slice(source_path: Path, output_path: Path, *, start_ms: int, end_ms: int) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(source_path), "rb") as source_wav:
+        frame_rate = source_wav.getframerate()
+        total_frames = source_wav.getnframes()
+        start_frame = min(int(frame_rate * start_ms / 1000), total_frames)
+        end_frame = min(int(frame_rate * end_ms / 1000), total_frames)
+        frame_count = max(end_frame - start_frame, 0)
+        source_wav.setpos(start_frame)
+        frames = source_wav.readframes(frame_count)
+        params = source_wav.getparams()
+
+    with wave.open(str(output_path), "wb") as output_wav:
+        output_wav.setparams(params)
+        output_wav.writeframes(frames)
+
+
+def _safe_filename(value: str) -> str:
+    safe = "".join(char if char.isalnum() or char in "-_." else "_" for char in value)
+    return safe or "reference"
 
 
 def _write_silent_wav(output_path: Path, *, duration_ms: int) -> None:
