@@ -282,8 +282,9 @@ uv run ivo doctor-models
     "target_text": "$.target_text",
     "emotion": "$.emotion",
     "style_prompt": "$.style_prompt"
-  }
+  },
+  "optional_response_keys": ["style_prompt"]
 }
 ```
 
-`style_prompt` 会进入时间线片段，并在后续本地 TTS 命令或 HTTP TTS profile 中通过 `{{ style_prompt }}` 传给模型。若翻译服务暂时只返回 `emotion`，流水线会自动把 `emotion` 作为 `style_prompt` 的兜底值，保证“温柔、紧张、克制、哭腔”等情绪信息不会在翻译和配音之间丢失。
+`style_prompt` 会进入时间线片段，并在后续本地 TTS 命令或 HTTP TTS profile 中通过 `{{ style_prompt }}` 传给模型。把 `style_prompt` 放进 `optional_response_keys` 后，翻译服务暂时只返回 `emotion` 也不会失败；流水线会自动把 `emotion` 作为 `style_prompt` 的兜底值，保证“温柔、紧张、克制、哭腔”等情绪信息不会在翻译和配音之间丢失。

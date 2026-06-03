@@ -18,5 +18,8 @@
     "emotion": "$.emotion",
     "style_prompt": "$.style_prompt"
   },
+  "optional_response_keys": [
+    "style_prompt"
+  ],
   "timeout_seconds": 120
 }

@@ -201,3 +201,49 @@ def test_http_translation_adapter_maps_style_prompt(tmp_path) -> None:
     )
 
     assert result.style_prompt == "warm, restrained and conversational"
+
+
+def test_http_translation_adapter_allows_missing_optional_style_prompt(tmp_path) -> None:
+    from ivo.adapters.http import ApiAdapterProfile
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import HttpTranslationAdapter
+
+    adapter = HttpTranslationAdapter(
+        ApiAdapterProfile(
+            id="emotion-only-translator",
+            stage="translation",
+            method="POST",
+            url="https://api.example.test/translate",
+            headers={},
+            request_template={"prompt": "{{ prompt }}", "text": "{{ segment_text }}"},
+            response_mapping={
+                "target_text": "$.text",
+                "emotion": "$.emotion",
+                "style_prompt": "$.style_prompt",
+            },
+            optional_response_keys={"style_prompt"},
+        ),
+        project_path=tmp_path,
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={"text": "Hello there.", "emotion": "warm"},
+                )
+            )
+        ),
+    )
+
+    result = adapter.translate(
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            source_language="en",
+            source_text="Well, hi.",
+        ),
+        prompt="translate",
+    )
+
+    assert result.emotion == "warm"
+    assert result.style_prompt is None

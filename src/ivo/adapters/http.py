@@ -21,6 +21,7 @@ class ApiAdapterProfile(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     request_template: dict[str, Any] = Field(default_factory=dict)
     response_mapping: dict[str, str] = Field(default_factory=dict)
+    optional_response_keys: list[str] = Field(default_factory=list)
     timeout_seconds: int = 120
     file_upload_fields: dict[str, str] = Field(default_factory=dict)
 
@@ -120,6 +121,8 @@ class HttpStageAdapter:
         for output_key, expression in self.profile.response_mapping.items():
             matches = [match.value for match in parse(expression).find(response_json)]
             if not matches:
+                if output_key in self.profile.optional_response_keys:
+                    continue
                 raise ValueError(f"response mapping did not match: {output_key}")
             mapped[output_key] = matches[0]
         return mapped

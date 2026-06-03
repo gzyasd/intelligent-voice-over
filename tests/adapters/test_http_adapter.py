@@ -134,3 +134,42 @@ def test_http_adapter_returns_timeout_error(tmp_path) -> None:
     assert result.error.provider == "slow-provider"
     assert result.error.retryable is True
     assert "timed out" in result.error.message
+
+
+def test_http_adapter_skips_missing_optional_response_mapping(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter
+
+    adapter = HttpStageAdapter(
+        ApiAdapterProfile(
+            id="style-provider",
+            stage="translation",
+            method="POST",
+            url="https://api.example.test/translate",
+            headers={},
+            request_template={"text": "{{ segment_text }}"},
+            response_mapping={
+                "target_text": "$.text",
+                "style_prompt": "$.style_prompt",
+            },
+            optional_response_keys={"style_prompt"},
+        ),
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json={"text": "Hello there."})
+            )
+        ),
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="Hello",
+            source_language="en",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is True
+    assert result.payload == {"target_text": "Hello there."}

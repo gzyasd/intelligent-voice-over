@@ -54,3 +54,15 @@ def test_http_diarization_profile_maps_segments() -> None:
     assert profile.stage == "diarization"
     assert profile.request_template["audio_path"] == "{{ audio_path }}"
     assert profile.response_mapping["segments"] == "$.segments"
+
+
+def test_http_translation_profile_marks_style_prompt_optional() -> None:
+    profile = ApiAdapterProfile.model_validate(
+        json.loads(
+            Path("examples/http_translation_profile.example.json").read_text(encoding="utf-8")
+        )
+    )
+
+    assert profile.stage == "translation"
+    assert profile.response_mapping["style_prompt"] == "$.style_prompt"
+    assert "style_prompt" in profile.optional_response_keys
