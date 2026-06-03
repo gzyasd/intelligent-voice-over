@@ -87,7 +87,7 @@ def local_preview(
             exists=True,
             dir_okay=False,
             readable=True,
-            help="JSON file containing separation/asr/tts local command profiles.",
+            help="JSON file containing local command profiles for the dubbing pipeline.",
         ),
     ],
     project_name: Annotated[str, typer.Option()] = "Local Preview",
