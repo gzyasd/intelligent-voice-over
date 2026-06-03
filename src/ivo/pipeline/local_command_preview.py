@@ -14,8 +14,12 @@ from ivo.pipeline.separate_audio import LocalCommandSeparationAdapter, separate_
 from ivo.pipeline.synthesize import LocalCommandTtsAdapter, TtsAdapter, synthesize_segment
 from ivo.pipeline.transcribe import (
     AsrAdapter,
+    DiarizationAdapter,
     LocalCommandAsrAdapter,
+    LocalCommandDiarizationAdapter,
     TranscriptionSegment,
+    assign_speakers,
+    diarize_audio,
     transcribe_audio,
 )
 from ivo.pipeline.translate import (
@@ -29,6 +33,7 @@ from ivo.pipeline.translate import (
 class LocalCommandPipelineProfiles(BaseModel):
     separation: LocalCommandProfile
     asr: LocalCommandProfile
+    diarization: LocalCommandProfile | None = None
     tts: LocalCommandProfile
 
 
@@ -45,6 +50,7 @@ def run_local_command_preview(
     profiles: LocalCommandPipelineProfiles,
     translation_overrides: dict[str, str] | None = None,
     asr_adapter: AsrAdapter | None = None,
+    diarization_adapter: DiarizationAdapter | None = None,
     translation_adapter: TranslationAdapter | None = None,
     tts_adapter: TtsAdapter | None = None,
     ffmpeg_path: str | None = None,
@@ -63,6 +69,14 @@ def run_local_command_preview(
         separation.vocals_path,
         source_language=project.source_language,
     )
+    active_diarization_adapter = diarization_adapter
+    if active_diarization_adapter is None and profiles.diarization is not None:
+        active_diarization_adapter = LocalCommandDiarizationAdapter(profiles.diarization)
+    if active_diarization_adapter is not None:
+        source_segments = assign_speakers(
+            source_segments,
+            diarize_audio(active_diarization_adapter, separation.vocals_path),
+        )
     adapter = translation_adapter or _build_override_translation_adapter(
         source_segments,
         translation_overrides=translation_overrides or {},

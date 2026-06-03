@@ -118,3 +118,61 @@ def test_local_command_asr_adapter_reads_segments_from_json(tmp_path) -> None:
             str(output),
         ]
     ]
+
+
+def test_local_command_diarization_adapter_reads_segments_from_json(tmp_path) -> None:
+    from ivo.adapters.local import LocalCommandProfile
+    from ivo.pipeline.transcribe import LocalCommandDiarizationAdapter, diarize_audio
+
+    audio = tmp_path / "vocals.wav"
+    audio.write_bytes(b"fake-wav")
+    output = tmp_path / "diarization.json"
+    commands: list[list[str]] = []
+
+    def runner(command: list[str]) -> None:
+        commands.append(command)
+        output.write_text(
+            """
+            {
+              "segments": [
+                {
+                  "start_ms": 0,
+                  "end_ms": 1200,
+                  "speaker_id": "speaker-a"
+                }
+              ]
+            }
+            """,
+            encoding="utf-8",
+        )
+
+    adapter = LocalCommandDiarizationAdapter(
+        LocalCommandProfile(
+            id="pyannote-local",
+            stage="diarization",
+            command=[
+                "python",
+                "diarize.py",
+                "--audio",
+                "{{ audio_path }}",
+                "--out",
+                "{{ output_json_path }}",
+            ],
+            output_json_path=str(output),
+        ),
+        runner=runner,
+    )
+
+    segments = diarize_audio(adapter, audio)
+
+    assert segments[0].speaker_id == "speaker-a"
+    assert commands == [
+        [
+            "python",
+            "diarize.py",
+            "--audio",
+            str(audio),
+            "--out",
+            str(output),
+        ]
+    ]

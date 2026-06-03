@@ -4,6 +4,9 @@ import json
 import subprocess
 import sys
 import wave
+from pathlib import Path
+
+from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
 
 
 def test_example_asr_command_outputs_contract(tmp_path) -> None:
@@ -82,3 +85,35 @@ def test_example_separation_command_writes_outputs_and_contract(tmp_path) -> Non
     assert data["vocals_path"] == str(vocals)
     assert vocals.read_bytes() == b"fake"
     assert background.read_bytes() == b"fake"
+
+
+def test_example_diarization_command_outputs_contract(tmp_path) -> None:
+    source = tmp_path / "vocals.wav"
+    source.write_bytes(b"fake")
+    output = tmp_path / "diarization.json"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "examples/local_commands/mock_diarization.py",
+            "--audio",
+            str(source),
+            "--out",
+            str(output),
+        ],
+        check=True,
+    )
+
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert data["segments"] == [
+        {"start_ms": 0, "end_ms": 1200, "speaker_id": "speaker-1"}
+    ]
+
+
+def test_mock_local_command_profile_includes_diarization() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(Path("examples/local_command_profiles.mock.json").read_text(encoding="utf-8"))
+    )
+
+    assert profile.diarization is not None
+    assert profile.diarization.stage == "diarization"

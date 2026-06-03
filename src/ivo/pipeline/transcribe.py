@@ -45,6 +45,11 @@ class AsrAdapter(Protocol):
         ...
 
 
+class DiarizationAdapter(Protocol):
+    def diarize(self, audio_path: Path) -> list[DiarizationSegment]:
+        ...
+
+
 class MockAsrAdapter:
     def __init__(self, segments: list[TranscriptionSegment]) -> None:
         self.segments = segments
@@ -101,6 +106,51 @@ class LocalCommandAsrAdapter:
                     source_language=source_language,
                     source_text=str(raw_segment.get("source_text", raw_segment.get("text", ""))),
                     speaker_id=str(raw_segment.get("speaker_id", "unknown")),
+                )
+            )
+        return segments
+
+
+class LocalCommandDiarizationAdapter:
+    def __init__(
+        self,
+        profile: LocalCommandProfile,
+        *,
+        runner: CommandRunner | None = None,
+    ) -> None:
+        self.profile = profile
+        self.adapter = LocalCommandAdapter(profile, runner=runner)
+
+    def diarize(self, audio_path: Path) -> list[DiarizationSegment]:
+        if not audio_path.is_file():
+            raise FileNotFoundError(audio_path)
+        result = self.adapter.run(
+            AdapterContext(
+                project_path=audio_path.parent,
+                segment_text="",
+                source_language="en",
+                target_language="zh",
+                speaker_id="unknown",
+                extra={"audio_path": str(audio_path)},
+            )
+        )
+        if not result.ok:
+            message = result.error.message if result.error is not None else "unknown diarization error"
+            raise RuntimeError(f"{self.profile.id}: {message}")
+
+        raw_segments = result.payload.get("segments")
+        if not isinstance(raw_segments, list):
+            raise RuntimeError(f"{self.profile.id}: diarization output missing segments list")
+
+        segments: list[DiarizationSegment] = []
+        for raw_segment in raw_segments:
+            if not isinstance(raw_segment, dict):
+                raise RuntimeError(f"{self.profile.id}: diarization segment must be an object")
+            segments.append(
+                DiarizationSegment(
+                    start_ms=int(raw_segment["start_ms"]),
+                    end_ms=int(raw_segment["end_ms"]),
+                    speaker_id=str(raw_segment["speaker_id"]),
                 )
             )
         return segments
@@ -174,6 +224,13 @@ def transcribe_audio(
     source_language: SourceLanguage,
 ) -> list[TranscriptionSegment]:
     return adapter.transcribe(audio_path, source_language=source_language)
+
+
+def diarize_audio(
+    adapter: DiarizationAdapter,
+    audio_path: Path,
+) -> list[DiarizationSegment]:
+    return adapter.diarize(audio_path)
 
 
 def assign_speakers(

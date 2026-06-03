@@ -93,6 +93,44 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 }
 ```
 
+### 说话人分离：可选本地命令
+
+本地命令 profiles 可以额外提供 `diarization` 阶段。该阶段读取分离后的人声音频，并输出说话人时间范围；流水线会把这些范围映射回 ASR 片段，用于后续翻译、TTS 和时间线编辑。
+
+`examples/local_command_profiles.mock.json` 已包含一个可直接运行的 mock diarization 命令：
+
+```json
+{
+  "diarization": {
+    "id": "mock-diarization",
+    "stage": "diarization",
+    "command": [
+      "python",
+      "examples/local_commands/mock_diarization.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--out",
+      "{{ output_json_path }}"
+    ],
+    "output_json_path": "{{ project_path }}/mock-diarization.json"
+  }
+}
+```
+
+输出 JSON 合约：
+
+```json
+{
+  "segments": [
+    {
+      "start_ms": 0,
+      "end_ms": 1200,
+      "speaker_id": "speaker-1"
+    }
+  ]
+}
+```
+
 ### TTS / 音色克隆：F5-TTS 骨架
 
 脚本：`examples/local_commands/f5_tts_command.py`

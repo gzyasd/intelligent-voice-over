@@ -31,6 +31,19 @@
     ],
     "output_json_path": "{{ project_path }}/mock-asr.json"
   },
+  "diarization": {
+    "id": "mock-diarization",
+    "stage": "diarization",
+    "command": [
+      "python",
+      "examples/local_commands/mock_diarization.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--out",
+      "{{ output_json_path }}"
+    ],
+    "output_json_path": "{{ project_path }}/mock-diarization.json"
+  },
   "tts": {
     "id": "mock-tts",
     "stage": "tts",
