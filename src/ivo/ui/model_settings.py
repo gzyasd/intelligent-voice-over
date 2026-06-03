@@ -95,7 +95,7 @@ class ModelSettings(QWidget):
         layout.addWidget(self.url_edit)
         layout.addWidget(QLabel("响应映射"))
         layout.addWidget(self.response_mapping_edit)
-        layout.addWidget(QLabel("Optional response keys"))
+        layout.addWidget(QLabel("\u53ef\u9009\u54cd\u5e94\u5b57\u6bb5\uff08\u9017\u53f7\u5206\u9694\uff09"))
         layout.addWidget(self.optional_response_keys_edit)
         layout.addWidget(QLabel("已配置 adapter"))
         layout.addWidget(self.adapter_list)

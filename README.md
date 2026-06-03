@@ -79,7 +79,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 自定义线上模型 API 通过 `ApiAdapterProfile` 描述，并可保存为 JSON profile。当前 CLI 支持添加和查看 HTTP adapter profile：
 
 ```powershell
-uv run ivo adapter add-http .\adapters.json --id translator --stage translation --url https://api.example.test/translate --response target_text=$.text
+uv run ivo adapter add-http .\adapters.json --id translator --stage translation --url https://api.example.test/translate --response target_text=$.text --optional-response style_prompt
 uv run ivo adapter list .\adapters.json
 ```
 
