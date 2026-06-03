@@ -17,5 +17,8 @@
     "audio_base64": "$.audio_base64",
     "duration_ms": "$.duration_ms"
   },
+  "optional_response_keys": [
+    "duration_ms"
+  ],
   "timeout_seconds": 120
 }

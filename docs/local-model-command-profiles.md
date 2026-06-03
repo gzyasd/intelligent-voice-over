@@ -261,7 +261,7 @@ TTS HTTP profile 可使用这些模板变量：
 - `audio_base64`：推荐方式，服务端直接返回 base64 编码音频，客户端写入 `work/generated_segments/`。
 - `audio_path`：服务端返回本机可读音频路径，客户端复制到目标片段音频路径。
 
-无论哪种方式，都建议返回 `duration_ms`，用于后续时长质量标记。
+无论哪种方式，都建议返回 `duration_ms`，用于后续时长质量标记。若服务暂时只返回音频，可以把 `duration_ms` 放进 `optional_response_keys`；客户端会用片段目标时长作为兜底值。
 
 ## 环境检查
 

@@ -75,3 +75,59 @@ def test_http_tts_adapter_writes_base64_audio_from_online_api(tmp_path) -> None:
     assert project.timeline.get_segment("seg-001").quality_flags == ["duration_ok"]
     assert '"text":"\u4f60\u597d\u3002"' in captured["body"]
     assert "warm and natural" in captured["body"]
+
+
+def test_http_tts_adapter_uses_target_duration_when_optional_duration_missing(tmp_path) -> None:
+    from ivo.adapters.http import ApiAdapterProfile
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import HttpTtsAdapter, synthesize_segment
+
+    audio_bytes = b"fake-wav-bytes"
+    project = DubbingProject.create(
+        tmp_path / "http-tts-default-duration.ivoproj",
+        name="HTTP TTS Default Duration",
+        source_language="en",
+        target_language="zh",
+    )
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Hello.",
+        target_language="zh",
+        target_text="Hello.",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+    adapter = HttpTtsAdapter(
+        ApiAdapterProfile(
+            id="online-voice-clone",
+            stage="tts",
+            method="POST",
+            url="https://api.example.test/tts",
+            headers={},
+            request_template={"text": "{{ segment_text }}"},
+            response_mapping={
+                "audio_base64": "$.audio_base64",
+                "duration_ms": "$.duration_ms",
+            },
+            optional_response_keys=["duration_ms"],
+        ),
+        project_path=project.path,
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={"audio_base64": base64.b64encode(audio_bytes).decode("ascii")},
+                )
+            )
+        ),
+    )
+
+    result = synthesize_segment(project, segment, adapter)
+
+    assert result.generated_duration_ms == 1000
+    assert result.audio_path.read_bytes() == audio_bytes

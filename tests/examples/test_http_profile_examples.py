@@ -66,3 +66,13 @@ def test_http_translation_profile_marks_style_prompt_optional() -> None:
     assert profile.stage == "translation"
     assert profile.response_mapping["style_prompt"] == "$.style_prompt"
     assert "style_prompt" in profile.optional_response_keys
+
+
+def test_http_tts_profile_marks_duration_optional() -> None:
+    profile = ApiAdapterProfile.model_validate(
+        json.loads(Path("examples/http_tts_profile.example.json").read_text(encoding="utf-8"))
+    )
+
+    assert profile.stage == "tts"
+    assert profile.response_mapping["duration_ms"] == "$.duration_ms"
+    assert "duration_ms" in profile.optional_response_keys
