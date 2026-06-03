@@ -1,0 +1,17 @@
+{
+  "id": "online-asr",
+  "stage": "asr",
+  "method": "POST",
+  "url": "https://api.example.test/asr",
+  "headers": {
+    "Authorization": "Bearer {{ api_key }}"
+  },
+  "request_template": {
+    "audio_path": "{{ audio_path }}",
+    "source_language": "{{ source_language }}"
+  },
+  "response_mapping": {
+    "segments": "$.segments"
+  },
+  "timeout_seconds": 120
+}

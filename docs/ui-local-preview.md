@@ -1,6 +1,6 @@
 # 桌面 UI 本地命令预览说明
 
-主窗口现在提供“本地命令预览”入口，可以从“模型设置”页读取本地命令 profiles JSON 和可选的翻译 HTTP profile，然后调用与 CLI 相同的 `run_local_command_preview` 流水线。
+主窗口提供“本地命令预览”入口，可以从“模型设置”页读取本地命令 profiles JSON，以及可选的 ASR、翻译、TTS HTTP profile，然后调用与 CLI 相同的 `run_local_command_preview` 流水线。
 
 ## 使用步骤
 
@@ -12,13 +12,25 @@
 F:\GZYproject\Intelligent-Voice-Over\examples\local_command_profiles.real_dry_run.json
 ```
 
-4. 如果翻译阶段使用线上 API，在“翻译 HTTP profile JSON”填写或浏览选择：
+4. 如果 ASR / 转写阶段使用线上 API，在“ASR HTTP profile JSON”填写或浏览选择：
+
+```text
+F:\GZYproject\Intelligent-Voice-Over\examples\http_asr_profile.example.json
+```
+
+5. 如果翻译阶段使用线上 API，在“翻译 HTTP profile JSON”填写或浏览选择：
 
 ```text
 F:\GZYproject\Intelligent-Voice-Over\examples\http_translation_profile.example.json
 ```
 
-5. 如果 HTTP profile 使用了 `{{ api_key }}` 等变量，在“翻译变量 KEY=VALUE”填写，例如：
+6. 如果 TTS / 音色克隆阶段使用线上 API，在“TTS HTTP profile JSON”填写或浏览选择：
+
+```text
+F:\GZYproject\Intelligent-Voice-Over\examples\http_tts_profile.example.json
+```
+
+7. 如果 HTTP profile 使用了 `{{ api_key }}` 等变量，在对应阶段的“变量 KEY=VALUE”输入框填写，例如：
 
 ```text
 api_key=YOUR_API_KEY
@@ -26,9 +38,9 @@ api_key=YOUR_API_KEY
 
 多个变量可以用逗号或换行分隔。
 
-6. 点击“本地命令预览”。
+8. 点击“本地命令预览”。
 
-命令行模式支持通过 `--tts-profile` 把 TTS / 音色克隆阶段切到线上 HTTP API；桌面 UI 也可以在“模型设置”页填写或浏览选择 TTS HTTP profile，并填写 `KEY=VALUE` 形式的 TTS 变量。
+命令行模式和桌面 UI 都支持把 ASR、翻译、TTS 任一阶段切到线上 HTTP API；未配置 HTTP profile 的阶段会继续使用本地命令 profiles。
 
 ## 时间线编辑
 
@@ -38,7 +50,7 @@ api_key=YOUR_API_KEY
 - 只读：片段 ID、原文、质量标记。
 - 状态必须是 `pending`、`running`、`needs_review`、`approved`、`failed`、`rendered` 之一。
 - “保存”会调用 `TimelineEditor.save_row(row)` 并写回项目数据库。
-- “重生成”会先在 UI 线程保存当前行的可见编辑内容，再由主窗口读取本地命令 profiles JSON 中的 `tts` profile，并通过后台 worker 调用 TTS adapter 对该片段重新合成；完成后会刷新时间线，失败时会恢复按钮并弹出错误提示。
+- “重生成”会先在 UI 线程保存当前行的可见编辑内容，再读取本地命令 profiles JSON 中的 `tts` profile，或优先使用 TTS HTTP profile，对该片段重新合成；完成后刷新时间线，失败时恢复按钮并弹出错误提示。
 
 ## 最终导出
 
@@ -57,7 +69,7 @@ api_key=YOUR_API_KEY
 
 - profiles 路径不存在；
 - 本地命令脚本运行失败；
-- HTTP 翻译 API 超时或返回非成功状态；
+- HTTP ASR、翻译或 TTS API 超时，或返回非成功状态；
 - FFmpeg 不可用或导出失败。
 
 ## 当前限制

@@ -114,6 +114,20 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 }
 ```
 
+## 混合线上 ASR API
+
+如果只想让 ASR / 转写阶段走线上模型 API，同时分离、翻译、TTS 走本地命令或 mock 覆盖，可以搭配 `examples/http_asr_profile.example.json`：
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --asr-profile .\examples\http_asr_profile.example.json --asr-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
+```
+
+ASR HTTP profile 可使用这些模板变量：
+
+- `{{ audio_path }}`：分离后的人声音频路径。
+- `{{ source_language }}`：源语言，例如 `en`、`ja`、`ko`。
+
+响应映射必须提供 `segments`，每个片段建议包含 `id`、`start_ms`、`end_ms`、`text` 或 `source_text`、`speaker_id`。字段格式与本地 ASR 命令输出保持一致。
+
 ## 混合线上翻译 API
 
 如果只想让翻译阶段走线上模型 API，同时 ASR、分离、TTS 走本地命令，可以搭配 `examples/http_translation_profile.example.json`：

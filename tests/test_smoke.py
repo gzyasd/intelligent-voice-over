@@ -336,6 +336,97 @@ def test_local_preview_command_loads_http_tts_profile(monkeypatch, tmp_path) -> 
     assert adapter.extra == {"api_key": "test-token"}
 
 
+def test_local_preview_command_loads_http_asr_profile(monkeypatch, tmp_path) -> None:
+    from ivo.cli import app
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
+    output_dir = tmp_path / "out"
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(
+        json.dumps(
+            {
+                "separation": {
+                    "id": "sep",
+                    "stage": "separation",
+                    "command": ["sep"],
+                    "output_json_path": "sep.json",
+                },
+                "asr": {
+                    "id": "asr",
+                    "stage": "asr",
+                    "command": ["asr"],
+                    "output_json_path": "asr.json",
+                },
+                "tts": {
+                    "id": "tts",
+                    "stage": "tts",
+                    "command": ["tts"],
+                    "output_json_path": "tts.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    asr_profile = tmp_path / "asr-http.json"
+    asr_profile.write_text(
+        json.dumps(
+            {
+                "id": "online-asr",
+                "stage": "asr",
+                "method": "POST",
+                "url": "https://api.example.test/asr",
+                "headers": {"Authorization": "Bearer {{ api_key }}"},
+                "request_template": {"audio_path": "{{ audio_path }}"},
+                "response_mapping": {"segments": "$.segments"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run_local_command_preview(*args, **kwargs) -> LocalCommandPreviewResult:
+        project = args[0]
+        captured["asr_adapter"] = kwargs["asr_adapter"]
+        final_video = project.path / "renders" / "local-preview.mp4"
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr(
+        "ivo.cli.run_local_command_preview",
+        fake_run_local_command_preview,
+        raising=False,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "local-preview",
+            str(source),
+            str(output_dir),
+            "--profiles",
+            str(profiles_path),
+            "--asr-profile",
+            str(asr_profile),
+            "--asr-var",
+            "api_key=test-token",
+            "--project-name",
+            "Episode 01",
+        ],
+    )
+
+    adapter = captured["asr_adapter"]
+    assert result.exit_code == 0
+    assert adapter.__class__.__name__ == "HttpAsrAdapter"
+    assert adapter.profile.id == "online-asr"
+    assert adapter.extra == {"api_key": "test-token"}
+
+
 def test_local_preview_command_runs_real_dry_run_profile(tmp_path) -> None:
     from ivo.cli import app
     from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg

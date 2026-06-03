@@ -1,0 +1,31 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from ivo.adapters.http import ApiAdapterProfile
+
+
+def test_http_profile_examples_are_valid() -> None:
+    for profile_path in [
+        Path("examples/http_translation_profile.example.json"),
+        Path("examples/http_asr_profile.example.json"),
+        Path("examples/http_tts_profile.example.json"),
+    ]:
+        profile = ApiAdapterProfile.model_validate(
+            json.loads(profile_path.read_text(encoding="utf-8"))
+        )
+
+        assert profile.id
+        assert profile.method == "POST"
+        assert "Authorization" in profile.headers
+
+
+def test_http_asr_profile_maps_segments() -> None:
+    profile = ApiAdapterProfile.model_validate(
+        json.loads(Path("examples/http_asr_profile.example.json").read_text(encoding="utf-8"))
+    )
+
+    assert profile.stage == "asr"
+    assert profile.request_template["audio_path"] == "{{ audio_path }}"
+    assert profile.response_mapping["segments"] == "$.segments"

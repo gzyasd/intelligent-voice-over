@@ -12,7 +12,12 @@ from ivo.pipeline.import_video import extract_normalized_audio, import_source_vi
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
 from ivo.pipeline.separate_audio import LocalCommandSeparationAdapter, separate_audio
 from ivo.pipeline.synthesize import LocalCommandTtsAdapter, TtsAdapter, synthesize_segment
-from ivo.pipeline.transcribe import LocalCommandAsrAdapter, TranscriptionSegment, transcribe_audio
+from ivo.pipeline.transcribe import (
+    AsrAdapter,
+    LocalCommandAsrAdapter,
+    TranscriptionSegment,
+    transcribe_audio,
+)
 from ivo.pipeline.translate import (
     MockTranslationAdapter,
     TranslationAdapter,
@@ -39,6 +44,7 @@ def run_local_command_preview(
     source_video: Path,
     profiles: LocalCommandPipelineProfiles,
     translation_overrides: dict[str, str] | None = None,
+    asr_adapter: AsrAdapter | None = None,
     translation_adapter: TranslationAdapter | None = None,
     tts_adapter: TtsAdapter | None = None,
     ffmpeg_path: str | None = None,
@@ -51,8 +57,9 @@ def run_local_command_preview(
         extracted_audio,
         LocalCommandSeparationAdapter(profiles.separation),
     )
+    active_asr_adapter = asr_adapter or LocalCommandAsrAdapter(profiles.asr)
     source_segments = transcribe_audio(
-        LocalCommandAsrAdapter(profiles.asr),
+        active_asr_adapter,
         separation.vocals_path,
         source_language=project.source_language,
     )

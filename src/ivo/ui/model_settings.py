@@ -22,6 +22,9 @@ class ModelSettings(QWidget):
         self.local_model_path_edit = QLineEdit()
         self.local_command_profiles_path_edit = QLineEdit()
         self.local_command_profiles_browse_button = QPushButton("浏览本地命令 profile")
+        self.asr_profile_path_edit = QLineEdit()
+        self.asr_profile_browse_button = QPushButton("浏览 ASR profile")
+        self.asr_vars_edit = QLineEdit()
         self.translation_profile_path_edit = QLineEdit()
         self.translation_profile_browse_button = QPushButton("浏览翻译 profile")
         self.translation_vars_edit = QLineEdit()
@@ -38,6 +41,7 @@ class ModelSettings(QWidget):
         self.local_command_profiles_browse_button.clicked.connect(
             self.browse_local_command_profiles
         )
+        self.asr_profile_browse_button.clicked.connect(self.browse_asr_profile)
         self.translation_profile_browse_button.clicked.connect(self.browse_translation_profile)
         self.tts_profile_browse_button.clicked.connect(self.browse_tts_profile)
 
@@ -47,6 +51,11 @@ class ModelSettings(QWidget):
         layout.addWidget(QLabel("本地命令 profiles JSON"))
         layout.addWidget(self.local_command_profiles_path_edit)
         layout.addWidget(self.local_command_profiles_browse_button)
+        layout.addWidget(QLabel("ASR HTTP profile JSON"))
+        layout.addWidget(self.asr_profile_path_edit)
+        layout.addWidget(self.asr_profile_browse_button)
+        layout.addWidget(QLabel("ASR 变量 KEY=VALUE"))
+        layout.addWidget(self.asr_vars_edit)
         layout.addWidget(QLabel("翻译 HTTP profile JSON"))
         layout.addWidget(self.translation_profile_path_edit)
         layout.addWidget(self.translation_profile_browse_button)
@@ -108,6 +117,16 @@ class ModelSettings(QWidget):
         )
         if path:
             self.local_command_profiles_path_edit.setText(path)
+
+    def browse_asr_profile(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "选择 ASR HTTP profile JSON",
+            "",
+            "JSON files (*.json);;All files (*)",
+        )
+        if path:
+            self.asr_profile_path_edit.setText(path)
 
     def browse_translation_profile(self) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(
