@@ -15,7 +15,8 @@
   },
   "response_mapping": {
     "target_text": "$.target_text",
-    "emotion": "$.emotion"
+    "emotion": "$.emotion",
+    "style_prompt": "$.style_prompt"
   },
   "timeout_seconds": 120
 }

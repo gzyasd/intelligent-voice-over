@@ -17,6 +17,7 @@ class TranslationResult(BaseModel):
     segment_id: str
     target_text: str
     emotion: str | None = None
+    style_prompt: str | None = None
 
 
 class TranslationAdapter(Protocol):
@@ -72,10 +73,12 @@ class HttpTranslationAdapter:
         if not isinstance(target_text, str) or not target_text:
             raise TranslationProviderError(f"{self.profile.id}: missing target_text in response")
         emotion = result.payload.get("emotion")
+        style_prompt = result.payload.get("style_prompt")
         return TranslationResult(
             segment_id=segment.id,
             target_text=target_text,
             emotion=emotion if isinstance(emotion, str) else None,
+            style_prompt=style_prompt if isinstance(style_prompt, str) else None,
         )
 
 
@@ -113,6 +116,7 @@ def translate_segments(
             target_language=project.target_language,
             target_text=translation.target_text,
             emotion=translation.emotion,
+            style_prompt=translation.style_prompt or translation.emotion,
             status="needs_review",
         )
         project.timeline.add_segment(segment)

@@ -65,6 +65,7 @@ def test_translate_segments_writes_needs_review_timeline_entries(tmp_path) -> No
     assert created[0].status == "needs_review"
     assert created[0].target_text == "你好。"
     assert created[0].emotion == "warm"
+    assert created[0].style_prompt == "warm"
     assert project.timeline.get_segment("seg-001") == created[0]
 
 
@@ -153,3 +154,50 @@ def test_http_translation_adapter_raises_clear_error_on_provider_failure(tmp_pat
             ),
             prompt="translate",
         )
+
+
+def test_http_translation_adapter_maps_style_prompt(tmp_path) -> None:
+    from ivo.adapters.http import ApiAdapterProfile
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import HttpTranslationAdapter
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "text": "Hello there.",
+                "emotion": "warm",
+                "style": "warm, restrained and conversational",
+            },
+        )
+
+    adapter = HttpTranslationAdapter(
+        ApiAdapterProfile(
+            id="style-translator",
+            stage="translation",
+            method="POST",
+            url="https://api.example.test/translate",
+            headers={},
+            request_template={"prompt": "{{ prompt }}", "text": "{{ segment_text }}"},
+            response_mapping={
+                "target_text": "$.text",
+                "emotion": "$.emotion",
+                "style_prompt": "$.style",
+            },
+        ),
+        project_path=tmp_path,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = adapter.translate(
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            source_language="en",
+            source_text="Well, hi.",
+        ),
+        prompt="translate",
+    )
+
+    assert result.style_prompt == "warm, restrained and conversational"

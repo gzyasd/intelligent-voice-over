@@ -267,3 +267,19 @@ uv run ivo doctor-models
 ```
 
 `doctor-models` 会报告 `faster-whisper`、`demucs`、`f5_tts` 是否已安装。缺失并不影响 dry-run profile，但会影响去掉 `--dry-run` 后的真实模型运行。
+
+## 翻译到 TTS 的风格提示传递
+
+线上翻译 profile 可以在 `response_mapping` 里额外映射 `style_prompt`：
+
+```json
+{
+  "response_mapping": {
+    "target_text": "$.target_text",
+    "emotion": "$.emotion",
+    "style_prompt": "$.style_prompt"
+  }
+}
+```
+
+`style_prompt` 会进入时间线片段，并在后续本地 TTS 命令或 HTTP TTS profile 中通过 `{{ style_prompt }}` 传给模型。若翻译服务暂时只返回 `emotion`，流水线会自动把 `emotion` 作为 `style_prompt` 的兜底值，保证“温柔、紧张、克制、哭腔”等情绪信息不会在翻译和配音之间丢失。
