@@ -689,6 +689,8 @@ def test_adapter_profile_cli_adds_and_lists_http_profile(tmp_path) -> None:
             "target_text=$.text",
             "--optional-response",
             "style_prompt",
+            "--file-upload",
+            "audio=audio_path",
         ],
     )
     list_result = CliRunner().invoke(app, ["adapter", "list", str(store_path)])
@@ -697,7 +699,9 @@ def test_adapter_profile_cli_adds_and_lists_http_profile(tmp_path) -> None:
     assert list_result.exit_code == 0
     assert "translator" in list_result.output
     assert "translation" in list_result.output
-    assert AdapterProfileStore(store_path).load()[0].optional_response_keys == ["style_prompt"]
+    profile = AdapterProfileStore(store_path).load()[0]
+    assert profile.optional_response_keys == ["style_prompt"]
+    assert profile.file_upload_fields == {"audio": "audio_path"}
 
 
 def test_model_cli_registers_and_lists_local_model(tmp_path) -> None:

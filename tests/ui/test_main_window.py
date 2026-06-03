@@ -115,6 +115,7 @@ def test_model_settings_saves_and_loads_http_adapter_profile(qtbot, tmp_path) ->
     settings.url_edit.setText("https://api.example.test/translate")
     settings.response_mapping_edit.setText("target_text=$.text")
     settings.optional_response_keys_edit.setText("style_prompt,duration_ms")
+    settings.file_upload_fields_edit.setText("audio=audio_path")
     settings.save_adapter_profile(store_path)
 
     reloaded = ModelSettings()
@@ -125,6 +126,7 @@ def test_model_settings_saves_and_loads_http_adapter_profile(qtbot, tmp_path) ->
     assert reloaded.adapter_list.item(0).text() == "translator translation"
     profile = AdapterProfileStore(store_path).load()[0]
     assert profile.optional_response_keys == ["style_prompt", "duration_ms"]
+    assert profile.file_upload_fields == {"audio": "audio_path"}
 
 
 def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tmp_path) -> None:

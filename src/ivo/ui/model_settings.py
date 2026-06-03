@@ -43,6 +43,7 @@ class ModelSettings(QWidget):
         self.url_edit = QLineEdit()
         self.response_mapping_edit = QLineEdit("target_text=$.text")
         self.optional_response_keys_edit = QLineEdit()
+        self.file_upload_fields_edit = QLineEdit()
         self.adapter_list = QListWidget()
 
         self.local_command_profiles_browse_button.clicked.connect(
@@ -97,6 +98,8 @@ class ModelSettings(QWidget):
         layout.addWidget(self.response_mapping_edit)
         layout.addWidget(QLabel("\u53ef\u9009\u54cd\u5e94\u5b57\u6bb5\uff08\u9017\u53f7\u5206\u9694\uff09"))
         layout.addWidget(self.optional_response_keys_edit)
+        layout.addWidget(QLabel("File upload fields"))
+        layout.addWidget(self.file_upload_fields_edit)
         layout.addWidget(QLabel("已配置 adapter"))
         layout.addWidget(self.adapter_list)
         self.setLayout(layout)
@@ -120,6 +123,7 @@ class ModelSettings(QWidget):
                 },
                 response_mapping=self._parse_response_mapping(),
                 optional_response_keys=self._parse_optional_response_keys(),
+                file_upload_fields=self._parse_file_upload_fields(),
             )
         )
         store.save(profiles)
@@ -210,3 +214,17 @@ class ModelSettings(QWidget):
             for item in self.optional_response_keys_edit.text().replace("\n", ",").split(",")
             if item.strip()
         ]
+
+    def _parse_file_upload_fields(self) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        raw_items = [
+            item.strip()
+            for item in self.file_upload_fields_edit.text().replace("\n", ",").split(",")
+            if item.strip()
+        ]
+        for item in raw_items:
+            key, separator, value = item.partition("=")
+            if not separator:
+                raise ValueError(f"File upload field needs KEY=VALUE format: {item}")
+            mapping[key] = value
+        return mapping

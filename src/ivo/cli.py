@@ -225,9 +225,11 @@ def adapter_add_http(
     method: Annotated[str, typer.Option()] = "POST",
     response: Annotated[list[str] | None, typer.Option("--response")] = None,
     optional_response: Annotated[list[str] | None, typer.Option("--optional-response")] = None,
+    file_upload: Annotated[list[str] | None, typer.Option("--file-upload")] = None,
 ) -> None:
     """Add a simple HTTP adapter profile to a JSON store."""
     response_mapping = _parse_key_value_options(response or [])
+    file_upload_fields = _parse_key_value_options(file_upload or [])
     profile = ApiAdapterProfile(
         id=profile_id,
         stage=stage,
@@ -243,6 +245,7 @@ def adapter_add_http(
         },
         response_mapping=response_mapping,
         optional_response_keys=optional_response or [],
+        file_upload_fields=file_upload_fields,
     )
     store = AdapterProfileStore(store_path)
     profiles = [existing for existing in store.load() if existing.id != profile.id]
