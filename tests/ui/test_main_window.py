@@ -47,7 +47,7 @@ def test_timeline_editor_renders_project_segments(qtbot, tmp_path) -> None:
     assert editor.table.rowCount() == 1
     assert editor.table.item(0, 2).text() == "Hello."
     assert editor.table.item(0, 3).text() == "你好。"
-    assert editor.table.cellWidget(0, 7) is not None
+    assert editor.table.cellWidget(0, editor.COLUMN_ACTION) is not None
 
 
 def test_export_dialog_requires_confirmation_and_supports_watermark(qtbot) -> None:

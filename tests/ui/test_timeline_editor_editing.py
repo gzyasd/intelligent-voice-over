@@ -25,6 +25,7 @@ def test_timeline_editor_saves_editable_segment_fields(qtbot, tmp_path) -> None:
             target_language="zh",
             target_text="你好。",
             emotion="warm",
+            style_prompt="warm and quiet",
             status="needs_review",
         )
     )
@@ -34,6 +35,7 @@ def test_timeline_editor_saves_editable_segment_fields(qtbot, tmp_path) -> None:
 
     editor.table.item(0, editor.COLUMN_TARGET_TEXT).setText("嗯，你好。")
     editor.table.item(0, editor.COLUMN_EMOTION).setText("gentle")
+    editor.table.item(0, editor.COLUMN_STYLE_PROMPT).setText("gentle but tense")
     editor.table.item(0, editor.COLUMN_STATUS).setText("approved")
 
     updated = editor.save_row(0)
@@ -42,6 +44,7 @@ def test_timeline_editor_saves_editable_segment_fields(qtbot, tmp_path) -> None:
     assert updated.target_text == "嗯，你好。"
     assert reloaded.target_text == "嗯，你好。"
     assert reloaded.emotion == "gentle"
+    assert reloaded.style_prompt == "gentle but tense"
     assert reloaded.status == "approved"
 
 

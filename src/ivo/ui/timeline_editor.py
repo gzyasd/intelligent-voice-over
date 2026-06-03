@@ -32,15 +32,17 @@ class TimelineEditor(QWidget):
     COLUMN_SOURCE_TEXT = 2
     COLUMN_TARGET_TEXT = 3
     COLUMN_EMOTION = 4
-    COLUMN_STATUS = 5
-    COLUMN_QUALITY_FLAGS = 6
-    COLUMN_ACTION = 7
+    COLUMN_STYLE_PROMPT = 5
+    COLUMN_STATUS = 6
+    COLUMN_QUALITY_FLAGS = 7
+    COLUMN_ACTION = 8
     HEADERS = [
         "\u7247\u6bb5",
         "\u8bf4\u8bdd\u4eba",
         "\u539f\u6587",
         "\u4e2d\u6587",
         "\u60c5\u7eea",
+        "\u98ce\u683c\u63d0\u793a",
         "\u72b6\u6001",
         "\u8d28\u91cf\u6807\u8bb0",
         "\u64cd\u4f5c",
@@ -73,6 +75,7 @@ class TimelineEditor(QWidget):
                 segment.source_text,
                 segment.target_text,
                 segment.emotion or "",
+                segment.style_prompt or "",
                 segment.status,
                 ", ".join(segment.quality_flags),
             ]
@@ -118,6 +121,7 @@ class TimelineEditor(QWidget):
             speaker_id=self._cell_text(row, self.COLUMN_SPEAKER),
             target_text=self._cell_text(row, self.COLUMN_TARGET_TEXT),
             emotion=self._optional_cell_text(row, self.COLUMN_EMOTION),
+            style_prompt=self._optional_cell_text(row, self.COLUMN_STYLE_PROMPT),
             status=status,
         )
 
