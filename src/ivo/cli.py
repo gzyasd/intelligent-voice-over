@@ -13,6 +13,7 @@ from ivo.core.project import DubbingProject
 from ivo.core.timeline import SourceLanguage, TargetLanguage
 from ivo.environment import collect_environment_diagnostics, collect_optional_model_dependencies
 from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
+from ivo.model_setup import build_model_setup_script
 from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
 from ivo.pipeline.mock_pipeline import run_mock_dubbing_pipeline
@@ -417,6 +418,28 @@ def model_setup_plan(
         typer.echo(f"  download: {dependency.download_hint}")
         typer.echo(f"  license: {dependency.license_hint}")
         typer.echo(f"  verify: {dependency.verify_hint}")
+
+
+@model_app.command("write-setup-script")
+def model_write_setup_script(
+    output: Annotated[
+        Path,
+        typer.Option("--output", dir_okay=False, help="PowerShell script path to write."),
+    ],
+    models_dir: Annotated[
+        Path,
+        typer.Option("--models-dir", file_okay=False, help="Local model cache root to prepare."),
+    ] = Path("models"),
+    stage: Annotated[
+        str | None,
+        typer.Option("--stage", help="Only include setup entries for one stage."),
+    ] = None,
+) -> None:
+    """Write a PowerShell script for recommended local model setup steps."""
+    script = build_model_setup_script(models_dir, stage=stage)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(script, encoding="utf-8")
+    typer.echo(f"Model setup script written: {output}")
 
 
 def _parse_key_value_options(options: list[str]) -> dict[str, str]:

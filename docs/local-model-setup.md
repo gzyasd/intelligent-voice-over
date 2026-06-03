@@ -42,6 +42,8 @@ uv run ivo doctor-models --models-dir .\models
 uv run ivo doctor-models --models-dir .\models --json
 uv run ivo model setup-plan --models-dir .\models
 uv run ivo model setup-plan --models-dir .\models --stage tts
+uv run ivo model write-setup-script --models-dir .\models --output .\scripts\setup-local-models.ps1
+uv run ivo model write-setup-script --models-dir .\models --stage tts --output .\scripts\setup-tts-models.ps1
 ```
 
 `doctor-models` 会检查以下信息：
@@ -54,7 +56,7 @@ uv run ivo model setup-plan --models-dir .\models --stage tts
 - 许可证和 token 注意事项。
 - 最小验证命令。
 
-`uv run ivo doctor-models --json` 适合脚本或 UI 读取结构化诊断结果。`uv run ivo model setup-plan` 会按阶段输出安装、下载、许可证和验证命令；可以用 `--stage asr`、`--stage separation`、`--stage diarization`、`--stage translation` 或 `--stage tts` 缩小范围。
+`uv run ivo doctor-models --json` 适合脚本或 UI 读取结构化诊断结果。`uv run ivo model setup-plan` 会按阶段输出安装、下载、许可证和验证命令；可以用 `--stage asr`、`--stage separation`、`--stage diarization`、`--stage translation` 或 `--stage tts` 缩小范围。`uv run ivo model write-setup-script` 会把同一批推荐步骤写成 PowerShell 脚本；脚本仍需要你在运行前确认许可证、登录 Hugging Face 或配置必要 token。
 
 ## 推荐下载命令
 

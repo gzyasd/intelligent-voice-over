@@ -837,8 +837,36 @@ def test_model_setup_plan_lists_install_download_and_verify_commands(tmp_path) -
     assert "faster-whisper" not in result.output
 
 
+def test_model_write_setup_script_command_writes_filtered_script(tmp_path) -> None:
+    from ivo.cli import app
+
+    output = tmp_path / "setup-local-models.ps1"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "model",
+            "write-setup-script",
+            "--models-dir",
+            str(tmp_path / "models"),
+            "--stage",
+            "asr",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert output.is_file()
+    script = output.read_text(encoding="utf-8")
+    assert "asr / faster-whisper" in script
+    assert "CosyVoice" not in script
+    assert "Model setup script written" in result.output
+
+
 def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
     document = Path("docs/local-model-setup.md").read_text(encoding="utf-8")
 
     assert "uv run ivo doctor-models --json" in document
     assert "uv run ivo model setup-plan" in document
+    assert "uv run ivo model write-setup-script" in document
