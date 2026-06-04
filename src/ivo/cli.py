@@ -20,7 +20,12 @@ from ivo.evaluation import (
 )
 from ivo.local_readiness import LocalReadinessReport, build_local_readiness_report
 from ivo.model_setup import build_model_setup_script
-from ivo.model_smoke import default_asr_smoke_output_path, run_asr_smoke_probe
+from ivo.model_smoke import (
+    default_adapter_smoke_output_path,
+    default_asr_smoke_output_path,
+    run_asr_smoke_probe,
+    run_local_adapter_smoke_probe,
+)
 from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
 from ivo.pipeline.mock_pipeline import run_mock_dubbing_pipeline
@@ -773,6 +778,28 @@ def model_smoke_asr(
         raise typer.Exit(exc.returncode) from exc
     typer.echo(f"ASR smoke probe completed: {result.output_path}")
     typer.echo(f"Probe audio: {result.audio_path}")
+
+
+@model_app.command("smoke-adapters")
+def model_smoke_adapters(
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", dir_okay=False, help="Local adapter smoke JSON output path."),
+    ] = None,
+) -> None:
+    """Validate local command adapter JSON contracts without loading real models."""
+    try:
+        result = run_local_adapter_smoke_probe(
+            output_path=output or default_adapter_smoke_output_path(),
+        )
+    except subprocess.CalledProcessError as exc:
+        typer.echo(
+            f"Local adapter smoke probe failed with exit code {exc.returncode}: {' '.join(exc.cmd)}"
+        )
+        raise typer.Exit(exc.returncode) from exc
+    typer.echo(f"Local adapter smoke probe completed: {result.output_path}")
+    typer.echo(f"Work dir: {result.work_dir}")
+    typer.echo(f"Validated adapters: {len(result.probes)}")
 
 
 def _parse_key_value_options(options: list[str]) -> dict[str, str]:

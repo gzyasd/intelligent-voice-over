@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import json
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,13 @@ class AsrSmokeProbeResult:
     audio_path: Path
     output_path: Path
     command: list[str]
+
+
+@dataclass(frozen=True)
+class LocalAdapterSmokeProbeResult:
+    output_path: Path
+    work_dir: Path
+    probes: list[dict[str, object]]
 
 
 def run_asr_smoke_probe(
@@ -55,15 +63,160 @@ def run_asr_smoke_probe(
     return AsrSmokeProbeResult(audio_path=audio_path, output_path=output_path, command=command)
 
 
+def run_local_adapter_smoke_probe(
+    *,
+    output_path: Path,
+    separation_script: Path = Path("examples/local_commands/demucs_separate.py"),
+    asr_script: Path = Path("examples/local_commands/faster_whisper_asr.py"),
+    f5_tts_script: Path = Path("examples/local_commands/f5_tts_command.py"),
+    cosyvoice_tts_script: Path = Path("examples/local_commands/cosyvoice_tts.py"),
+) -> LocalAdapterSmokeProbeResult:
+    work_dir = Path(tempfile.mkdtemp(prefix="ivo-adapter-smoke-"))
+    audio_path = _write_probe_wav(work_dir / "input.wav")
+    probes: list[dict[str, object]] = []
+
+    separation_json = work_dir / "separation.json"
+    vocals_path = work_dir / "vocals.wav"
+    background_path = work_dir / "background.wav"
+    _run_command(
+        [
+            sys.executable,
+            str(_require_script(separation_script)),
+            "--audio",
+            str(audio_path),
+            "--vocals-out",
+            str(vocals_path),
+            "--background-out",
+            str(background_path),
+            "--json-out",
+            str(separation_json),
+            "--dry-run",
+        ]
+    )
+    probes.append(
+        {
+            "stage": "separation",
+            "provider": "demucs",
+            "json_path": str(separation_json),
+            "artifacts": [str(vocals_path), str(background_path)],
+        }
+    )
+
+    asr_json = work_dir / "asr.json"
+    _run_command(
+        [
+            sys.executable,
+            str(_require_script(asr_script)),
+            "--audio",
+            str(vocals_path),
+            "--language",
+            "en",
+            "--out",
+            str(asr_json),
+            "--dry-run",
+        ]
+    )
+    probes.append(
+        {
+            "stage": "asr",
+            "provider": "faster-whisper",
+            "json_path": str(asr_json),
+            "artifacts": [],
+        }
+    )
+
+    f5_audio = work_dir / "f5-tts.wav"
+    f5_json = work_dir / "f5-tts.json"
+    _run_command(
+        [
+            sys.executable,
+            str(_require_script(f5_tts_script)),
+            "--text",
+            "你好。",
+            "--speaker",
+            "speaker-1",
+            "--audio-out",
+            str(f5_audio),
+            "--json-out",
+            str(f5_json),
+            "--duration-ms",
+            "500",
+            "--dry-run",
+        ]
+    )
+    probes.append(
+        {
+            "stage": "tts",
+            "provider": "f5-tts",
+            "json_path": str(f5_json),
+            "artifacts": [str(f5_audio)],
+        }
+    )
+
+    cosyvoice_model_dir = work_dir / "cosyvoice-model"
+    cosyvoice_model_dir.mkdir(parents=True, exist_ok=True)
+    cosyvoice_audio = work_dir / "cosyvoice-tts.wav"
+    cosyvoice_json = work_dir / "cosyvoice-tts.json"
+    _run_command(
+        [
+            sys.executable,
+            str(_require_script(cosyvoice_tts_script)),
+            "--text",
+            "你好。",
+            "--speaker",
+            "speaker-1",
+            "--model-dir",
+            str(cosyvoice_model_dir),
+            "--audio-out",
+            str(cosyvoice_audio),
+            "--json-out",
+            str(cosyvoice_json),
+            "--duration-ms",
+            "500",
+            "--dry-run",
+        ]
+    )
+    probes.append(
+        {
+            "stage": "tts",
+            "provider": "cosyvoice",
+            "json_path": str(cosyvoice_json),
+            "artifacts": [str(cosyvoice_audio)],
+        }
+    )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(
+            {
+                "work_dir": str(work_dir),
+                "probes": probes,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return LocalAdapterSmokeProbeResult(
+        output_path=output_path,
+        work_dir=work_dir,
+        probes=probes,
+    )
+
+
 def default_asr_smoke_output_path() -> Path:
     return Path(tempfile.gettempdir()) / "ivo_asr_smoke" / "asr-smoke.json"
 
 
-def _write_probe_wav() -> Path:
+def default_adapter_smoke_output_path() -> Path:
+    return Path(tempfile.gettempdir()) / "ivo_adapter_smoke" / "adapter-smoke.json"
+
+
+def _write_probe_wav(output_path: Path | None = None) -> Path:
     sample_rate = 16_000
     duration_seconds = 1.5
-    output_dir = Path(tempfile.mkdtemp(prefix="ivo-asr-smoke-"))
-    audio_path = output_dir / "input.wav"
+    audio_path = output_path or Path(tempfile.mkdtemp(prefix="ivo-asr-smoke-")) / "input.wav"
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(audio_path), "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
@@ -78,3 +231,14 @@ def _write_probe_wav() -> Path:
             frames.extend(sample.to_bytes(2, "little", signed=True))
         wav.writeframes(bytes(frames))
     return audio_path
+
+
+def _require_script(script: Path) -> Path:
+    resolved = script.resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Local command script not found: {resolved}")
+    return resolved
+
+
+def _run_command(command: list[str]) -> None:
+    subprocess.run(command, check=True)

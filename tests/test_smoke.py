@@ -1359,6 +1359,38 @@ def test_model_smoke_asr_command_uses_temp_output_by_default() -> None:
     assert str(Path(tempfile.gettempdir())) in completed_line
 
 
+def test_model_smoke_adapters_command_validates_local_command_contracts(tmp_path) -> None:
+    from ivo.cli import app
+
+    output = tmp_path / "adapter-smoke.json"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "model",
+            "smoke-adapters",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Local adapter smoke probe completed" in result.output
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert [item["stage"] for item in payload["probes"]] == [
+        "separation",
+        "asr",
+        "tts",
+        "tts",
+    ]
+    assert {item["provider"] for item in payload["probes"]} == {
+        "demucs",
+        "faster-whisper",
+        "f5-tts",
+        "cosyvoice",
+    }
+
+
 def test_pyproject_declares_local_asr_extra() -> None:
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
 
@@ -1374,6 +1406,7 @@ def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
     assert "uv run ivo model setup-plan" in document
     assert "uv run ivo model write-setup-script" in document
     assert "uv run ivo model smoke-asr" in document
+    assert "uv run ivo model smoke-adapters" in document
 
 
 def _write_smoke_local_profiles(tmp_path: Path) -> Path:
