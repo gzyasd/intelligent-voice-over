@@ -25,7 +25,7 @@ from ivo.pipeline.separate_audio import HttpSeparationAdapter
 from ivo.pipeline.synthesize import HttpTtsAdapter
 from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
-from ivo.profile_validation import validate_local_command_profiles
+from ivo.profile_validation import validate_http_profile, validate_local_command_profiles
 
 app = typer.Typer(help="Intelligent Voice Over developer tools.", no_args_is_help=True)
 adapter_app = typer.Typer(help="Manage custom HTTP model API adapter profiles.")
@@ -286,6 +286,27 @@ def validate_local_profiles(
         typer.echo(f"Local profiles validation: {status}")
         for stage in report.stages:
             typer.echo(f"  stage: {stage}")
+        for error in report.errors:
+            typer.echo(f"  error: {error}")
+    if not report.ok:
+        raise typer.Exit(1)
+
+
+@app.command("validate-http-profile")
+def validate_http_profile_command(
+    profile_path: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    json_output: Annotated[bool, typer.Option("--json", help="Output JSON validation report.")] = False,
+) -> None:
+    """Validate one HTTP adapter profile before using an online API."""
+    profile = ApiAdapterProfile.model_validate(json.loads(profile_path.read_text(encoding="utf-8")))
+    report = validate_http_profile(profile)
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        status = "ok" if report.ok else "failed"
+        typer.echo(f"HTTP profile validation: {status}")
+        typer.echo(f"  stage: {report.stage}")
+        typer.echo(f"  provider: {report.provider}")
         for error in report.errors:
             typer.echo(f"  error: {error}")
     if not report.ok:

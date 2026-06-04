@@ -40,6 +40,37 @@ def test_validate_local_profiles_cli_reports_missing_output_placeholder(tmp_path
     assert "tts command should include {{ output_json_path }}" in payload["errors"]
 
 
+def test_validate_http_profile_cli_accepts_complete_profile(tmp_path: Path) -> None:
+    from ivo.cli import app
+
+    profile_path = tmp_path / "translation.json"
+    profile_path.write_text(json.dumps(_http_profile_payload()), encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["validate-http-profile", str(profile_path), "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["stage"] == "translation"
+    assert payload["errors"] == []
+
+
+def test_validate_http_profile_cli_reports_bad_response_mapping(tmp_path: Path) -> None:
+    from ivo.cli import app
+
+    payload = _http_profile_payload()
+    payload["response_mapping"] = {"target_text": "$["}
+    profile_path = tmp_path / "translation.json"
+    profile_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["validate-http-profile", str(profile_path), "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert "response mapping target_text is not valid JSONPath" in payload["errors"]
+
+
 def _profile_payload() -> dict[str, object]:
     return {
         "separation": {
@@ -60,4 +91,16 @@ def _profile_payload() -> dict[str, object]:
             "command": ["python", "tts.py", "--out", "{{ output_json_path }}"],
             "output_json_path": "tts.json",
         },
+    }
+
+
+def _http_profile_payload() -> dict[str, object]:
+    return {
+        "id": "translator",
+        "stage": "translation",
+        "method": "POST",
+        "url": "https://api.example.test/translate",
+        "headers": {"Authorization": "Bearer {{ api_key }}"},
+        "request_template": {"text": "{{ segment_text }}"},
+        "response_mapping": {"target_text": "$.text"},
     }

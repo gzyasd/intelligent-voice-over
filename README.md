@@ -101,6 +101,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 ```powershell
 uv run ivo adapter add-http .\adapters.json --id translator --stage translation --url https://api.example.test/translate --response target_text=$.text --optional-response style_prompt --file-upload audio=audio_path
 uv run ivo adapter list .\adapters.json
+uv run ivo validate-http-profile .\examples\http_translation_profile.example.json --json
 ```
 
 本地命令预览也可以把翻译阶段切到 HTTP API：
