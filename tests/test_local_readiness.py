@@ -131,6 +131,47 @@ def test_build_local_readiness_report_reports_missing_dependency_and_model_dir(
     assert "tts/CosyVoice: package missing" in report.missing
 
 
+def test_build_local_readiness_report_reports_missing_engine_command_file(
+    tmp_path: Path,
+) -> None:
+    from ivo.adapters.local import LocalCommandProfile
+    from ivo.local_readiness import build_local_readiness_report
+    from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+
+    missing_command_file = tmp_path / "missing-engine-command.json"
+    report = build_local_readiness_report(
+        LocalCommandPipelineProfiles(
+            separation=LocalCommandProfile(
+                id="sep-dry-run",
+                stage="separation",
+                command=["python", "demucs_separate.py", "--dry-run"],
+                output_json_path="sep.json",
+            ),
+            asr=LocalCommandProfile(
+                id="asr-dry-run",
+                stage="asr",
+                command=["python", "faster_whisper_asr.py", "--dry-run"],
+                output_json_path="asr.json",
+            ),
+            tts=LocalCommandProfile(
+                id="f5-real",
+                stage="tts",
+                command=[
+                    "python",
+                    "f5_tts_command.py",
+                    "--engine-command-json-file",
+                    str(missing_command_file),
+                ],
+                output_json_path="tts.json",
+            ),
+        ),
+        dependencies=[],
+    )
+
+    assert report.ok is False
+    assert f"tts/f5-real: engine command file missing: {missing_command_file}" in report.missing
+
+
 def test_check_local_readiness_cli_accepts_dry_run_profiles(tmp_path: Path) -> None:
     import json
 

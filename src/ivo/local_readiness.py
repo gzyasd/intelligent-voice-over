@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import BaseModel
 
 from ivo.adapters.local import LocalCommandProfile
@@ -31,6 +33,7 @@ def build_local_readiness_report(
             continue
 
         checked_profiles.append(label)
+        missing.extend(_missing_engine_command_file_messages(profile))
         for dependency in dependency_by_stage.get(profile.stage, []):
             if _profile_uses_dependency(profile, dependency):
                 missing.extend(_missing_dependency_messages(dependency))
@@ -88,3 +91,19 @@ def _missing_dependency_messages(dependency: OptionalDependencyStatus) -> list[s
     if dependency.required_env_var is not None and not dependency.env_var_set:
         missing.append(f"{prefix}: env {dependency.required_env_var} missing")
     return missing
+
+
+def _missing_engine_command_file_messages(profile: LocalCommandProfile) -> list[str]:
+    messages: list[str] = []
+    for index, item in enumerate(profile.command):
+        if item != "--engine-command-json-file":
+            continue
+        if index + 1 >= len(profile.command):
+            messages.append(f"{profile.stage}/{profile.id}: engine command file path missing")
+            continue
+        engine_command_path = Path(profile.command[index + 1])
+        if not engine_command_path.is_file():
+            messages.append(
+                f"{profile.stage}/{profile.id}: engine command file missing: {engine_command_path}"
+            )
+    return messages
