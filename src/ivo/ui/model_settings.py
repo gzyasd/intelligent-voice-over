@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from ivo.adapters.http import ApiAdapterProfile
 from ivo.adapters.profiles import AdapterProfileStore
 from ivo.environment import collect_optional_model_dependencies
+from ivo.model_setup import build_model_setup_script
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
 
 
@@ -23,6 +24,8 @@ class ModelSettings(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.local_model_path_edit = QLineEdit()
+        self.setup_script_path_edit = QLineEdit("scripts/setup-local-models.ps1")
+        self.write_model_setup_script_button = QPushButton("生成本地模型安装脚本")
         self.refresh_model_diagnostics_button = QPushButton("刷新本地模型诊断")
         self.local_command_profiles_path_edit = QLineEdit()
         self.local_command_profiles_browse_button = QPushButton("浏览本地命令 profile")
@@ -61,11 +64,15 @@ class ModelSettings(QWidget):
         self.translation_profile_browse_button.clicked.connect(self.browse_translation_profile)
         self.tts_profile_browse_button.clicked.connect(self.browse_tts_profile)
         self.refresh_model_diagnostics_button.clicked.connect(self.refresh_model_diagnostics)
+        self.write_model_setup_script_button.clicked.connect(self.write_model_setup_script)
 
         layout = QVBoxLayout()
         layout.addWidget(QLabel("本地模型路径"))
         layout.addWidget(self.local_model_path_edit)
         layout.addWidget(self.refresh_model_diagnostics_button)
+        layout.addWidget(QLabel("本地模型安装脚本输出"))
+        layout.addWidget(self.setup_script_path_edit)
+        layout.addWidget(self.write_model_setup_script_button)
         layout.addWidget(QLabel("本地命令 profiles JSON"))
         layout.addWidget(self.local_command_profiles_path_edit)
         layout.addWidget(self.local_command_profiles_browse_button)
@@ -156,25 +163,71 @@ class ModelSettings(QWidget):
             self.local_profile_summary_list.addItem(f"profile 读取失败: {exc}")
             return
 
-        self.local_profile_summary_list.addItem(f"separation: {profiles.separation.id}")
-        self.local_profile_summary_list.addItem(f"asr: {profiles.asr.id}")
+        self.local_profile_summary_list.addItem(
+            self._stage_summary("separation", profiles.separation.id, self.separation_profile_path_edit)
+        )
+        self.local_profile_summary_list.addItem(
+            self._stage_summary("asr", profiles.asr.id, self.asr_profile_path_edit)
+        )
         if profiles.diarization is not None:
-            self.local_profile_summary_list.addItem(f"diarization: {profiles.diarization.id}")
-        self.local_profile_summary_list.addItem(f"tts: {profiles.tts.id}")
+            self.local_profile_summary_list.addItem(
+                self._stage_summary(
+                    "diarization",
+                    profiles.diarization.id,
+                    self.diarization_profile_path_edit,
+                )
+            )
+        self.local_profile_summary_list.addItem(
+            self._stage_summary("translation", "target-text overrides", self.translation_profile_path_edit)
+        )
+        self.local_profile_summary_list.addItem(
+            self._stage_summary("tts", profiles.tts.id, self.tts_profile_path_edit)
+        )
 
     def load_model_diagnostics(self, model_root: Path) -> None:
         self.model_diagnostics_list.clear()
         for dependency in collect_optional_model_dependencies(model_root):
             package_status = "installed" if dependency.installed else "missing"
             model_status = "found" if dependency.model_dir_exists else "missing"
+            env_status = ""
+            if dependency.required_env_var is not None:
+                env_value = "set" if dependency.env_var_set else "missing"
+                env_status = f"; env: {env_value}"
             self.model_diagnostics_list.addItem(
                 f"{dependency.stage} / {dependency.name}: package: {package_status}; "
-                f"model dir: {model_status}"
+                f"model dir: {model_status}{env_status}"
             )
 
     def refresh_model_diagnostics(self) -> None:
         raw_path = self.local_model_path_edit.text().strip()
         self.load_model_diagnostics(Path(raw_path) if raw_path else Path("models"))
+
+    def write_model_setup_script(self) -> Path:
+        raw_model_root = self.local_model_path_edit.text().strip()
+        raw_output = self.setup_script_path_edit.text().strip()
+        model_root = Path(raw_model_root) if raw_model_root else Path("models")
+        output_path = Path(raw_output) if raw_output else Path("scripts") / "setup-local-models.ps1"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(build_model_setup_script(model_root), encoding="utf-8")
+        self.model_diagnostics_list.addItem(f"setup script written: {output_path}")
+        return output_path
+
+    def _stage_summary(self, stage: str, local_id: str, http_path_edit: QLineEdit) -> str:
+        raw_http_path = http_path_edit.text().strip()
+        if raw_http_path:
+            return f"{stage}: http / {self._http_profile_label(Path(raw_http_path))}"
+        if stage == "translation":
+            return f"{stage}: mock / {local_id}"
+        return f"{stage}: local / {local_id}"
+
+    def _http_profile_label(self, profile_path: Path) -> str:
+        try:
+            profile = ApiAdapterProfile.model_validate(
+                json.loads(profile_path.read_text(encoding="utf-8"))
+            )
+        except (OSError, ValueError):
+            return profile_path.name
+        return profile.id
 
     def browse_local_command_profiles(self) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(

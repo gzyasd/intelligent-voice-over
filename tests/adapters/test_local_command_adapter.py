@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+
 
 def test_local_command_adapter_renders_command_and_reads_json_output(tmp_path) -> None:
     from ivo.adapters.base import AdapterContext
@@ -72,3 +74,53 @@ def test_local_command_adapter_returns_error_when_output_missing(tmp_path) -> No
     assert result.error is not None
     assert result.error.provider == "broken-local"
     assert "output JSON not found" in result.error.message
+
+
+def test_local_command_adapter_error_includes_command_context(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
+
+    output = tmp_path / "asr.json"
+
+    def runner(command: list[str]) -> None:
+        raise subprocess.CalledProcessError(
+            returncode=7,
+            cmd=command,
+            stderr="model path not found\nfull traceback omitted",
+        )
+
+    adapter = LocalCommandAdapter(
+        LocalCommandProfile(
+            id="broken-asr",
+            stage="asr",
+            command=[
+                "python",
+                "asr.py",
+                "--audio",
+                "{{ segment_text }}",
+                "--out",
+                "{{ output_json_path }}",
+            ],
+            output_json_path=str(output),
+        ),
+        runner=runner,
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="voice.wav",
+            source_language="en",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error is not None
+    assert "stage: asr" in result.error.message
+    assert "provider: broken-asr" in result.error.message
+    assert "exit code: 7" in result.error.message
+    assert "command: python asr.py --audio voice.wav" in result.error.message
+    assert f"output JSON: {output}" in result.error.message
+    assert "stderr: model path not found" in result.error.message

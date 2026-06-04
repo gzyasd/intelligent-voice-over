@@ -20,6 +20,14 @@ winget install Gyan.FFmpeg
 
 安装后重新打开终端，再运行 `uv run ivo doctor` 检查。
 
+如果只想验证打包程序、导入、预览和导出流程，可以先生成合成样片，避免使用任何未授权剧集片段：
+
+```powershell
+uv run python .\scripts\create_sample_media.py --output-dir .\sample_media
+```
+
+这些文件是 FFmpeg 生成的测试画面和纯音，不代表真实 ASR、翻译或 TTS 质量。
+
 ## 预览构建命令
 
 先用 dry-run 查看将要执行的 PyInstaller 命令：
@@ -29,6 +37,7 @@ uv run python .\scripts\build_windows_package.py --dry-run --output-dir .\dist
 ```
 
 输出中应包含 `uv tool run pyinstaller`、`--collect-all PySide6`、`--add-data examples;examples` 和 `--add-data docs;docs`。
+dry-run 还会输出将要写入的 `release-manifest.json` 预览，里面记录版本、入口程序、打包包含项和明确排除的模型权重、素材目录与密钥。
 
 ## 生成桌面程序
 
@@ -43,6 +52,14 @@ uv run python .\scripts\build_windows_package.py --output-dir .\dist
 ```text
 dist\IntelligentVoiceOver\IntelligentVoiceOver.exe
 ```
+
+同一目录还会生成发布清单：
+
+```text
+dist\IntelligentVoiceOver\release-manifest.json
+```
+
+发布前请检查清单中的 `included_data`、`excluded_paths` 和 `excluded_secrets`，确认没有把模型权重、未授权素材或真实 token 放进发布包。
 
 ## 安装与分发
 

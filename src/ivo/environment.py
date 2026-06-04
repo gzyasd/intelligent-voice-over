@@ -29,6 +29,8 @@ class OptionalDependencyStatus(BaseModel):
     model_dir: Path
     model_dir_exists: bool
     verify_hint: str
+    required_env_var: str | None = None
+    env_var_set: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,7 @@ class OptionalDependencySpec:
     license_hint: str
     model_subdir: Path
     verify_hint: str
+    required_env_var: str | None = None
 
 
 def collect_environment_diagnostics() -> EnvironmentDiagnostics:
@@ -113,6 +116,7 @@ def collect_optional_model_dependencies(
             ),
             model_subdir=Path("diarization") / "pyannote-community-1",
             verify_hint="uv run python examples/local_commands/pyannote_diarization.py --help",
+            required_env_var="HF_TOKEN",
         ),
         OptionalDependencySpec(
             name="CosyVoice",
@@ -182,6 +186,12 @@ def collect_optional_model_dependencies(
             model_dir=root / dependency.model_subdir,
             model_dir_exists=(root / dependency.model_subdir).is_dir(),
             verify_hint=dependency.verify_hint,
+            required_env_var=dependency.required_env_var,
+            env_var_set=(
+                bool(getenv(dependency.required_env_var))
+                if dependency.required_env_var is not None
+                else None
+            ),
         )
         for dependency in dependencies
     ]

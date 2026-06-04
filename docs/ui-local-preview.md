@@ -12,6 +12,8 @@
 F:\GZYproject\Intelligent-Voice-Over\examples\local_command_profiles.real_dry_run.json
 ```
 
+在同一页可以填写“本地模型安装脚本输出”，例如 `scripts/setup-local-models.ps1`，然后点击“生成本地模型安装脚本”。UI 会根据“本地模型路径”生成与 `uv run ivo model write-setup-script` 相同的 PowerShell 脚本，方便后续安装 Python 包、创建模型目录和下载 Hugging Face 模型。
+
 4. 如果人声分离阶段使用线上 API，在“人声分离 HTTP profile JSON”填写或浏览选择：
 
 ```text
@@ -83,6 +85,8 @@ api_key=YOUR_API_KEY
 - 本地命令脚本运行失败；
 - HTTP 人声分离、ASR、说话人分离、翻译或 TTS API 超时，或返回非成功状态；
 - FFmpeg 不可用或导出失败。
+
+本地命令失败时，错误文本会尽量包含阶段、provider、渲染后的命令、退出码、stderr 摘要和期望的输出 JSON 路径。这样可以直接定位是模型路径、Python 包、token、输出文件还是脚本参数问题。
 
 ## 当前限制
 

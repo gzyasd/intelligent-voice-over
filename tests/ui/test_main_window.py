@@ -222,14 +222,76 @@ def test_model_settings_loads_local_command_profile_summary(qtbot, tmp_path) -> 
 
     settings.load_local_command_profile_summary(profiles_path)
 
-    assert settings.local_profile_summary_list.count() == 4
-    assert settings.local_profile_summary_list.item(0).text() == "separation: sep"
-    assert settings.local_profile_summary_list.item(2).text() == "diarization: dia"
+    assert settings.local_profile_summary_list.count() == 5
+    assert settings.local_profile_summary_list.item(0).text() == "separation: local / sep"
+    assert settings.local_profile_summary_list.item(2).text() == "diarization: local / dia"
+    assert settings.local_profile_summary_list.item(3).text() == "translation: mock / target-text overrides"
 
 
-def test_model_settings_loads_model_diagnostics(qtbot, tmp_path) -> None:
+def test_model_settings_profile_summary_shows_http_overrides(qtbot, tmp_path) -> None:
+    import json
+
     from ivo.ui.model_settings import ModelSettings
 
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(
+        json.dumps(
+            {
+                "separation": {
+                    "id": "sep",
+                    "stage": "separation",
+                    "command": ["sep"],
+                    "output_json_path": "sep.json",
+                },
+                "asr": {
+                    "id": "asr",
+                    "stage": "asr",
+                    "command": ["asr"],
+                    "output_json_path": "asr.json",
+                },
+                "tts": {
+                    "id": "tts",
+                    "stage": "tts",
+                    "command": ["tts"],
+                    "output_json_path": "tts.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    translation_profile = tmp_path / "translation.json"
+    translation_profile.write_text(
+        json.dumps(
+            {
+                "id": "translator",
+                "stage": "translation",
+                "method": "POST",
+                "url": "https://api.example.test/translate",
+                "headers": {},
+                "request_template": {"prompt": "{{ prompt }}"},
+                "response_mapping": {"target_text": "$.text"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+    settings.translation_profile_path_edit.setText(str(translation_profile))
+
+    settings.load_local_command_profile_summary(profiles_path)
+
+    texts = [
+        settings.local_profile_summary_list.item(index).text()
+        for index in range(settings.local_profile_summary_list.count())
+    ]
+    assert "translation: http / translator" in texts
+    assert "tts: local / tts" in texts
+
+
+def test_model_settings_loads_model_diagnostics(monkeypatch, qtbot, tmp_path) -> None:
+    from ivo.ui.model_settings import ModelSettings
+
+    monkeypatch.delenv("HF_TOKEN", raising=False)
     (tmp_path / "models" / "asr" / "faster-whisper-large-v3").mkdir(parents=True)
     settings = ModelSettings()
     qtbot.addWidget(settings)
@@ -242,6 +304,7 @@ def test_model_settings_loads_model_diagnostics(qtbot, tmp_path) -> None:
     ]
     assert any("asr / faster-whisper" in text and "model dir: found" in text for text in texts)
     assert any("tts / CosyVoice" in text for text in texts)
+    assert any("diarization / pyannote.audio" in text and "env: missing" in text for text in texts)
 
 
 def test_model_settings_refresh_button_loads_model_diagnostics(qtbot, tmp_path) -> None:
@@ -260,3 +323,26 @@ def test_model_settings_refresh_button_loads_model_diagnostics(qtbot, tmp_path) 
         for index in range(settings.model_diagnostics_list.count())
     ]
     assert any("tts / CosyVoice" in text and "model dir: found" in text for text in texts)
+
+
+def test_model_settings_writes_local_model_setup_script(qtbot, tmp_path) -> None:
+    from ivo.ui.model_settings import ModelSettings
+
+    models_dir = tmp_path / "models"
+    output = tmp_path / "scripts" / "setup-local-models.ps1"
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+    settings.local_model_path_edit.setText(str(models_dir))
+    settings.setup_script_path_edit.setText(str(output))
+
+    settings.write_model_setup_script_button.click()
+
+    assert output.is_file()
+    script = output.read_text(encoding="utf-8")
+    assert "asr / faster-whisper" in script
+    assert str(models_dir / "asr" / "faster-whisper-large-v3") in script
+    texts = [
+        settings.model_diagnostics_list.item(index).text()
+        for index in range(settings.model_diagnostics_list.count())
+    ]
+    assert any(str(output) in text for text in texts)

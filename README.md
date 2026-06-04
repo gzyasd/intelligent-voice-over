@@ -26,6 +26,12 @@ uv run ivo doctor
 uv run pytest
 ```
 
+生成不含真实影视素材的合成样片，用于验证导入、预览和导出流程：
+
+```powershell
+uv run python .\scripts\create_sample_media.py --output-dir .\sample_media
+```
+
 如果你在其他目录执行，可以显式指定项目：
 
 ```powershell
@@ -67,6 +73,14 @@ uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" -
 ```powershell
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --project-name "Episode 01" --source-language en --no-watermark
 ```
+
+批量处理一个目录里的多集视频，并为每个视频生成独立 `.ivoproj`：
+
+```powershell
+uv run ivo batch-local-preview .\episodes .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --source-language en --no-watermark
+```
+
+批处理可以加 `--report .\demo-output\batch-report.json` 写出机器可读结果；单个视频失败时会继续处理后续视频，最后用非零退出码汇总失败数。
 
 使用真实模型接入脚本的 dry-run profile 验证命令合约：
 

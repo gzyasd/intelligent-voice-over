@@ -104,6 +104,135 @@ def test_batch_mock_preview_command_creates_projects_for_each_video(tmp_path) ->
     assert (output_dir / "episode-02.ivoproj" / "renders" / "preview.mp4").is_file()
 
 
+def test_batch_local_preview_command_processes_each_video(monkeypatch, tmp_path) -> None:
+    from ivo.cli import app
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+
+    input_dir = tmp_path / "episodes"
+    input_dir.mkdir()
+    (input_dir / "episode-01.mp4").write_bytes(b"video-1")
+    (input_dir / "episode-02.mkv").write_bytes(b"video-2")
+    (input_dir / "notes.txt").write_text("ignored", encoding="utf-8")
+    output_dir = tmp_path / "out"
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(
+        json.dumps(
+            {
+                "separation": {
+                    "id": "sep",
+                    "stage": "separation",
+                    "command": ["sep"],
+                    "output_json_path": "sep.json",
+                },
+                "asr": {
+                    "id": "asr",
+                    "stage": "asr",
+                    "command": ["asr"],
+                    "output_json_path": "asr.json",
+                },
+                "tts": {
+                    "id": "tts",
+                    "stage": "tts",
+                    "command": ["tts"],
+                    "output_json_path": "tts.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    processed: list[str] = []
+
+    def fake_run_local_command_preview(project, **kwargs):
+        processed.append(project.name)
+        final_video = project.path / "renders" / "local-preview.mp4"
+        final_video.parent.mkdir(parents=True, exist_ok=True)
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr("ivo.cli.run_local_command_preview", fake_run_local_command_preview)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "batch-local-preview",
+            str(input_dir),
+            str(output_dir),
+            "--profiles",
+            str(profiles_path),
+            "--source-language",
+            "en",
+            "--no-watermark",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert processed == ["episode-01", "episode-02"]
+    assert "Processed 2 videos" in result.output
+    assert (output_dir / "episode-01.ivoproj" / "renders" / "local-preview.mp4").is_file()
+    assert (output_dir / "episode-02.ivoproj" / "renders" / "local-preview.mp4").is_file()
+
+
+def test_batch_local_preview_command_continues_after_video_failure(monkeypatch, tmp_path) -> None:
+    from ivo.cli import app
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+
+    input_dir = tmp_path / "episodes"
+    input_dir.mkdir()
+    (input_dir / "episode-01.mp4").write_bytes(b"video-1")
+    (input_dir / "episode-02.mp4").write_bytes(b"video-2")
+    output_dir = tmp_path / "out"
+    report_path = tmp_path / "batch-report.json"
+    profiles_path = _write_smoke_local_profiles(tmp_path)
+    processed: list[str] = []
+
+    def fake_run_local_command_preview(project, **kwargs):
+        processed.append(project.name)
+        if project.name == "episode-01":
+            raise RuntimeError("asr provider failed")
+        final_video = project.path / "renders" / "local-preview.mp4"
+        final_video.parent.mkdir(parents=True, exist_ok=True)
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr("ivo.cli.run_local_command_preview", fake_run_local_command_preview)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "batch-local-preview",
+            str(input_dir),
+            str(output_dir),
+            "--profiles",
+            str(profiles_path),
+            "--source-language",
+            "en",
+            "--report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert processed == ["episode-01", "episode-02"]
+    assert "episode-01.mp4: FAILED: asr provider failed" in result.output
+    assert "Failed 1 of 2 videos" in result.output
+    assert (output_dir / "episode-02.ivoproj" / "renders" / "local-preview.mp4").is_file()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["processed"] == 2
+    assert report["failed"] == 1
+    assert report["videos"][0]["status"] == "failed"
+    assert report["videos"][0]["error"] == "asr provider failed"
+    assert report["videos"][1]["status"] == "completed"
+    assert report["videos"][1]["final_video"].endswith("local-preview.mp4")
+
+
 def test_local_preview_command_loads_profiles_and_reports_output(monkeypatch, tmp_path) -> None:
     from ivo.cli import app
     from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
@@ -783,9 +912,10 @@ def test_doctor_models_reports_optional_dependency_status() -> None:
     assert "model dir:" in result.output
 
 
-def test_doctor_models_can_output_json(tmp_path) -> None:
+def test_doctor_models_can_output_json(monkeypatch, tmp_path) -> None:
     from ivo.cli import app
 
+    monkeypatch.delenv("HF_TOKEN", raising=False)
     models_dir = tmp_path / "models"
     (models_dir / "asr" / "faster-whisper-large-v3").mkdir(parents=True)
 
@@ -797,6 +927,9 @@ def test_doctor_models_can_output_json(tmp_path) -> None:
     assert faster_whisper["stage"] == "asr"
     assert faster_whisper["model_dir_exists"] is True
     assert "huggingface-cli download" in faster_whisper["download_hint"]
+    pyannote = next(item for item in payload if item["name"] == "pyannote.audio")
+    assert pyannote["required_env_var"] == "HF_TOKEN"
+    assert pyannote["env_var_set"] is False
 
 
 def test_optional_model_dependency_status_includes_model_directory(tmp_path) -> None:
@@ -870,3 +1003,33 @@ def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
     assert "uv run ivo doctor-models --json" in document
     assert "uv run ivo model setup-plan" in document
     assert "uv run ivo model write-setup-script" in document
+
+
+def _write_smoke_local_profiles(tmp_path: Path) -> Path:
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(
+        json.dumps(
+            {
+                "separation": {
+                    "id": "sep",
+                    "stage": "separation",
+                    "command": ["sep"],
+                    "output_json_path": "sep.json",
+                },
+                "asr": {
+                    "id": "asr",
+                    "stage": "asr",
+                    "command": ["asr"],
+                    "output_json_path": "asr.json",
+                },
+                "tts": {
+                    "id": "tts",
+                    "stage": "tts",
+                    "command": ["tts"],
+                    "output_json_path": "tts.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return profiles_path

@@ -81,6 +81,9 @@ def doctor_models(
         typer.echo(f"  import: {dependency.import_name}")
         typer.echo(f"  install: {dependency.install_hint}")
         typer.echo(f"  model dir: {dependency.model_dir} ({model_status})")
+        if dependency.required_env_var is not None:
+            env_status = "set" if dependency.env_var_set else "missing"
+            typer.echo(f"  env: {dependency.required_env_var} ({env_status})")
         typer.echo(f"  download: {dependency.download_hint}")
         typer.echo(f"  license: {dependency.license_hint}")
         typer.echo(f"  verify: {dependency.verify_hint}")
@@ -134,6 +137,81 @@ def batch_mock_preview(
         )
         typer.echo(f"{source_video.name}: {result.final_video}")
     typer.echo(f"Processed {len(video_paths)} videos")
+
+
+@app.command("batch-local-preview")
+def batch_local_preview(
+    input_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
+    output_dir: Annotated[Path, typer.Argument(file_okay=False)],
+    profiles_path: Annotated[
+        Path,
+        typer.Option(
+            "--profiles",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="JSON file containing local command profiles for the dubbing pipeline.",
+        ),
+    ],
+    source_language: Annotated[SourceLanguage, typer.Option()] = "en",
+    target_language: Annotated[TargetLanguage, typer.Option()] = "zh",
+    watermark: Annotated[bool, typer.Option("--watermark/--no-watermark")] = True,
+    report: Annotated[
+        Path | None,
+        typer.Option("--report", dir_okay=False, help="Optional JSON batch report output path."),
+    ] = None,
+) -> None:
+    """Run local command preview for every video file in a directory."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    profiles = LocalCommandPipelineProfiles.model_validate(
+        json.loads(profiles_path.read_text(encoding="utf-8"))
+    )
+    video_paths = _iter_video_paths(input_dir)
+    failures: list[str] = []
+    report_items: list[dict[str, object]] = []
+    for source_video in video_paths:
+        project = DubbingProject.create(
+            output_dir / f"{source_video.stem}.ivoproj",
+            name=source_video.stem,
+            source_language=source_language,
+            target_language=target_language,
+            source_video=source_video,
+        )
+        try:
+            result = run_local_command_preview(
+                project,
+                source_video=source_video,
+                profiles=profiles,
+                watermark_text="AI Dubbed" if watermark else None,
+            )
+        except Exception as exc:
+            failures.append(source_video.name)
+            report_items.append(
+                {
+                    "video": str(source_video),
+                    "project_path": str(project.path),
+                    "status": "failed",
+                    "error": str(exc),
+                }
+            )
+            typer.echo(f"{source_video.name}: FAILED: {exc}")
+            continue
+        report_items.append(
+            {
+                "video": str(source_video),
+                "project_path": str(project.path),
+                "status": "completed",
+                "final_video": str(result.final_video),
+                "error": None,
+            }
+        )
+        typer.echo(f"{source_video.name}: {result.final_video}")
+    typer.echo(f"Processed {len(video_paths)} videos")
+    if report is not None:
+        _write_batch_report(report, report_items)
+    if failures:
+        typer.echo(f"Failed {len(failures)} of {len(video_paths)} videos")
+        raise typer.Exit(1)
 
 
 @app.command("evaluate-project")
@@ -414,6 +492,9 @@ def model_setup_plan(
         typer.echo(f"{dependency.stage} / {dependency.name}")
         typer.echo(f"  package: {package_status}")
         typer.echo(f"  model dir: {dependency.model_dir} ({model_status})")
+        if dependency.required_env_var is not None:
+            env_status = "set" if dependency.env_var_set else "missing"
+            typer.echo(f"  env: {dependency.required_env_var} ({env_status})")
         typer.echo(f"  install: {dependency.install_hint}")
         typer.echo(f"  download: {dependency.download_hint}")
         typer.echo(f"  license: {dependency.license_hint}")
@@ -450,6 +531,32 @@ def _parse_key_value_options(options: list[str]) -> dict[str, str]:
             raise typer.BadParameter(f"Expected KEY=VALUE, got: {option}")
         parsed[key] = value
     return parsed
+
+
+def _iter_video_paths(input_dir: Path) -> list[Path]:
+    return [
+        path
+        for path in sorted(input_dir.iterdir())
+        if path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".mov", ".avi"}
+    ]
+
+
+def _write_batch_report(report_path: Path, videos: list[dict[str, object]]) -> None:
+    failed = sum(1 for item in videos if item["status"] == "failed")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(
+            {
+                "processed": len(videos),
+                "completed": len(videos) - failed,
+                "failed": failed,
+                "videos": videos,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":
