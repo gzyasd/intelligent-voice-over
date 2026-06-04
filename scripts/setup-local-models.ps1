@@ -47,14 +47,14 @@ huggingface-cli download Qwen/Qwen3-8B --local-dir 'models\llm\Qwen3-8B'
 # Verify: Run Qwen through vLLM/SGLang/OpenAI-compatible HTTP profile first.
 
 # translation / vLLM
-uv pip install vllm
+# Manual install: install vLLM in a supported serving environment
 New-Item -ItemType Directory -Force -Path 'models\llm\Qwen3-8B' | Out-Null
 # Download: Uses the selected local LLM directory, for example models/llm/Qwen3-8B.
 # License: Serving framework license differs from model license; confirm both.
 # Verify: Start an OpenAI-compatible local server and use the HTTP translation profile.
 
 # translation / SGLang
-uv pip install sglang
+# Manual install: install SGLang in a supported serving environment
 New-Item -ItemType Directory -Force -Path 'models\llm\Qwen3-8B' | Out-Null
 # Download: Uses the selected local LLM directory, for example models/llm/Qwen3-8B.
 # License: Serving framework license differs from model license; confirm both.
