@@ -66,9 +66,17 @@ def doctor_models(
         bool,
         typer.Option("--json", help="Output machine-readable model diagnostics."),
     ] = False,
+    stage: Annotated[
+        str | None,
+        typer.Option("--stage", help="Only show diagnostics for one stage."),
+    ] = None,
 ) -> None:
     """Report optional local model bridge dependencies."""
-    dependencies = collect_optional_model_dependencies(models_dir)
+    dependencies = [
+        dependency
+        for dependency in collect_optional_model_dependencies(models_dir)
+        if stage is None or dependency.stage == stage
+    ]
     if json_output:
         typer.echo(
             json.dumps(

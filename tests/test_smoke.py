@@ -912,6 +912,17 @@ def test_doctor_models_reports_optional_dependency_status() -> None:
     assert "model dir:" in result.output
 
 
+def test_doctor_models_can_filter_by_stage() -> None:
+    from ivo.cli import app
+
+    result = CliRunner().invoke(app, ["doctor-models", "--stage", "tts"])
+
+    assert result.exit_code == 0
+    assert "tts / CosyVoice" in result.output
+    assert "tts / f5_tts" in result.output
+    assert "faster-whisper" not in result.output
+
+
 def test_doctor_models_can_output_json(monkeypatch, tmp_path) -> None:
     from ivo.cli import app
 

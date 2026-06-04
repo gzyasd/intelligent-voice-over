@@ -40,6 +40,7 @@ uv run ivo doctor
 uv run ivo doctor-models
 uv run ivo doctor-models --models-dir .\models
 uv run ivo doctor-models --models-dir .\models --json
+uv run ivo doctor-models --models-dir .\models --stage tts
 uv run ivo model setup-plan --models-dir .\models
 uv run ivo model setup-plan --models-dir .\models --stage tts
 uv run ivo model write-setup-script --models-dir .\models --output .\scripts\setup-local-models.ps1
