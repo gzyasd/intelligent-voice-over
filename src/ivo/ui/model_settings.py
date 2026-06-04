@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from ivo.adapters.http import ApiAdapterProfile
 from ivo.adapters.profiles import AdapterProfileStore
 from ivo.environment import collect_optional_model_dependencies
+from ivo.local_readiness import build_local_readiness_report
 from ivo.model_setup import build_model_setup_script
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
 from ivo.profile_validation import validate_local_command_profiles
@@ -31,6 +32,7 @@ class ModelSettings(QWidget):
         self.local_command_profiles_path_edit = QLineEdit()
         self.local_command_profiles_browse_button = QPushButton("浏览本地命令 profile")
         self.validate_local_profiles_button = QPushButton("校验本地命令 profile")
+        self.check_local_readiness_button = QPushButton("Check local model readiness")
         self.local_profile_summary_list = QListWidget()
         self.model_diagnostics_list = QListWidget()
         self.separation_profile_path_edit = QLineEdit()
@@ -61,6 +63,7 @@ class ModelSettings(QWidget):
             self.browse_local_command_profiles
         )
         self.validate_local_profiles_button.clicked.connect(self.validate_local_command_profiles)
+        self.check_local_readiness_button.clicked.connect(self.check_local_readiness)
         self.separation_profile_browse_button.clicked.connect(self.browse_separation_profile)
         self.asr_profile_browse_button.clicked.connect(self.browse_asr_profile)
         self.diarization_profile_browse_button.clicked.connect(self.browse_diarization_profile)
@@ -80,6 +83,7 @@ class ModelSettings(QWidget):
         layout.addWidget(self.local_command_profiles_path_edit)
         layout.addWidget(self.local_command_profiles_browse_button)
         layout.addWidget(self.validate_local_profiles_button)
+        layout.addWidget(self.check_local_readiness_button)
         layout.addWidget(QLabel("本地命令 profile 阶段摘要"))
         layout.addWidget(self.local_profile_summary_list)
         layout.addWidget(QLabel("本地模型环境诊断"))
@@ -235,6 +239,35 @@ class ModelSettings(QWidget):
         self.local_profile_summary_list.addItem("validation: ok" if report.ok else "validation: failed")
         for error in report.errors:
             self.local_profile_summary_list.addItem(f"error: {error}")
+
+    def check_local_readiness(self) -> None:
+        raw_profiles_path = self.local_command_profiles_path_edit.text().strip()
+        raw_model_root = self.local_model_path_edit.text().strip()
+        model_root = Path(raw_model_root) if raw_model_root else Path("models")
+        self.model_diagnostics_list.clear()
+        if not raw_profiles_path:
+            self.model_diagnostics_list.addItem("readiness: failed")
+            self.model_diagnostics_list.addItem("missing: local command profiles path is empty")
+            return
+        try:
+            profiles = LocalCommandPipelineProfiles.model_validate(
+                json.loads(Path(raw_profiles_path).read_text(encoding="utf-8"))
+            )
+        except (OSError, ValueError) as exc:
+            self.model_diagnostics_list.addItem("readiness: failed")
+            self.model_diagnostics_list.addItem(f"missing: {exc}")
+            return
+        report = build_local_readiness_report(
+            profiles,
+            dependencies=collect_optional_model_dependencies(model_root),
+        )
+        self.model_diagnostics_list.addItem("readiness: ok" if report.ok else "readiness: failed")
+        for profile in report.checked_profiles:
+            self.model_diagnostics_list.addItem(f"checked: {profile}")
+        for profile in report.skipped_dry_run_profiles:
+            self.model_diagnostics_list.addItem(f"skipped dry-run: {profile}")
+        for missing in report.missing:
+            self.model_diagnostics_list.addItem(f"missing: {missing}")
 
     def _stage_summary(self, stage: str, local_id: str, http_path_edit: QLineEdit) -> str:
         raw_http_path = http_path_edit.text().strip()

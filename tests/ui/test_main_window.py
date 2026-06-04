@@ -370,6 +370,46 @@ def test_model_settings_refresh_button_loads_model_diagnostics(qtbot, tmp_path) 
     assert any("tts / CosyVoice" in text and "model dir: found" in text for text in texts)
 
 
+def test_model_settings_checks_local_readiness_from_profiles(qtbot, tmp_path) -> None:
+    from ivo.ui.model_settings import ModelSettings
+
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+    settings.local_model_path_edit.setText(str(tmp_path / "models"))
+    settings.local_command_profiles_path_edit.setText(
+        str("examples/local_command_profiles.real_dry_run.json")
+    )
+
+    settings.check_local_readiness_button.click()
+
+    texts = [
+        settings.model_diagnostics_list.item(index).text()
+        for index in range(settings.model_diagnostics_list.count())
+    ]
+    assert "readiness: ok" in texts
+    assert any("skipped dry-run: asr:faster-whisper-dry-run" in text for text in texts)
+
+
+def test_model_settings_reports_local_readiness_gaps(qtbot, tmp_path) -> None:
+    from ivo.ui.model_settings import ModelSettings
+
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+    settings.local_model_path_edit.setText(str(tmp_path / "models"))
+    settings.local_command_profiles_path_edit.setText(
+        str("examples/local_command_profiles.real_tts_cosyvoice.json")
+    )
+
+    settings.check_local_readiness_button.click()
+
+    texts = [
+        settings.model_diagnostics_list.item(index).text()
+        for index in range(settings.model_diagnostics_list.count())
+    ]
+    assert "readiness: failed" in texts
+    assert any(text.startswith("missing: tts/CosyVoice:") for text in texts)
+
+
 def test_model_settings_writes_local_model_setup_script(qtbot, tmp_path) -> None:
     from ivo.ui.model_settings import ModelSettings
 
