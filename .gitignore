@@ -15,6 +15,7 @@ work/
 renders/
 assets/
 demo-output/
+scratch/
 models/
 *.mp4
 *.mkv

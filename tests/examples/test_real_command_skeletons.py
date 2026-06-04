@@ -4,6 +4,20 @@ import json
 import subprocess
 import sys
 import wave
+from pathlib import Path
+
+
+def test_tts_engine_command_examples_are_valid_json_arrays() -> None:
+    for path in (
+        Path("examples/engine_commands/f5_tts_engine_command.example.json"),
+        Path("examples/engine_commands/cosyvoice_engine_command.example.json"),
+    ):
+        command = json.loads(path.read_text(encoding="utf-8"))
+
+        assert isinstance(command, list)
+        assert command
+        assert "{text}" in command
+        assert "{audio_out}" in command
 
 
 def test_faster_whisper_asr_dry_run_writes_contract(tmp_path) -> None:
@@ -215,6 +229,69 @@ with wave.open(args.audio_out, "wb") as wav_file:
         assert wav_file.getframerate() == 16000
 
 
+def test_f5_tts_command_can_delegate_to_engine_command_json_file(tmp_path) -> None:
+    engine_script = tmp_path / "engine_file.py"
+    engine_script.write_text(
+        """
+from __future__ import annotations
+
+import argparse
+import wave
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--text", required=True)
+parser.add_argument("--audio-out", required=True)
+args = parser.parse_args()
+
+with wave.open(args.audio_out, "wb") as wav_file:
+    wav_file.setnchannels(1)
+    wav_file.setsampwidth(2)
+    wav_file.setframerate(16000)
+    wav_file.writeframes(b"\\x00\\x00" * 1600)
+""",
+        encoding="utf-8",
+    )
+    command_file = tmp_path / "engine-command.json"
+    command_file.write_text(
+        json.dumps(
+            [
+                sys.executable,
+                str(engine_script),
+                "--text",
+                "{text}",
+                "--audio-out",
+                "{audio_out}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    audio = tmp_path / "speech.wav"
+    output = tmp_path / "tts.json"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "examples/local_commands/f5_tts_command.py",
+            "--text",
+            "你好。",
+            "--speaker",
+            "speaker-1",
+            "--audio-out",
+            str(audio),
+            "--json-out",
+            str(output),
+            "--duration-ms",
+            "100",
+            "--engine-command-json-file",
+            str(command_file),
+        ],
+        check=True,
+    )
+
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert data == {"audio_path": str(audio), "duration_ms": 100}
+
+
 def test_cosyvoice_tts_dry_run_writes_contract(tmp_path) -> None:
     audio = tmp_path / "speech.wav"
     output = tmp_path / "tts.json"
@@ -308,3 +385,71 @@ with wave.open(args.audio_out, "wb") as wav_file:
     assert data == {"audio_path": str(audio), "duration_ms": 100}
     with wave.open(str(audio), "rb") as wav_file:
         assert wav_file.getframerate() == 16000
+
+
+def test_cosyvoice_tts_command_can_delegate_to_engine_command_json_file(tmp_path) -> None:
+    engine_script = tmp_path / "cosy_engine_file.py"
+    engine_script.write_text(
+        """
+from __future__ import annotations
+
+import argparse
+import wave
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--text", required=True)
+parser.add_argument("--model-dir", required=True)
+parser.add_argument("--audio-out", required=True)
+args = parser.parse_args()
+
+with wave.open(args.audio_out, "wb") as wav_file:
+    wav_file.setnchannels(1)
+    wav_file.setsampwidth(2)
+    wav_file.setframerate(16000)
+    wav_file.writeframes(b"\\x00\\x00" * 1600)
+""",
+        encoding="utf-8",
+    )
+    command_file = tmp_path / "cosy-engine-command.json"
+    command_file.write_text(
+        json.dumps(
+            [
+                sys.executable,
+                str(engine_script),
+                "--text",
+                "{text}",
+                "--model-dir",
+                "{model_dir}",
+                "--audio-out",
+                "{audio_out}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    audio = tmp_path / "speech.wav"
+    output = tmp_path / "tts.json"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "examples/local_commands/cosyvoice_tts.py",
+            "--text",
+            "你好。",
+            "--speaker",
+            "speaker-1",
+            "--audio-out",
+            str(audio),
+            "--json-out",
+            str(output),
+            "--duration-ms",
+            "100",
+            "--model-dir",
+            "models/tts/Fun-CosyVoice3-0.5B",
+            "--engine-command-json-file",
+            str(command_file),
+        ],
+        check=True,
+    )
+
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert data == {"audio_path": str(audio), "duration_ms": 100}

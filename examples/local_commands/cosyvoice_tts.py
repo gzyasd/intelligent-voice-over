@@ -20,6 +20,7 @@ def main() -> int:
     parser.add_argument("--style-prompt", default="")
     parser.add_argument("--duration-ms", type=int, default=1000)
     parser.add_argument("--engine-command-json")
+    parser.add_argument("--engine-command-json-file")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -29,8 +30,9 @@ def main() -> int:
         write_contract(Path(args.json_out), audio_path, args.duration_ms)
         return 0
 
-    if args.engine_command_json:
-        command = render_engine_command(args.engine_command_json, args)
+    engine_command_json = load_engine_command_json(args)
+    if engine_command_json:
+        command = render_engine_command(engine_command_json, args)
         try:
             subprocess.run(command, check=True)
         except (OSError, subprocess.CalledProcessError) as exc:
@@ -53,6 +55,14 @@ def main() -> int:
         "CosyVoice import succeeded, but this skeleton still needs the local model-specific "
         "inference call wired for your checkpoint. Prefer --engine-command-json while validating."
     )
+
+
+def load_engine_command_json(args: argparse.Namespace) -> str | None:
+    if args.engine_command_json and args.engine_command_json_file:
+        raise SystemExit("Use only one of --engine-command-json or --engine-command-json-file")
+    if args.engine_command_json_file:
+        return Path(args.engine_command_json_file).read_text(encoding="utf-8")
+    return args.engine_command_json
 
 
 def render_engine_command(raw_json: str, args: argparse.Namespace) -> list[str]:

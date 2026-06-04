@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import audioop
 import base64
 import wave
 from pathlib import Path
@@ -215,6 +216,7 @@ def synthesize_segment(
         segment.quality_flags,
         duration_flag=duration_flag,
         reference_missing=reference_audio_path is None,
+        silent_audio=_is_silent_wav(output_path),
     )
     project.timeline.update_segment(
         segment.id,
@@ -285,16 +287,29 @@ def _merge_synthesis_quality_flags(
     *,
     duration_flag: str,
     reference_missing: bool,
+    silent_audio: bool,
 ) -> list[str]:
     refreshed = [
         flag
         for flag in existing_flags
-        if flag not in {"duration_ok", "duration_mismatch", "missing_reference_audio"}
+        if flag
+        not in {"duration_ok", "duration_mismatch", "missing_reference_audio", "silent_audio"}
     ]
     refreshed.append(duration_flag)
     if reference_missing:
         refreshed.append("missing_reference_audio")
+    if silent_audio:
+        refreshed.append("silent_audio")
     return refreshed
+
+
+def _is_silent_wav(path: Path) -> bool:
+    try:
+        with wave.open(str(path), "rb") as wav_file:
+            frames = wav_file.readframes(wav_file.getnframes())
+            return not frames or audioop.max(frames, wav_file.getsampwidth()) == 0
+    except (EOFError, OSError, wave.Error):
+        return False
 
 
 def _write_silent_wav(output_path: Path, *, duration_ms: int) -> None:

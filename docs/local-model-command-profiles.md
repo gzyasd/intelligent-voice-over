@@ -17,6 +17,12 @@ cd F:\GZYproject\Intelligent-Voice-Over
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --target-text "seg-001=嗯，你好。" --no-watermark
 ```
 
+真实模型耗时较长，建议每次使用固定的 `--project-name`。如果某个阶段失败，修复环境或 profile 后可增加 `--resume-existing` 继续同一个项目；local preview 会优先复用已完成且文件产物存在的 import、audio_extract、separation 阶段：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --resume-existing --no-watermark
+```
+
 输出位置：
 
 ```text
@@ -181,6 +187,29 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
   "[\"python\", \"path/to/your_tts_infer.py\", \"--text\", \"{text}\", \"--speaker\", \"{speaker}\", \"--out\", \"{audio_out}\"]"
 ]
 ```
+
+Windows profile 中直接内嵌 JSON 容易遇到引号转义问题，也可以把外部推理命令写入文件，然后传 `--engine-command-json-file`：
+
+```json
+[
+  "python",
+  "examples/local_commands/f5_tts_command.py",
+  "--text",
+  "{{ segment_text }}",
+  "--speaker",
+  "{{ speaker_id }}",
+  "--audio-out",
+  "{{ output_audio_path }}",
+  "--duration-ms",
+  "{{ target_duration_ms }}",
+  "--json-out",
+  "{{ output_json_path }}",
+  "--engine-command-json-file",
+  "examples/engine_commands/f5_tts_engine_command.example.json"
+]
+```
+
+可复制 `examples/engine_commands/f5_tts_engine_command.example.json` 或 `examples/engine_commands/cosyvoice_engine_command.example.json`，把其中的 `path/to/...` 改成你本机真实推理脚本。
 
 输出 JSON 合约：
 

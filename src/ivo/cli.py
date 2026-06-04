@@ -177,6 +177,13 @@ def batch_local_preview(
         bool,
         typer.Option("--skip-existing", help="Skip videos with an existing local-preview.mp4."),
     ] = False,
+    resume_existing: Annotated[
+        bool,
+        typer.Option(
+            "--resume-existing",
+            help="Load existing .ivoproj folders and resume completed stages.",
+        ),
+    ] = False,
 ) -> None:
     """Run local command preview for every video file in a directory."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -201,13 +208,32 @@ def batch_local_preview(
             )
             typer.echo(f"{source_video.name}: SKIPPED existing output")
             continue
-        project = DubbingProject.create(
-            project_path,
-            name=source_video.stem,
-            source_language=source_language,
-            target_language=target_language,
-            source_video=source_video,
-        )
+        if project_path.exists() and not resume_existing:
+            message = (
+                f"Project already exists: {project_path}. "
+                "Use --resume-existing to continue it."
+            )
+            failures.append(source_video.name)
+            report_items.append(
+                {
+                    "video": str(source_video),
+                    "project_path": str(project_path),
+                    "status": "failed",
+                    "error": message,
+                }
+            )
+            typer.echo(f"{source_video.name}: FAILED: {message}")
+            continue
+        if resume_existing and project_path.is_dir():
+            project = DubbingProject.load(project_path)
+        else:
+            project = DubbingProject.create(
+                project_path,
+                name=source_video.stem,
+                source_language=source_language,
+                target_language=target_language,
+                source_video=source_video,
+            )
         try:
             result = run_local_command_preview(
                 project,
@@ -384,15 +410,33 @@ def local_preview(
     tts_var: Annotated[list[str] | None, typer.Option("--tts-var")] = None,
     ffmpeg_path: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     watermark: Annotated[bool, typer.Option("--watermark/--no-watermark")] = True,
+    resume_existing: Annotated[
+        bool,
+        typer.Option(
+            "--resume-existing",
+            help="Load an existing project with the same name and resume completed stages.",
+        ),
+    ] = False,
 ) -> None:
     """Create a project and run local command adapters from a profile JSON file."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    project = DubbingProject.create(
-        output_dir / f"{project_name}.ivoproj",
-        name=project_name,
-        source_language=source_language,
-        target_language=target_language,
-    )
+    project_path = output_dir / f"{project_name}.ivoproj"
+    if resume_existing and project_path.is_dir():
+        project = DubbingProject.load(project_path)
+    else:
+        if project_path.exists():
+            typer.echo(
+                f"Project already exists: {project_path}. "
+                "Use --resume-existing to continue it."
+            )
+            raise typer.Exit(1)
+        project = DubbingProject.create(
+            project_path,
+            name=project_name,
+            source_language=source_language,
+            target_language=target_language,
+            source_video=source_video,
+        )
     profiles = LocalCommandPipelineProfiles.model_validate(
         json.loads(profiles_path.read_text(encoding="utf-8"))
     )
@@ -428,7 +472,7 @@ def local_preview(
                 json.loads(translation_profile.read_text(encoding="utf-8"))
             ),
             project_path=project.path,
-            target_language=target_language,
+            target_language=project.target_language,
             extra=translation_extra,
         )
         if translation_profile is not None

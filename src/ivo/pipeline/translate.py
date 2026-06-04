@@ -126,8 +126,8 @@ def translate_segments(
             status="needs_review",
             quality_flags=source_segment.quality_flags,
         )
-    project.timeline.add_segment(segment)
-    created.append(segment)
+        project.timeline.upsert_segment(segment)
+        created.append(segment)
     return created
 
 

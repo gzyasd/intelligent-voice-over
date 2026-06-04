@@ -92,6 +92,31 @@ class TimelineStore:
                 self._to_row(segment),
             )
 
+    def upsert_segment(self, segment: DubbingSegment) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO segments (
+                    id, start_ms, end_ms, speaker_id, source_language, source_text,
+                    target_language, target_text, emotion, style_prompt, status, quality_flags
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    start_ms = excluded.start_ms,
+                    end_ms = excluded.end_ms,
+                    speaker_id = excluded.speaker_id,
+                    source_language = excluded.source_language,
+                    source_text = excluded.source_text,
+                    target_language = excluded.target_language,
+                    target_text = excluded.target_text,
+                    emotion = excluded.emotion,
+                    style_prompt = excluded.style_prompt,
+                    status = excluded.status,
+                    quality_flags = excluded.quality_flags
+                """,
+                self._to_row(segment),
+            )
+
     def get_segment(self, segment_id: str) -> DubbingSegment:
         with self._connect() as connection:
             row = connection.execute(

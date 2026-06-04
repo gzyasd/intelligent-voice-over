@@ -1,0 +1,16 @@
+[
+  "python",
+  "path/to/your_f5_tts_infer.py",
+  "--text",
+  "{text}",
+  "--speaker",
+  "{speaker}",
+  "--reference-audio",
+  "{reference_audio}",
+  "--reference-text",
+  "{reference_text}",
+  "--style-prompt",
+  "{style_prompt}",
+  "--audio-out",
+  "{audio_out}"
+]

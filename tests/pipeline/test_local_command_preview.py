@@ -457,6 +457,138 @@ def test_local_command_preview_resumes_completed_file_stages(tmp_path) -> None:
     assert project.jobs.get("separation").status == "completed"  # type: ignore[union-attr]
 
 
+def test_local_command_preview_resumes_failed_tts_from_rendered_segments(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg
+    from ivo.pipeline.local_command_preview import run_local_command_preview
+    from ivo.pipeline.transcribe import TranscriptionSegment
+
+    class TwoSegmentAsrAdapter:
+        def transcribe(
+            self,
+            audio_path: Path,
+            *,
+            source_language: str,
+        ) -> list[TranscriptionSegment]:
+            return [
+                TranscriptionSegment(
+                    id="seg-001",
+                    start_ms=0,
+                    end_ms=1_000,
+                    source_language=source_language,
+                    source_text="Line one.",
+                    speaker_id="speaker-1",
+                ),
+                TranscriptionSegment(
+                    id="seg-002",
+                    start_ms=1_000,
+                    end_ms=2_000,
+                    source_language=source_language,
+                    source_text="Line two.",
+                    speaker_id="speaker-1",
+                ),
+            ]
+
+    class FailSecondTtsAdapter:
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            target_duration_ms: int,
+        ) -> int:
+            if text == "第二句。":
+                raise RuntimeError("second segment failed")
+            _write_silent_wav(output_path, duration_ms=target_duration_ms)
+            return target_duration_ms
+
+    class RecordingTtsAdapter:
+        def __init__(self) -> None:
+            self.texts: list[str] = []
+
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            target_duration_ms: int,
+        ) -> int:
+            self.texts.append(text)
+            _write_silent_wav(output_path, duration_ms=target_duration_ms)
+            return target_duration_ms
+
+    try:
+        ffmpeg = require_ffmpeg()
+    except FFmpegNotFoundError:
+        pytest.skip("FFmpeg is not visible in this shell; set IVO_FFMPEG_PATH or restart terminal.")
+
+    source_video = tmp_path / "source.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:duration=2:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=550:duration=2",
+            "-shortest",
+            str(source_video),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    project = DubbingProject.create(
+        tmp_path / "failed-second-tts.ivoproj",
+        name="Failed Second TTS",
+        source_language="en",
+        target_language="zh",
+    )
+
+    with pytest.raises(RuntimeError, match="second segment failed"):
+        run_local_command_preview(
+            project,
+            source_video=source_video,
+            profiles=_mock_profiles(tmp_path),
+            asr_adapter=TwoSegmentAsrAdapter(),
+            tts_adapter=FailSecondTtsAdapter(),
+            translation_overrides={"seg-001": "第一句。", "seg-002": "第二句。"},
+            ffmpeg_path=ffmpeg,
+            watermark_text=None,
+        )
+
+    assert project.timeline.get_segment("seg-001").status == "rendered"
+    assert project.jobs.get("translation").status == "completed"  # type: ignore[union-attr]
+    assert project.jobs.get("tts").status == "failed"  # type: ignore[union-attr]
+
+    recording_tts = RecordingTtsAdapter()
+    result = run_local_command_preview(
+        project,
+        source_video=source_video,
+        profiles=_mock_profiles(tmp_path),
+        asr_adapter=TwoSegmentAsrAdapter(),
+        tts_adapter=recording_tts,
+        translation_overrides={"seg-001": "第一句。", "seg-002": "第二句。"},
+        ffmpeg_path=ffmpeg,
+        watermark_text=None,
+    )
+
+    assert recording_tts.texts == ["第二句。"]
+    assert result.final_video.is_file()
+    assert project.timeline.get_segment("seg-001").status == "rendered"
+    assert project.timeline.get_segment("seg-002").status == "rendered"
+
+
 def test_local_command_preview_can_use_custom_asr_adapter(tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg

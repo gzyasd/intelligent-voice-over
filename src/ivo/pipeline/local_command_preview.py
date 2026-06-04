@@ -120,6 +120,7 @@ def run_local_command_preview(
         project,
         "translation",
         lambda: translate_segments(project, source_segments, adapter),
+        resume_from=lambda: _resume_translated_segments(project),
     )
 
     generated_segments: list[Path] = []
@@ -199,6 +200,11 @@ def _resume_separation(project: DubbingProject) -> SeparationResult | None:
     return SeparationResult(vocals_path=vocals_path, background_path=background_path)
 
 
+def _resume_translated_segments(project: DubbingProject) -> list[DubbingSegment] | None:
+    segments = project.timeline.list_segments()
+    return segments or None
+
+
 def _synthesize_segments(
     project: DubbingProject,
     dubbed_segments: list[DubbingSegment],
@@ -207,10 +213,22 @@ def _synthesize_segments(
     segment_audio: list[SegmentAudio],
 ) -> None:
     for segment in dubbed_segments:
+        resumed_audio = _resume_segment_audio(project, segment)
+        if resumed_audio is not None:
+            generated_segments.append(resumed_audio)
+            segment_audio.append(SegmentAudio(path=resumed_audio, start_ms=segment.start_ms))
+            continue
         project.timeline.update_segment(segment.id, status="approved")
         synthesis = synthesize_segment(project, segment, active_tts_adapter)
         generated_segments.append(synthesis.audio_path)
         segment_audio.append(SegmentAudio(path=synthesis.audio_path, start_ms=segment.start_ms))
+
+
+def _resume_segment_audio(project: DubbingProject, segment: DubbingSegment) -> Path | None:
+    audio_path = project.path / "work" / "generated_segments" / f"{segment.id}.wav"
+    if segment.status != "rendered" or not audio_path.is_file():
+        return None
+    return audio_path
 
 
 def _build_override_translation_adapter(

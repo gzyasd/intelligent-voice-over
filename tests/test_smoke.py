@@ -285,6 +285,111 @@ def test_batch_local_preview_command_skips_existing_outputs(monkeypatch, tmp_pat
     assert report["videos"][0]["final_video"].endswith("local-preview.mp4")
 
 
+def test_batch_local_preview_command_can_resume_existing_projects(monkeypatch, tmp_path) -> None:
+    from ivo.cli import app
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+
+    input_dir = tmp_path / "episodes"
+    input_dir.mkdir()
+    (input_dir / "episode-01.mp4").write_bytes(b"video-1")
+    output_dir = tmp_path / "out"
+    project = DubbingProject.create(
+        output_dir / "episode-01.ivoproj",
+        name="episode-01",
+        source_language="en",
+        target_language="zh",
+    )
+    project.jobs.mark_completed("audio_extract", "completed")
+    profiles_path = _write_smoke_local_profiles(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_run_local_command_preview(project, **kwargs):
+        captured["project_path"] = project.path
+        captured["audio_extract_status"] = project.jobs.get("audio_extract").status
+        final_video = project.path / "renders" / "local-preview.mp4"
+        final_video.parent.mkdir(parents=True, exist_ok=True)
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr("ivo.cli.run_local_command_preview", fake_run_local_command_preview)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "batch-local-preview",
+            str(input_dir),
+            str(output_dir),
+            "--profiles",
+            str(profiles_path),
+            "--resume-existing",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "project_path": output_dir / "episode-01.ivoproj",
+        "audio_extract_status": "completed",
+    }
+    assert "Processed 1 videos" in result.output
+
+
+def test_batch_local_preview_command_reports_existing_project_without_resume(
+    monkeypatch, tmp_path
+) -> None:
+    from ivo.cli import app
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+
+    input_dir = tmp_path / "episodes"
+    input_dir.mkdir()
+    (input_dir / "episode-01.mp4").write_bytes(b"video-1")
+    (input_dir / "episode-02.mp4").write_bytes(b"video-2")
+    output_dir = tmp_path / "out"
+    DubbingProject.create(
+        output_dir / "episode-01.ivoproj",
+        name="episode-01",
+        source_language="en",
+        target_language="zh",
+    )
+    profiles_path = _write_smoke_local_profiles(tmp_path)
+    processed: list[str] = []
+
+    def fake_run_local_command_preview(project, **kwargs):
+        processed.append(project.name)
+        final_video = project.path / "renders" / "local-preview.mp4"
+        final_video.parent.mkdir(parents=True, exist_ok=True)
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr("ivo.cli.run_local_command_preview", fake_run_local_command_preview)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "batch-local-preview",
+            str(input_dir),
+            str(output_dir),
+            "--profiles",
+            str(profiles_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert processed == ["episode-02"]
+    assert "episode-01.mp4: FAILED:" in result.output
+    assert "--resume-existing" in result.output
+    assert "Failed 1 of 2 videos" in result.output
+
+
 def test_local_preview_command_loads_profiles_and_reports_output(monkeypatch, tmp_path) -> None:
     from ivo.cli import app
     from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
@@ -358,6 +463,97 @@ def test_local_preview_command_loads_profiles_and_reports_output(monkeypatch, tm
     assert result.exit_code == 0
     assert calls == ["tts"]
     assert "local-preview.mp4" in result.output
+
+
+def test_local_preview_command_can_resume_existing_project(monkeypatch, tmp_path) -> None:
+    from ivo.cli import app
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
+    output_dir = tmp_path / "out"
+    project = DubbingProject.create(
+        output_dir / "Episode 01.ivoproj",
+        name="Episode 01",
+        source_language="en",
+        target_language="zh",
+    )
+    project.jobs.mark_completed("import", "completed")
+    profiles_path = _write_smoke_local_profiles(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_run_local_command_preview(*args, **kwargs) -> LocalCommandPreviewResult:
+        current_project = args[0]
+        captured["project_path"] = current_project.path
+        captured["import_status"] = current_project.jobs.get("import").status
+        final_video = current_project.path / "renders" / "local-preview.mp4"
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr(
+        "ivo.cli.run_local_command_preview",
+        fake_run_local_command_preview,
+        raising=False,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "local-preview",
+            str(source),
+            str(output_dir),
+            "--profiles",
+            str(profiles_path),
+            "--project-name",
+            "Episode 01",
+            "--resume-existing",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "project_path": output_dir / "Episode 01.ivoproj",
+        "import_status": "completed",
+    }
+    assert "local-preview.mp4" in result.output
+
+
+def test_local_preview_command_reports_existing_project_without_resume(tmp_path) -> None:
+    from ivo.cli import app
+    from ivo.core.project import DubbingProject
+
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
+    output_dir = tmp_path / "out"
+    DubbingProject.create(
+        output_dir / "Episode 01.ivoproj",
+        name="Episode 01",
+        source_language="en",
+        target_language="zh",
+    )
+    profiles_path = _write_smoke_local_profiles(tmp_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "local-preview",
+            str(source),
+            str(output_dir),
+            "--profiles",
+            str(profiles_path),
+            "--project-name",
+            "Episode 01",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "already exists" in result.output
+    assert "--resume-existing" in result.output
 
 
 def test_local_preview_command_loads_translation_profile(monkeypatch, tmp_path) -> None:

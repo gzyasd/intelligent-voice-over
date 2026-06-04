@@ -18,6 +18,16 @@
 
 ## 剩余任务总览
 
+### 2026-06-04 执行进展
+
+- 已把 local preview 的 import、audio_extract、separation 阶段改为“job completed 且文件产物存在时复用”，并增加 `local-preview --resume-existing` 与 `batch-local-preview --resume-existing`。
+- 已修复翻译阶段只保存最后一个片段的问题；翻译续跑时同 ID 片段会更新，不再因 SQLite 主键冲突中断。
+- 已支持 TTS 片段级续跑：某句已经 `rendered` 且 `work/generated_segments/{segment_id}.wav` 存在时，重跑失败的 TTS 阶段不会再次调用模型生成该句。
+- 已为 F5-TTS / CosyVoice 命令骨架增加 `--engine-command-json-file`，并提供 `examples/engine_commands/*.example.json` 模板，降低 Windows profile 的 JSON 转义成本。
+- 已增加 `silent_audio` 质量标记，TTS 输出全静音 WAV 时会进入时间线、UI 质量摘要和评估报告。
+- 已用合成 1 分钟视频实际跑通 `uv run ivo local-preview ... --profiles examples/local_command_profiles.real_dry_run.json`，并用 `evaluate-project` 生成评估 JSON；当前全量验证为 `uv run pytest` 198 passed，`uv run ruff check .` 通过，`uv run mypy src` 通过。
+- Git 暂存/提交/推送在本轮一度被平台用量限制拦截，待限制恢复后需要把这批已验证改动提交并推送。
+
 ### P0：真实本地模型最小闭环
 
 - [ ] 建立本地模型目录和下载规范，确认所有模型权重不进入 Git。

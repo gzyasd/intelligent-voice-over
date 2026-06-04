@@ -71,6 +71,89 @@ def test_translate_segments_writes_needs_review_timeline_entries(tmp_path) -> No
     assert project.timeline.get_segment("seg-001") == created[0]
 
 
+def test_translate_segments_persists_every_source_segment(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import MockTranslationAdapter, TranslationResult, translate_segments
+
+    project = DubbingProject.create(
+        tmp_path / "translate-many.ivoproj",
+        name="Translate Many",
+        source_language="en",
+        target_language="zh",
+    )
+
+    created = translate_segments(
+        project,
+        [
+            TranscriptionSegment(
+                id="seg-001",
+                start_ms=0,
+                end_ms=1_000,
+                source_language="en",
+                source_text="Line one.",
+                speaker_id="speaker-1",
+            ),
+            TranscriptionSegment(
+                id="seg-002",
+                start_ms=1_000,
+                end_ms=2_000,
+                source_language="en",
+                source_text="Line two.",
+                speaker_id="speaker-2",
+            ),
+        ],
+        MockTranslationAdapter(
+            {
+                "seg-001": TranslationResult(segment_id="seg-001", target_text="第一句。"),
+                "seg-002": TranslationResult(segment_id="seg-002", target_text="第二句。"),
+            }
+        ),
+    )
+
+    assert [segment.id for segment in created] == ["seg-001", "seg-002"]
+    assert [segment.id for segment in project.timeline.list_segments()] == ["seg-001", "seg-002"]
+
+
+def test_translate_segments_updates_existing_segments_on_resume(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import MockTranslationAdapter, TranslationResult, translate_segments
+
+    project = DubbingProject.create(
+        tmp_path / "translate-resume.ivoproj",
+        name="Translate Resume",
+        source_language="en",
+        target_language="zh",
+    )
+    source_segment = TranscriptionSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        source_language="en",
+        source_text="Line one.",
+        speaker_id="speaker-1",
+    )
+    translate_segments(
+        project,
+        [source_segment],
+        MockTranslationAdapter(
+            {"seg-001": TranslationResult(segment_id="seg-001", target_text="旧译文。")}
+        ),
+    )
+
+    created = translate_segments(
+        project,
+        [source_segment],
+        MockTranslationAdapter(
+            {"seg-001": TranslationResult(segment_id="seg-001", target_text="新译文。")}
+        ),
+    )
+
+    assert created[0].target_text == "新译文。"
+    assert project.timeline.get_segment("seg-001").target_text == "新译文。"
+
+
 def test_http_translation_adapter_uses_profile_and_prompt(tmp_path) -> None:
     from ivo.adapters.http import ApiAdapterProfile
     from ivo.pipeline.transcribe import TranscriptionSegment

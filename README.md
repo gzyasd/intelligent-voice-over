@@ -74,6 +74,12 @@ uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" -
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --project-name "Episode 01" --source-language en --no-watermark
 ```
 
+如果真实本地模型运行中途失败，保留同一个输出目录和项目名，修复模型环境或 profile 后可用 `--resume-existing` 复用已有 `.ivoproj`、job 状态和已完成的文件阶段产物：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --resume-existing --no-watermark
+```
+
 运行真实模型前，可以先静态校验本地命令 profiles：
 
 ```powershell
@@ -86,7 +92,7 @@ uv run ivo validate-local-profiles .\examples\local_command_profiles.real_dry_ru
 uv run ivo batch-local-preview .\episodes .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --source-language en --no-watermark
 ```
 
-批处理可以加 `--report .\demo-output\batch-report.json` 写出机器可读结果；单个视频失败时会继续处理后续视频，最后用非零退出码汇总失败数。已经生成过 `renders/local-preview.mp4` 的项目可以用 `--skip-existing` 跳过，适合长剧集续跑。
+批处理可以加 `--report .\demo-output\batch-report.json` 写出机器可读结果；单个视频失败时会继续处理后续视频，最后用非零退出码汇总失败数。已经生成过 `renders/local-preview.mp4` 的项目可以用 `--skip-existing` 跳过；需要继续已有 `.ivoproj` 的阶段状态时使用 `--resume-existing`，适合长剧集续跑。
 
 使用真实模型接入脚本的 dry-run profile 验证命令合约：
 

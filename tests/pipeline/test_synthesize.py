@@ -80,10 +80,15 @@ def test_mock_tts_generates_wav_and_duration_quality_flags(tmp_path) -> None:
     )
 
     assert result.audio_path == project.path / "work" / "generated_segments" / "seg-001.wav"
-    assert result.quality_flags == ["duration_mismatch", "missing_reference_audio"]
+    assert result.quality_flags == [
+        "duration_mismatch",
+        "missing_reference_audio",
+        "silent_audio",
+    ]
     assert project.timeline.get_segment("seg-001").quality_flags == [
         "duration_mismatch",
         "missing_reference_audio",
+        "silent_audio",
     ]
     with wave.open(str(result.audio_path), "rb") as wav_file:
         assert wav_file.getnchannels() == 1
@@ -121,6 +126,7 @@ def test_synthesize_preserves_existing_quality_flags(tmp_path) -> None:
         "speaker_unmatched",
         "duration_ok",
         "missing_reference_audio",
+        "silent_audio",
     ]
     assert project.timeline.get_segment("seg-001").quality_flags == result.quality_flags
 
