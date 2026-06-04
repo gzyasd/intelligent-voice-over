@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Annotated
 
@@ -19,6 +20,7 @@ from ivo.evaluation import (
 )
 from ivo.local_readiness import LocalReadinessReport, build_local_readiness_report
 from ivo.model_setup import build_model_setup_script
+from ivo.model_smoke import default_asr_smoke_output_path, run_asr_smoke_probe
 from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
 from ivo.pipeline.mock_pipeline import run_mock_dubbing_pipeline
@@ -734,6 +736,43 @@ def model_write_setup_script(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(script, encoding="utf-8")
     typer.echo(f"Model setup script written: {output}")
+
+
+@model_app.command("smoke-asr")
+def model_smoke_asr(
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", dir_okay=False, help="ASR JSON contract output path."),
+    ] = None,
+    adapter_script: Annotated[
+        Path,
+        typer.Option("--adapter-script", exists=True, dir_okay=False, readable=True),
+    ] = Path("examples/local_commands/faster_whisper_asr.py"),
+    language: Annotated[SourceLanguage, typer.Option()] = "en",
+    model: Annotated[str, typer.Option(help="faster-whisper model name or local model path.")] = "tiny",
+    device: Annotated[str, typer.Option()] = "cpu",
+    compute_type: Annotated[str, typer.Option("--compute-type")] = "int8",
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Only validate the adapter contract without loading a model."),
+    ] = False,
+) -> None:
+    """Run a tiny ASR adapter smoke probe."""
+    try:
+        result = run_asr_smoke_probe(
+            output_path=output or default_asr_smoke_output_path(),
+            adapter_script=adapter_script,
+            language=language,
+            model=model,
+            device=device,
+            compute_type=compute_type,
+            dry_run=dry_run,
+        )
+    except subprocess.CalledProcessError as exc:
+        typer.echo(f"ASR smoke probe failed with exit code {exc.returncode}: {' '.join(exc.cmd)}")
+        raise typer.Exit(exc.returncode) from exc
+    typer.echo(f"ASR smoke probe completed: {result.output_path}")
+    typer.echo(f"Probe audio: {result.audio_path}")
 
 
 def _parse_key_value_options(options: list[str]) -> dict[str, str]:

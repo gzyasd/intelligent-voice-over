@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -1217,6 +1218,7 @@ def test_doctor_models_reports_optional_dependency_status() -> None:
     assert "download:" in result.output
     assert "license:" in result.output
     assert "model dir:" in result.output
+    assert "uv run ivo model smoke-asr --dry-run" in result.output
 
 
 def test_doctor_models_can_filter_by_stage() -> None:
@@ -1315,12 +1317,63 @@ def test_model_write_setup_script_command_writes_filtered_script(tmp_path) -> No
     assert "Model setup script written" in result.output
 
 
+def test_model_smoke_asr_command_runs_adapter_dry_run(tmp_path) -> None:
+    from ivo.cli import app
+
+    output = tmp_path / "asr-smoke.json"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "model",
+            "smoke-asr",
+            "--output",
+            str(output),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "ASR smoke probe completed" in result.output
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["segments"][0]["text"] == "Well, hi."
+
+
+def test_model_smoke_asr_command_uses_temp_output_by_default() -> None:
+    from ivo.cli import app
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "model",
+            "smoke-asr",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "ASR smoke probe completed:" in result.output
+    completed_line = next(
+        line for line in result.output.splitlines() if line.startswith("ASR smoke probe completed:")
+    )
+    assert str(Path(tempfile.gettempdir())) in completed_line
+
+
+def test_pyproject_declares_local_asr_extra() -> None:
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert "[project.optional-dependencies]" in pyproject
+    assert "local-asr" in pyproject
+    assert "faster-whisper" in pyproject
+
+
 def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
     document = Path("docs/local-model-setup.md").read_text(encoding="utf-8")
 
     assert "uv run ivo doctor-models --json" in document
     assert "uv run ivo model setup-plan" in document
     assert "uv run ivo model write-setup-script" in document
+    assert "uv run ivo model smoke-asr" in document
 
 
 def _write_smoke_local_profiles(tmp_path: Path) -> Path:

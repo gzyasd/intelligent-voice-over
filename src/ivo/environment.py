@@ -90,7 +90,7 @@ def collect_optional_model_dependencies(
             ),
             license_hint="MIT package; confirm the selected Whisper checkpoint license.",
             model_subdir=Path("asr") / "faster-whisper-large-v3",
-            verify_hint="uv run python examples/local_commands/faster_whisper_asr.py --help",
+            verify_hint="uv run ivo model smoke-asr --dry-run",
         ),
         OptionalDependencySpec(
             name="demucs",

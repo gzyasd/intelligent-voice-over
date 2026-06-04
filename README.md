@@ -46,6 +46,7 @@ uv run ruff check .
 uv run mypy src
 uv run ivo doctor
 uv run ivo doctor-models
+uv run ivo model smoke-asr --output .\scratch\asr-smoke.json --dry-run
 ```
 
 启动桌面 UI：
