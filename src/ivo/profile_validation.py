@@ -23,16 +23,16 @@ class HttpProfileValidationReport(BaseModel):
 
 def validate_local_command_profiles(profiles: LocalCommandPipelineProfiles) -> LocalProfileValidationReport:
     stage_profiles = [
-        profiles.separation,
-        profiles.asr,
-        *([profiles.diarization] if profiles.diarization is not None else []),
-        profiles.tts,
+        ("separation", profiles.separation),
+        ("asr", profiles.asr),
+        *([("diarization", profiles.diarization)] if profiles.diarization is not None else []),
+        ("tts", profiles.tts),
     ]
     errors: list[str] = []
     stages: list[str] = []
-    for profile in stage_profiles:
+    for expected_stage, profile in stage_profiles:
         stages.append(profile.stage)
-        errors.extend(_validate_profile(profile))
+        errors.extend(_validate_profile(profile, expected_stage=expected_stage))
     return LocalProfileValidationReport(ok=not errors, stages=stages, errors=errors)
 
 
@@ -58,8 +58,12 @@ def validate_http_profile(profile: ApiAdapterProfile) -> HttpProfileValidationRe
     )
 
 
-def _validate_profile(profile: LocalCommandProfile) -> list[str]:
+def _validate_profile(profile: LocalCommandProfile, *, expected_stage: str) -> list[str]:
     errors: list[str] = []
+    if profile.stage != expected_stage:
+        errors.append(
+            f"{expected_stage} profile stage should be {expected_stage}, got {profile.stage}"
+        )
     if not profile.command:
         errors.append(f"{profile.stage} command cannot be empty")
     rendered_command = " ".join(profile.command)

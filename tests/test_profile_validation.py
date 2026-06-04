@@ -40,6 +40,21 @@ def test_validate_local_profiles_cli_reports_missing_output_placeholder(tmp_path
     assert "tts command should include {{ output_json_path }}" in payload["errors"]
 
 
+def test_validate_local_profiles_cli_reports_stage_mismatch(tmp_path: Path) -> None:
+    from ivo.cli import app
+
+    payload = _profile_payload()
+    payload["tts"]["stage"] = "asr"
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["validate-local-profiles", str(profiles_path), "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert "tts profile stage should be tts, got asr" in payload["errors"]
+
+
 def test_validate_http_profile_cli_accepts_complete_profile(tmp_path: Path) -> None:
     from ivo.cli import app
 
