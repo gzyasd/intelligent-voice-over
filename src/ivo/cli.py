@@ -25,6 +25,7 @@ from ivo.pipeline.separate_audio import HttpSeparationAdapter
 from ivo.pipeline.synthesize import HttpTtsAdapter
 from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
+from ivo.profile_validation import validate_local_command_profiles
 
 app = typer.Typer(help="Intelligent Voice Over developer tools.", no_args_is_help=True)
 adapter_app = typer.Typer(help="Manage custom HTTP model API adapter profiles.")
@@ -266,6 +267,29 @@ def evaluate_batch(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     typer.echo(f"Batch evaluation written: {output}")
+
+
+@app.command("validate-local-profiles")
+def validate_local_profiles(
+    profiles_path: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    json_output: Annotated[bool, typer.Option("--json", help="Output JSON validation report.")] = False,
+) -> None:
+    """Validate a local command profiles JSON before running real models."""
+    profiles = LocalCommandPipelineProfiles.model_validate(
+        json.loads(profiles_path.read_text(encoding="utf-8"))
+    )
+    report = validate_local_command_profiles(profiles)
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        status = "ok" if report.ok else "failed"
+        typer.echo(f"Local profiles validation: {status}")
+        for stage in report.stages:
+            typer.echo(f"  stage: {stage}")
+        for error in report.errors:
+            typer.echo(f"  error: {error}")
+    if not report.ok:
+        raise typer.Exit(1)
 
 
 @app.command("local-preview")

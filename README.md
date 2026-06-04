@@ -74,6 +74,12 @@ uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" -
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --project-name "Episode 01" --source-language en --no-watermark
 ```
 
+运行真实模型前，可以先静态校验本地命令 profiles：
+
+```powershell
+uv run ivo validate-local-profiles .\examples\local_command_profiles.real_dry_run.json --json
+```
+
 批量处理一个目录里的多集视频，并为每个视频生成独立 `.ivoproj`：
 
 ```powershell
