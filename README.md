@@ -84,6 +84,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 
 ```powershell
 uv run ivo validate-local-profiles .\examples\local_command_profiles.real_dry_run.json --json
+uv run ivo check-local-readiness .\examples\local_command_profiles.real_tts_cosyvoice.json --models-dir .\models --json
 ```
 
 批量处理一个目录里的多集视频，并为每个视频生成独立 `.ivoproj`：

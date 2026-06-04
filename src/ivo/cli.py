@@ -17,6 +17,7 @@ from ivo.evaluation import (
     build_project_evaluation_report,
     render_evaluation_markdown,
 )
+from ivo.local_readiness import build_local_readiness_report
 from ivo.model_setup import build_model_setup_script
 from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
@@ -340,6 +341,41 @@ def validate_local_profiles(
             typer.echo(f"  stage: {stage}")
         for error in report.errors:
             typer.echo(f"  error: {error}")
+    if not report.ok:
+        raise typer.Exit(1)
+
+
+@app.command("check-local-readiness")
+def check_local_readiness(
+    profiles_path: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    models_dir: Annotated[
+        Path,
+        typer.Option("--models-dir", file_okay=False, help="Local model cache root to inspect."),
+    ] = Path("models"),
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output JSON readiness report."),
+    ] = False,
+) -> None:
+    """Check whether selected local profiles appear ready for real model execution."""
+    profiles = LocalCommandPipelineProfiles.model_validate(
+        json.loads(profiles_path.read_text(encoding="utf-8"))
+    )
+    report = build_local_readiness_report(
+        profiles,
+        dependencies=collect_optional_model_dependencies(models_dir),
+    )
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        status = "ok" if report.ok else "failed"
+        typer.echo(f"Local readiness: {status}")
+        for profile in report.checked_profiles:
+            typer.echo(f"  checked: {profile}")
+        for profile in report.skipped_dry_run_profiles:
+            typer.echo(f"  skipped dry-run: {profile}")
+        for missing in report.missing:
+            typer.echo(f"  missing: {missing}")
     if not report.ok:
         raise typer.Exit(1)
 

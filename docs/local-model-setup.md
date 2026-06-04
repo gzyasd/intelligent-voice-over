@@ -58,7 +58,7 @@ uv run ivo model write-setup-script --models-dir .\models --stage tts --output .
 - 需要 token 的模型会显示环境变量是否已设置，例如 `HF_TOKEN`。
 - 最小验证命令。
 
-`uv run ivo doctor-models --json` 适合脚本或 UI 读取结构化诊断结果。`uv run ivo model setup-plan` 会按阶段输出安装、下载、许可证和验证命令；可以用 `--stage asr`、`--stage separation`、`--stage diarization`、`--stage translation` 或 `--stage tts` 缩小范围。`uv run ivo model write-setup-script` 会把同一批推荐步骤写成 PowerShell 脚本；脚本仍需要你在运行前确认许可证、登录 Hugging Face 或配置必要 token。
+`uv run ivo doctor-models --json` 适合脚本或 UI 读取结构化诊断结果。`uv run ivo validate-local-profiles .\examples\local_command_profiles.real_dry_run.json --json` 会静态检查 profile 的阶段和关键占位符；`uv run ivo check-local-readiness .\examples\local_command_profiles.real_tts_cosyvoice.json --models-dir .\models --json` 会结合当前模型目录、Python 包和环境变量判断真实 profile 是否具备运行条件。`uv run ivo model setup-plan` 会按阶段输出安装、下载、许可证和验证命令；可以用 `--stage asr`、`--stage separation`、`--stage diarization`、`--stage translation` 或 `--stage tts` 缩小范围。`uv run ivo model write-setup-script` 会把同一批推荐步骤写成 PowerShell 脚本；脚本仍需要你在运行前确认许可证、登录 Hugging Face 或配置必要 token。
 
 ## 推荐下载命令
 
