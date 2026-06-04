@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -8,6 +10,7 @@ from ivo.adapters.local import LocalCommandProfile
 from ivo.compliance.confirmation import ExportConfirmation
 from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
+from ivo.core.timeline import DubbingSegment
 from ivo.pipeline.import_video import extract_normalized_audio, import_source_video
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
 from ivo.pipeline.separate_audio import (
@@ -47,6 +50,9 @@ class LocalCommandPreviewResult(BaseModel):
     generated_segments: list[Path]
 
 
+T = TypeVar("T")
+
+
 def run_local_command_preview(
     project: DubbingProject,
     *,
@@ -61,63 +67,122 @@ def run_local_command_preview(
     ffmpeg_path: str | None = None,
     watermark_text: str | None = "AI Dubbed",
 ) -> LocalCommandPreviewResult:
-    imported_video = import_source_video(project, source_video)
-    extracted_audio = extract_normalized_audio(project, imported_video, ffmpeg_path=ffmpeg_path)
-    separation = separate_audio(
+    imported_video = _run_stage(
         project,
-        extracted_audio,
-        separation_adapter or LocalCommandSeparationAdapter(profiles.separation),
+        "import",
+        lambda: import_source_video(project, source_video),
+    )
+    extracted_audio = _run_stage(
+        project,
+        "audio_extract",
+        lambda: extract_normalized_audio(project, imported_video, ffmpeg_path=ffmpeg_path),
+    )
+    separation = _run_stage(
+        project,
+        "separation",
+        lambda: separate_audio(
+            project,
+            extracted_audio,
+            separation_adapter or LocalCommandSeparationAdapter(profiles.separation),
+        ),
     )
     active_asr_adapter = asr_adapter or LocalCommandAsrAdapter(profiles.asr)
-    source_segments = transcribe_audio(
-        active_asr_adapter,
-        separation.vocals_path,
-        source_language=project.source_language,
+    source_segments = _run_stage(
+        project,
+        "asr",
+        lambda: transcribe_audio(
+            active_asr_adapter,
+            separation.vocals_path,
+            source_language=project.source_language,
+        ),
     )
     active_diarization_adapter = diarization_adapter
     if active_diarization_adapter is None and profiles.diarization is not None:
         active_diarization_adapter = LocalCommandDiarizationAdapter(profiles.diarization)
     if active_diarization_adapter is not None:
-        source_segments = assign_speakers(
-            source_segments,
-            diarize_audio(active_diarization_adapter, separation.vocals_path),
+        source_segments = _run_stage(
+            project,
+            "diarization",
+            lambda: assign_speakers(
+                source_segments,
+                diarize_audio(active_diarization_adapter, separation.vocals_path),
+            ),
         )
     adapter = translation_adapter or _build_override_translation_adapter(
         source_segments,
         translation_overrides=translation_overrides or {},
     )
-    dubbed_segments = translate_segments(project, source_segments, adapter)
+    dubbed_segments = _run_stage(
+        project,
+        "translation",
+        lambda: translate_segments(project, source_segments, adapter),
+    )
 
     generated_segments: list[Path] = []
     segment_audio: list[SegmentAudio] = []
     active_tts_adapter = tts_adapter or LocalCommandTtsAdapter(profiles.tts)
-    for segment in dubbed_segments:
-        project.timeline.update_segment(segment.id, status="approved")
-        synthesis = synthesize_segment(project, segment, active_tts_adapter)
-        generated_segments.append(synthesis.audio_path)
-        segment_audio.append(SegmentAudio(path=synthesis.audio_path, start_ms=segment.start_ms))
+    _run_stage(
+        project,
+        "tts",
+        lambda: _synthesize_segments(
+            project,
+            dubbed_segments,
+            active_tts_adapter,
+            generated_segments,
+            segment_audio,
+        ),
+    )
 
     metadata = build_ai_dubbing_metadata(
         source_language=project.source_language,
         target_language=project.target_language,
     )
-    final_video = export_dubbed_video(
-        ExportRequest(
-            source_video=imported_video,
-            background_audio=separation.background_path,
-            segment_audio=segment_audio,
-            output_path=project.path / "renders" / "local-preview.mp4",
-            metadata=metadata,
-            watermark_text=watermark_text,
+    final_video = _run_stage(
+        project,
+        "export",
+        lambda: export_dubbed_video(
+            ExportRequest(
+                source_video=imported_video,
+                background_audio=separation.background_path,
+                segment_audio=segment_audio,
+                output_path=project.path / "renders" / "local-preview.mp4",
+                metadata=metadata,
+                watermark_text=watermark_text,
+            ),
+            ExportConfirmation(accepted=True),
+            ffmpeg_path=ffmpeg_path,
         ),
-        ExportConfirmation(accepted=True),
-        ffmpeg_path=ffmpeg_path,
     )
     return LocalCommandPreviewResult(
         final_video=final_video,
         metadata=metadata,
         generated_segments=generated_segments,
     )
+
+
+def _run_stage(project: DubbingProject, stage: str, action: Callable[[], T]) -> T:
+    project.jobs.mark_running(stage, "running")
+    try:
+        result = action()
+    except Exception as exc:
+        project.jobs.mark_failed(stage, str(exc))
+        raise
+    project.jobs.mark_completed(stage, "completed")
+    return result
+
+
+def _synthesize_segments(
+    project: DubbingProject,
+    dubbed_segments: list[DubbingSegment],
+    active_tts_adapter: TtsAdapter,
+    generated_segments: list[Path],
+    segment_audio: list[SegmentAudio],
+) -> None:
+    for segment in dubbed_segments:
+        project.timeline.update_segment(segment.id, status="approved")
+        synthesis = synthesize_segment(project, segment, active_tts_adapter)
+        generated_segments.append(synthesis.audio_path)
+        segment_audio.append(SegmentAudio(path=synthesis.audio_path, start_ms=segment.start_ms))
 
 
 def _build_override_translation_adapter(
