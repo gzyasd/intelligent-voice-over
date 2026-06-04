@@ -114,6 +114,76 @@ def test_evaluate_project_cli_outputs_json_and_markdown(tmp_path) -> None:
     assert "# 项目评估报告：CLI Eval" in output_path.read_text(encoding="utf-8")
 
 
+def test_evaluate_batch_cli_outputs_project_summaries(tmp_path) -> None:
+    from typer.testing import CliRunner
+
+    from ivo.cli import app
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+
+    good = DubbingProject.create(
+        tmp_path / "episode-01.ivoproj",
+        name="Episode 01",
+        source_language="en",
+        target_language="zh",
+    )
+    good.timeline.add_segment(
+        DubbingSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            speaker_id="speaker-1",
+            source_language="en",
+            source_text="Hello.",
+            target_language="zh",
+            target_text="你好。",
+            status="rendered",
+        )
+    )
+    broken = DubbingProject.create(
+        tmp_path / "episode-02.ivoproj",
+        name="Episode 02",
+        source_language="ko",
+        target_language="zh",
+    )
+    broken.timeline.add_segment(
+        DubbingSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            speaker_id="speaker-1",
+            source_language="ko",
+            source_text="annyeonghaseyo.",
+            target_language="zh",
+            target_text="你好。",
+            status="failed",
+            quality_flags=["tts_failed"],
+        )
+    )
+    broken.jobs.mark_failed("tts", "provider offline")
+    output_path = tmp_path / "batch-evaluation.json"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "evaluate-batch",
+            str(tmp_path),
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert output_path.is_file()
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["project_count"] == 2
+    assert payload["total_segments"] == 2
+    assert payload["projects_with_failed_jobs"] == 1
+    assert payload["quality_flag_counts"] == {"tts_failed": 1}
+    assert payload["projects"][1]["failed_jobs"] == ["tts"]
+    assert "Batch evaluation written" in result.output
+
+
 def test_evaluation_document_mentions_evaluate_project_command() -> None:
     from pathlib import Path
 

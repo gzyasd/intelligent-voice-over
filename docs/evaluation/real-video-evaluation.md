@@ -94,5 +94,13 @@ uv run ivo evaluate-project ".\demo-output\Eval.ivoproj" --format markdown --out
 
 - 3-5 分钟多说话人样片可完成审核、单句重生成和最终导出。
 - 用户能在 UI 中选择本地 profile 或线上 API profile。
+
+## 批量验收命令
+
+```powershell
+uv run ivo evaluate-batch .\demo-output --output .\demo-output\batch-evaluation.json
+```
+
+`evaluate-batch` 会扫描目录下的 `.ivoproj` 项目，输出每集片段数量、质量标记、失败 job 和整体汇总，适合批处理后统一验收。
 - 评测报告能清楚说明模型组合优劣，而不是只给主观印象。
 - 仓库中没有模型权重、真实密钥或未授权素材。

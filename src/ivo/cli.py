@@ -12,7 +12,11 @@ from ivo.adapters.profiles import AdapterProfileStore
 from ivo.core.project import DubbingProject
 from ivo.core.timeline import SourceLanguage, TargetLanguage
 from ivo.environment import collect_environment_diagnostics, collect_optional_model_dependencies
-from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
+from ivo.evaluation import (
+    build_batch_evaluation_report,
+    build_project_evaluation_report,
+    render_evaluation_markdown,
+)
 from ivo.model_setup import build_model_setup_script
 from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
@@ -242,6 +246,26 @@ def evaluate_project(
         typer.echo(f"Evaluation report written: {output}")
         return
     typer.echo(rendered)
+
+
+@app.command("evaluate-batch")
+def evaluate_batch(
+    input_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
+    output: Annotated[
+        Path,
+        typer.Option("--output", dir_okay=False, help="JSON batch evaluation report path."),
+    ],
+) -> None:
+    """Summarize evaluation data for every .ivoproj project in a directory."""
+    project_paths = [
+        path
+        for path in sorted(input_dir.iterdir())
+        if path.is_dir() and path.suffix == ".ivoproj"
+    ]
+    report = build_batch_evaluation_report(project_paths)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    typer.echo(f"Batch evaluation written: {output}")
 
 
 @app.command("local-preview")
