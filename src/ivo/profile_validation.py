@@ -8,6 +8,14 @@ from ivo.adapters.local import LocalCommandProfile
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
 
 
+REQUIRED_LOCAL_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
+    "separation": ("audio_path", "vocals_path", "background_path", "output_json_path"),
+    "asr": ("audio_path", "source_language", "output_json_path"),
+    "diarization": ("audio_path", "output_json_path"),
+    "tts": ("segment_text", "speaker_id", "output_audio_path", "output_json_path"),
+}
+
+
 class LocalProfileValidationReport(BaseModel):
     ok: bool
     stages: list[str]
@@ -69,6 +77,10 @@ def _validate_profile(profile: LocalCommandProfile, *, expected_stage: str) -> l
     rendered_command = " ".join(profile.command)
     if "{{ output_json_path }}" not in rendered_command:
         errors.append(f"{profile.stage} command should include {{{{ output_json_path }}}}")
+    for placeholder in REQUIRED_LOCAL_PLACEHOLDERS.get(expected_stage, ()):
+        expected = "{{ " + placeholder + " }}"
+        if expected not in rendered_command:
+            errors.append(f"{expected_stage} command should include {expected}")
     if not profile.output_json_path:
         errors.append(f"{profile.stage} output_json_path cannot be empty")
     return errors

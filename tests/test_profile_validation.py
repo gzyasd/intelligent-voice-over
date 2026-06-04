@@ -55,6 +55,45 @@ def test_validate_local_profiles_cli_reports_stage_mismatch(tmp_path: Path) -> N
     assert "tts profile stage should be tts, got asr" in payload["errors"]
 
 
+def test_validate_local_profiles_cli_reports_missing_required_stage_placeholders(
+    tmp_path: Path,
+) -> None:
+    from ivo.cli import app
+
+    payload = _profile_payload()
+    payload["asr"]["command"] = ["python", "asr.py", "--out", "{{ output_json_path }}"]
+    payload["tts"]["command"] = [
+        "python",
+        "tts.py",
+        "--text",
+        "{{ segment_text }}",
+        "--out",
+        "{{ output_json_path }}",
+    ]
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["validate-local-profiles", str(profiles_path), "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert "asr command should include {{ audio_path }}" in payload["errors"]
+    assert "tts command should include {{ output_audio_path }}" in payload["errors"]
+
+
+def test_all_example_local_profiles_pass_static_validation() -> None:
+    from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+    from ivo.profile_validation import validate_local_command_profiles
+
+    for profiles_path in Path("examples").glob("local_command_profiles*.json"):
+        profiles = LocalCommandPipelineProfiles.model_validate(
+            json.loads(profiles_path.read_text(encoding="utf-8"))
+        )
+        report = validate_local_command_profiles(profiles)
+
+        assert report.ok, f"{profiles_path}: {report.errors}"
+
+
 def test_validate_http_profile_cli_accepts_complete_profile(tmp_path: Path) -> None:
     from ivo.cli import app
 
@@ -91,19 +130,50 @@ def _profile_payload() -> dict[str, object]:
         "separation": {
             "id": "sep",
             "stage": "separation",
-            "command": ["python", "sep.py", "--out", "{{ output_json_path }}"],
+            "command": [
+                "python",
+                "sep.py",
+                "--audio",
+                "{{ audio_path }}",
+                "--vocals-out",
+                "{{ vocals_path }}",
+                "--background-out",
+                "{{ background_path }}",
+                "--out",
+                "{{ output_json_path }}",
+            ],
             "output_json_path": "sep.json",
         },
         "asr": {
             "id": "asr",
             "stage": "asr",
-            "command": ["python", "asr.py", "--out", "{{ output_json_path }}"],
+            "command": [
+                "python",
+                "asr.py",
+                "--audio",
+                "{{ audio_path }}",
+                "--language",
+                "{{ source_language }}",
+                "--out",
+                "{{ output_json_path }}",
+            ],
             "output_json_path": "asr.json",
         },
         "tts": {
             "id": "tts",
             "stage": "tts",
-            "command": ["python", "tts.py", "--out", "{{ output_json_path }}"],
+            "command": [
+                "python",
+                "tts.py",
+                "--text",
+                "{{ segment_text }}",
+                "--speaker",
+                "{{ speaker_id }}",
+                "--audio-out",
+                "{{ output_audio_path }}",
+                "--out",
+                "{{ output_json_path }}",
+            ],
             "output_json_path": "tts.json",
         },
     }
