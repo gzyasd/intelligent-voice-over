@@ -14,6 +14,8 @@ F:\GZYproject\Intelligent-Voice-Over\examples\local_command_profiles.real_dry_ru
 
 在同一页可以填写“本地模型安装脚本输出”，例如 `scripts/setup-local-models.ps1`，然后点击“生成本地模型安装脚本”。UI 会根据“本地模型路径”生成与 `uv run ivo model write-setup-script` 相同的 PowerShell 脚本，方便后续安装 Python 包、创建模型目录和下载 Hugging Face 模型。
 
+选择本地命令 profiles 后，可以先点击“校验本地命令 profile”，静态检查关键阶段和输出 JSON 占位，避免完整预览运行到一半才发现 profile 写错。
+
 4. 如果人声分离阶段使用线上 API，在“人声分离 HTTP profile JSON”填写或浏览选择：
 
 ```text

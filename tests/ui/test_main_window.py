@@ -288,6 +288,51 @@ def test_model_settings_profile_summary_shows_http_overrides(qtbot, tmp_path) ->
     assert "tts: local / tts" in texts
 
 
+def test_model_settings_validates_local_command_profiles(qtbot, tmp_path) -> None:
+    import json
+
+    from ivo.ui.model_settings import ModelSettings
+
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(
+        json.dumps(
+            {
+                "separation": {
+                    "id": "sep",
+                    "stage": "separation",
+                    "command": ["python", "sep.py", "--out", "{{ output_json_path }}"],
+                    "output_json_path": "sep.json",
+                },
+                "asr": {
+                    "id": "asr",
+                    "stage": "asr",
+                    "command": ["python", "asr.py", "--out", "{{ output_json_path }}"],
+                    "output_json_path": "asr.json",
+                },
+                "tts": {
+                    "id": "tts",
+                    "stage": "tts",
+                    "command": ["python", "tts.py", "--text", "{{ segment_text }}"],
+                    "output_json_path": "tts.json",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+    settings.local_command_profiles_path_edit.setText(str(profiles_path))
+
+    settings.validate_local_profiles_button.click()
+
+    texts = [
+        settings.local_profile_summary_list.item(index).text()
+        for index in range(settings.local_profile_summary_list.count())
+    ]
+    assert "validation: failed" in texts
+    assert "error: tts command should include {{ output_json_path }}" in texts
+
+
 def test_model_settings_loads_model_diagnostics(monkeypatch, qtbot, tmp_path) -> None:
     from ivo.ui.model_settings import ModelSettings
 

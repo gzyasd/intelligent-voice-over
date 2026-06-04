@@ -18,6 +18,7 @@ from ivo.adapters.profiles import AdapterProfileStore
 from ivo.environment import collect_optional_model_dependencies
 from ivo.model_setup import build_model_setup_script
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+from ivo.profile_validation import validate_local_command_profiles
 
 
 class ModelSettings(QWidget):
@@ -29,6 +30,7 @@ class ModelSettings(QWidget):
         self.refresh_model_diagnostics_button = QPushButton("刷新本地模型诊断")
         self.local_command_profiles_path_edit = QLineEdit()
         self.local_command_profiles_browse_button = QPushButton("浏览本地命令 profile")
+        self.validate_local_profiles_button = QPushButton("校验本地命令 profile")
         self.local_profile_summary_list = QListWidget()
         self.model_diagnostics_list = QListWidget()
         self.separation_profile_path_edit = QLineEdit()
@@ -58,6 +60,7 @@ class ModelSettings(QWidget):
         self.local_command_profiles_browse_button.clicked.connect(
             self.browse_local_command_profiles
         )
+        self.validate_local_profiles_button.clicked.connect(self.validate_local_command_profiles)
         self.separation_profile_browse_button.clicked.connect(self.browse_separation_profile)
         self.asr_profile_browse_button.clicked.connect(self.browse_asr_profile)
         self.diarization_profile_browse_button.clicked.connect(self.browse_diarization_profile)
@@ -76,6 +79,7 @@ class ModelSettings(QWidget):
         layout.addWidget(QLabel("本地命令 profiles JSON"))
         layout.addWidget(self.local_command_profiles_path_edit)
         layout.addWidget(self.local_command_profiles_browse_button)
+        layout.addWidget(self.validate_local_profiles_button)
         layout.addWidget(QLabel("本地命令 profile 阶段摘要"))
         layout.addWidget(self.local_profile_summary_list)
         layout.addWidget(QLabel("本地模型环境诊断"))
@@ -211,6 +215,26 @@ class ModelSettings(QWidget):
         output_path.write_text(build_model_setup_script(model_root), encoding="utf-8")
         self.model_diagnostics_list.addItem(f"setup script written: {output_path}")
         return output_path
+
+    def validate_local_command_profiles(self) -> None:
+        raw_path = self.local_command_profiles_path_edit.text().strip()
+        self.local_profile_summary_list.clear()
+        if not raw_path:
+            self.local_profile_summary_list.addItem("validation: failed")
+            self.local_profile_summary_list.addItem("error: local command profiles path is empty")
+            return
+        try:
+            profiles = LocalCommandPipelineProfiles.model_validate(
+                json.loads(Path(raw_path).read_text(encoding="utf-8"))
+            )
+        except (OSError, ValueError) as exc:
+            self.local_profile_summary_list.addItem("validation: failed")
+            self.local_profile_summary_list.addItem(f"error: {exc}")
+            return
+        report = validate_local_command_profiles(profiles)
+        self.local_profile_summary_list.addItem("validation: ok" if report.ok else "validation: failed")
+        for error in report.errors:
+            self.local_profile_summary_list.addItem(f"error: {error}")
 
     def _stage_summary(self, stage: str, local_id: str, http_path_edit: QLineEdit) -> str:
         raw_http_path = http_path_edit.text().strip()
