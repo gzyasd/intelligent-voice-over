@@ -390,6 +390,36 @@ def test_batch_local_preview_command_reports_existing_project_without_resume(
     assert "Failed 1 of 2 videos" in result.output
 
 
+def test_batch_local_preview_command_can_require_readiness_before_creating_projects(
+    tmp_path,
+) -> None:
+    from ivo.cli import app
+
+    input_dir = tmp_path / "episodes"
+    input_dir.mkdir()
+    (input_dir / "episode-01.mp4").write_bytes(b"video-1")
+    output_dir = tmp_path / "out"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "batch-local-preview",
+            str(input_dir),
+            str(output_dir),
+            "--profiles",
+            "examples/local_command_profiles.real_tts_cosyvoice.json",
+            "--models-dir",
+            str(tmp_path / "models"),
+            "--require-readiness",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "readiness: failed" in result.output
+    assert "tts/CosyVoice" in result.output
+    assert not (output_dir / "episode-01.ivoproj").exists()
+
+
 def test_local_preview_command_loads_profiles_and_reports_output(monkeypatch, tmp_path) -> None:
     from ivo.cli import app
     from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
@@ -554,6 +584,35 @@ def test_local_preview_command_reports_existing_project_without_resume(tmp_path)
     assert result.exit_code == 1
     assert "already exists" in result.output
     assert "--resume-existing" in result.output
+
+
+def test_local_preview_command_can_require_readiness_before_creating_project(tmp_path) -> None:
+    from ivo.cli import app
+
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
+    output_dir = tmp_path / "out"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "local-preview",
+            str(source),
+            str(output_dir),
+            "--profiles",
+            "examples/local_command_profiles.real_tts_cosyvoice.json",
+            "--project-name",
+            "Episode 01",
+            "--models-dir",
+            str(tmp_path / "models"),
+            "--require-readiness",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "readiness: failed" in result.output
+    assert "tts/CosyVoice" in result.output
+    assert not (output_dir / "Episode 01.ivoproj").exists()
 
 
 def test_local_preview_command_loads_translation_profile(monkeypatch, tmp_path) -> None:

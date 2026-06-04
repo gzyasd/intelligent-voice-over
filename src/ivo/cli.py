@@ -17,7 +17,7 @@ from ivo.evaluation import (
     build_project_evaluation_report,
     render_evaluation_markdown,
 )
-from ivo.local_readiness import build_local_readiness_report
+from ivo.local_readiness import LocalReadinessReport, build_local_readiness_report
 from ivo.model_setup import build_model_setup_script
 from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
@@ -178,6 +178,14 @@ def batch_local_preview(
         bool,
         typer.Option("--skip-existing", help="Skip videos with an existing local-preview.mp4."),
     ] = False,
+    models_dir: Annotated[
+        Path,
+        typer.Option("--models-dir", file_okay=False, help="Local model cache root to inspect."),
+    ] = Path("models"),
+    require_readiness: Annotated[
+        bool,
+        typer.Option("--require-readiness", help="Fail before creating projects if models are not ready."),
+    ] = False,
     resume_existing: Annotated[
         bool,
         typer.Option(
@@ -187,10 +195,19 @@ def batch_local_preview(
     ] = False,
 ) -> None:
     """Run local command preview for every video file in a directory."""
-    output_dir.mkdir(parents=True, exist_ok=True)
     profiles = LocalCommandPipelineProfiles.model_validate(
         json.loads(profiles_path.read_text(encoding="utf-8"))
     )
+    if require_readiness:
+        readiness = build_local_readiness_report(
+            profiles,
+            dependencies=collect_optional_model_dependencies(models_dir),
+        )
+        _echo_local_readiness(readiness)
+        if not readiness.ok:
+            raise typer.Exit(1)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
     video_paths = _iter_video_paths(input_dir)
     failures: list[str] = []
     report_items: list[dict[str, object]] = []
@@ -368,16 +385,20 @@ def check_local_readiness(
     if json_output:
         typer.echo(report.model_dump_json(indent=2))
     else:
-        status = "ok" if report.ok else "failed"
-        typer.echo(f"Local readiness: {status}")
-        for profile in report.checked_profiles:
-            typer.echo(f"  checked: {profile}")
-        for profile in report.skipped_dry_run_profiles:
-            typer.echo(f"  skipped dry-run: {profile}")
-        for missing in report.missing:
-            typer.echo(f"  missing: {missing}")
+        _echo_local_readiness(report)
     if not report.ok:
         raise typer.Exit(1)
+
+
+def _echo_local_readiness(report: LocalReadinessReport) -> None:
+    status = "ok" if report.ok else "failed"
+    typer.echo(f"readiness: {status}")
+    for profile in report.checked_profiles:
+        typer.echo(f"checked: {profile}")
+    for profile in report.skipped_dry_run_profiles:
+        typer.echo(f"skipped dry-run: {profile}")
+    for missing in report.missing:
+        typer.echo(f"missing: {missing}")
 
 
 @app.command("validate-http-profile")
@@ -446,6 +467,14 @@ def local_preview(
     tts_var: Annotated[list[str] | None, typer.Option("--tts-var")] = None,
     ffmpeg_path: Annotated[Path | None, typer.Option(exists=True, dir_okay=False)] = None,
     watermark: Annotated[bool, typer.Option("--watermark/--no-watermark")] = True,
+    models_dir: Annotated[
+        Path,
+        typer.Option("--models-dir", file_okay=False, help="Local model cache root to inspect."),
+    ] = Path("models"),
+    require_readiness: Annotated[
+        bool,
+        typer.Option("--require-readiness", help="Fail before creating a project if models are not ready."),
+    ] = False,
     resume_existing: Annotated[
         bool,
         typer.Option(
@@ -455,6 +484,18 @@ def local_preview(
     ] = False,
 ) -> None:
     """Create a project and run local command adapters from a profile JSON file."""
+    profiles = LocalCommandPipelineProfiles.model_validate(
+        json.loads(profiles_path.read_text(encoding="utf-8"))
+    )
+    if require_readiness:
+        readiness = build_local_readiness_report(
+            profiles,
+            dependencies=collect_optional_model_dependencies(models_dir),
+        )
+        _echo_local_readiness(readiness)
+        if not readiness.ok:
+            raise typer.Exit(1)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     project_path = output_dir / f"{project_name}.ivoproj"
     if resume_existing and project_path.is_dir():
@@ -473,9 +514,6 @@ def local_preview(
             target_language=target_language,
             source_video=source_video,
         )
-    profiles = LocalCommandPipelineProfiles.model_validate(
-        json.loads(profiles_path.read_text(encoding="utf-8"))
-    )
     separation_extra: dict[str, object] = {
         key: value for key, value in _parse_key_value_options(separation_var or []).items()
     }

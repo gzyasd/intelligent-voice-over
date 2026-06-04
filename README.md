@@ -74,6 +74,12 @@ uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" -
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --project-name "Episode 01" --source-language en --no-watermark
 ```
 
+真实模型 profile 建议增加 `--require-readiness --models-dir .\models`，在包、模型目录或 engine command 文件缺失时提前退出，不创建半成品项目：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_tts_cosyvoice.json --project-name "Episode 01" --source-language en --require-readiness --models-dir .\models --no-watermark
+```
+
 如果真实本地模型运行中途失败，保留同一个输出目录和项目名，修复模型环境或 profile 后可用 `--resume-existing` 复用已有 `.ivoproj`、job 状态和已完成的文件阶段产物：
 
 ```powershell
