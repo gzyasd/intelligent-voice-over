@@ -345,6 +345,118 @@ def test_local_command_preview_marks_failed_stage_for_tts_error(tmp_path) -> Non
     assert "export" not in records
 
 
+def test_local_command_preview_resumes_completed_file_stages(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg
+    from ivo.pipeline.local_command_preview import run_local_command_preview
+    from ivo.pipeline.separate_audio import SeparationResult
+    from ivo.pipeline.transcribe import TranscriptionSegment
+
+    class ExplodingSeparationAdapter:
+        def separate(
+            self,
+            input_audio: Path,
+            *,
+            vocals_path: Path,
+            background_path: Path,
+        ) -> SeparationResult:
+            raise AssertionError("separation should have been resumed from existing files")
+
+    class RecordingAsrAdapter:
+        def __init__(self) -> None:
+            self.audio_paths: list[Path] = []
+
+        def transcribe(
+            self,
+            audio_path: Path,
+            *,
+            source_language: str,
+        ) -> list[TranscriptionSegment]:
+            self.audio_paths.append(audio_path)
+            return [
+                TranscriptionSegment(
+                    id="seg-001",
+                    start_ms=0,
+                    end_ms=1_000,
+                    source_language=source_language,
+                    source_text="Previously separated audio.",
+                    speaker_id="speaker-1",
+                )
+            ]
+
+    class SilentTtsAdapter:
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            target_duration_ms: int,
+        ) -> int:
+            _write_silent_wav(output_path, duration_ms=target_duration_ms)
+            return target_duration_ms
+
+    try:
+        ffmpeg = require_ffmpeg()
+    except FFmpegNotFoundError:
+        pytest.skip("FFmpeg is not visible in this shell; set IVO_FFMPEG_PATH or restart terminal.")
+
+    project = DubbingProject.create(
+        tmp_path / "resume-preview.ivoproj",
+        name="Resume Preview",
+        source_language="en",
+        target_language="zh",
+    )
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:duration=1:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-shortest",
+            str(project.path / "assets" / "source_video.mp4"),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    for audio_path in (
+        project.path / "assets" / "extracted_audio.wav",
+        project.path / "work" / "vocals.wav",
+        project.path / "work" / "background.wav",
+    ):
+        _write_silent_wav(audio_path, duration_ms=1_000)
+    for stage in ("import", "audio_extract", "separation"):
+        project.jobs.mark_completed(stage, "completed")
+
+    asr_adapter = RecordingAsrAdapter()
+    result = run_local_command_preview(
+        project,
+        source_video=tmp_path / "source-does-not-need-to-exist.mp4",
+        profiles=_mock_profiles(tmp_path),
+        separation_adapter=ExplodingSeparationAdapter(),
+        asr_adapter=asr_adapter,
+        tts_adapter=SilentTtsAdapter(),
+        translation_overrides={"seg-001": "\u4f60\u597d\u3002"},
+        ffmpeg_path=ffmpeg,
+        watermark_text=None,
+    )
+
+    assert asr_adapter.audio_paths == [project.path / "work" / "vocals.wav"]
+    assert result.final_video.is_file()
+    assert project.jobs.get("import").status == "completed"  # type: ignore[union-attr]
+    assert project.jobs.get("audio_extract").status == "completed"  # type: ignore[union-attr]
+    assert project.jobs.get("separation").status == "completed"  # type: ignore[union-attr]
+
+
 def test_local_command_preview_can_use_custom_asr_adapter(tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg
@@ -613,3 +725,16 @@ def _mock_profiles(tmp_path: Path):
             output_json_path=str(tmp_path / "tts.json"),
         ),
     )
+
+
+def _write_silent_wav(output_path: Path, *, duration_ms: int) -> None:
+    import wave
+
+    sample_rate = 16_000
+    sample_count = int(sample_rate * (duration_ms / 1000))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(output_path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(b"\x00\x00" * sample_count)

@@ -16,6 +16,7 @@ from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_v
 from ivo.pipeline.separate_audio import (
     LocalCommandSeparationAdapter,
     SeparationAdapter,
+    SeparationResult,
     separate_audio,
 )
 from ivo.pipeline.synthesize import LocalCommandTtsAdapter, TtsAdapter, synthesize_segment
@@ -71,11 +72,13 @@ def run_local_command_preview(
         project,
         "import",
         lambda: import_source_video(project, source_video),
+        resume_from=lambda: _resume_file(project.path / "assets" / f"source_video{source_video.suffix}"),
     )
     extracted_audio = _run_stage(
         project,
         "audio_extract",
         lambda: extract_normalized_audio(project, imported_video, ffmpeg_path=ffmpeg_path),
+        resume_from=lambda: _resume_file(project.path / "assets" / "extracted_audio.wav"),
     )
     separation = _run_stage(
         project,
@@ -85,6 +88,7 @@ def run_local_command_preview(
             extracted_audio,
             separation_adapter or LocalCommandSeparationAdapter(profiles.separation),
         ),
+        resume_from=lambda: _resume_separation(project),
     )
     active_asr_adapter = asr_adapter or LocalCommandAsrAdapter(profiles.asr)
     source_segments = _run_stage(
@@ -160,7 +164,19 @@ def run_local_command_preview(
     )
 
 
-def _run_stage(project: DubbingProject, stage: str, action: Callable[[], T]) -> T:
+def _run_stage(
+    project: DubbingProject,
+    stage: str,
+    action: Callable[[], T],
+    *,
+    resume_from: Callable[[], T | None] | None = None,
+) -> T:
+    record = project.jobs.get(stage)
+    if record is not None and record.status == "completed" and resume_from is not None:
+        resumed = resume_from()
+        if resumed is not None:
+            return resumed
+
     project.jobs.mark_running(stage, "running")
     try:
         result = action()
@@ -169,6 +185,18 @@ def _run_stage(project: DubbingProject, stage: str, action: Callable[[], T]) -> 
         raise
     project.jobs.mark_completed(stage, "completed")
     return result
+
+
+def _resume_file(path: Path) -> Path | None:
+    return path if path.is_file() else None
+
+
+def _resume_separation(project: DubbingProject) -> SeparationResult | None:
+    vocals_path = project.path / "work" / "vocals.wav"
+    background_path = project.path / "work" / "background.wav"
+    if not vocals_path.is_file() or not background_path.is_file():
+        return None
+    return SeparationResult(vocals_path=vocals_path, background_path=background_path)
 
 
 def _synthesize_segments(
