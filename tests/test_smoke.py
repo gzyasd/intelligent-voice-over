@@ -233,6 +233,58 @@ def test_batch_local_preview_command_continues_after_video_failure(monkeypatch, 
     assert report["videos"][1]["final_video"].endswith("local-preview.mp4")
 
 
+def test_batch_local_preview_command_skips_existing_outputs(monkeypatch, tmp_path) -> None:
+    from ivo.cli import app
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+
+    input_dir = tmp_path / "episodes"
+    input_dir.mkdir()
+    (input_dir / "episode-01.mp4").write_bytes(b"video-1")
+    (input_dir / "episode-02.mp4").write_bytes(b"video-2")
+    output_dir = tmp_path / "out"
+    existing_preview = output_dir / "episode-01.ivoproj" / "renders" / "local-preview.mp4"
+    existing_preview.parent.mkdir(parents=True)
+    existing_preview.write_bytes(b"existing-preview")
+    report_path = tmp_path / "batch-report.json"
+    profiles_path = _write_smoke_local_profiles(tmp_path)
+    processed: list[str] = []
+
+    def fake_run_local_command_preview(project, **kwargs):
+        processed.append(project.name)
+        final_video = project.path / "renders" / "local-preview.mp4"
+        final_video.parent.mkdir(parents=True, exist_ok=True)
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr("ivo.cli.run_local_command_preview", fake_run_local_command_preview)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "batch-local-preview",
+            str(input_dir),
+            str(output_dir),
+            "--profiles",
+            str(profiles_path),
+            "--skip-existing",
+            "--report",
+            str(report_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert processed == ["episode-02"]
+    assert "episode-01.mp4: SKIPPED existing output" in result.output
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["skipped"] == 1
+    assert report["videos"][0]["status"] == "skipped"
+    assert report["videos"][0]["final_video"].endswith("local-preview.mp4")
+
+
 def test_local_preview_command_loads_profiles_and_reports_output(monkeypatch, tmp_path) -> None:
     from ivo.cli import app
     from ivo.pipeline.local_command_preview import LocalCommandPreviewResult

@@ -86,7 +86,7 @@ uv run ivo validate-local-profiles .\examples\local_command_profiles.real_dry_ru
 uv run ivo batch-local-preview .\episodes .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --source-language en --no-watermark
 ```
 
-批处理可以加 `--report .\demo-output\batch-report.json` 写出机器可读结果；单个视频失败时会继续处理后续视频，最后用非零退出码汇总失败数。
+批处理可以加 `--report .\demo-output\batch-report.json` 写出机器可读结果；单个视频失败时会继续处理后续视频，最后用非零退出码汇总失败数。已经生成过 `renders/local-preview.mp4` 的项目可以用 `--skip-existing` 跳过，适合长剧集续跑。
 
 使用真实模型接入脚本的 dry-run profile 验证命令合约：
 

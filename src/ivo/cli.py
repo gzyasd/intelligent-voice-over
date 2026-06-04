@@ -173,6 +173,10 @@ def batch_local_preview(
         Path | None,
         typer.Option("--report", dir_okay=False, help="Optional JSON batch report output path."),
     ] = None,
+    skip_existing: Annotated[
+        bool,
+        typer.Option("--skip-existing", help="Skip videos with an existing local-preview.mp4."),
+    ] = False,
 ) -> None:
     """Run local command preview for every video file in a directory."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -183,8 +187,22 @@ def batch_local_preview(
     failures: list[str] = []
     report_items: list[dict[str, object]] = []
     for source_video in video_paths:
+        project_path = output_dir / f"{source_video.stem}.ivoproj"
+        final_video = project_path / "renders" / "local-preview.mp4"
+        if skip_existing and final_video.is_file():
+            report_items.append(
+                {
+                    "video": str(source_video),
+                    "project_path": str(project_path),
+                    "status": "skipped",
+                    "final_video": str(final_video),
+                    "error": None,
+                }
+            )
+            typer.echo(f"{source_video.name}: SKIPPED existing output")
+            continue
         project = DubbingProject.create(
-            output_dir / f"{source_video.stem}.ivoproj",
+            project_path,
             name=source_video.stem,
             source_language=source_language,
             target_language=target_language,
@@ -620,12 +638,14 @@ def _iter_video_paths(input_dir: Path) -> list[Path]:
 
 def _write_batch_report(report_path: Path, videos: list[dict[str, object]]) -> None:
     failed = sum(1 for item in videos if item["status"] == "failed")
+    skipped = sum(1 for item in videos if item["status"] == "skipped")
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(
             {
                 "processed": len(videos),
-                "completed": len(videos) - failed,
+                "completed": len(videos) - failed - skipped,
+                "skipped": skipped,
                 "failed": failed,
                 "videos": videos,
             },
