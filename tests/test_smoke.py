@@ -1409,6 +1409,14 @@ def test_pyproject_declares_local_separation_extra() -> None:
     assert "soundfile" in pyproject
 
 
+def test_pyproject_declares_local_tts_f5_extra() -> None:
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert "local-tts-f5" in pyproject
+    assert "f5-tts" in pyproject
+    assert "transformers<5" in pyproject
+
+
 def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
     document = Path("docs/local-model-setup.md").read_text(encoding="utf-8")
 

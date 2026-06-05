@@ -170,6 +170,25 @@ def test_real_separation_asr_cpu_small_profile_is_fast_real_probe() -> None:
     assert profile.tts.id == "f5-tts-dry-run"
 
 
+def test_real_separation_asr_tts_f5_cpu_small_profile_uses_real_tts() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.separation.id == "demucs-htdemucs-cpu"
+    assert profile.asr.id == "faster-whisper-small-cpu"
+    assert profile.tts.id == "f5-tts-local"
+    assert "--engine-command-json-file" in profile.tts.command
+    assert "examples/engine_commands/f5_tts_engine_command.example.json" in profile.tts.command
+    assert "--reference-text" in profile.tts.command
+    assert "{{ reference_text }}" in profile.tts.command
+    assert "--dry-run" not in profile.tts.command
+
+
 def test_real_diarization_profile_uses_pyannote_command() -> None:
     profile = LocalCommandPipelineProfiles.model_validate(
         json.loads(
@@ -226,4 +245,8 @@ def test_real_tts_f5_profile_uses_f5_command_without_dry_run() -> None:
 
     assert profile.tts.id == "f5-tts-local"
     assert "examples/local_commands/f5_tts_command.py" in profile.tts.command
+    assert "--engine-command-json-file" in profile.tts.command
+    assert "examples/engine_commands/f5_tts_engine_command.example.json" in profile.tts.command
+    assert "--reference-text" in profile.tts.command
+    assert "{{ reference_text }}" in profile.tts.command
     assert "--dry-run" not in profile.tts.command

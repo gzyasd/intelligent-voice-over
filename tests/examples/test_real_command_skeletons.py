@@ -17,7 +17,9 @@ def test_tts_engine_command_examples_are_valid_json_arrays() -> None:
         assert isinstance(command, list)
         assert command
         assert "{text}" in command
-        assert "{audio_out}" in command
+        assert "{audio_out}" in command or (
+            "{audio_out_dir}" in command and "{audio_out_name}" in command
+        )
 
 
 def test_faster_whisper_asr_dry_run_writes_contract(tmp_path) -> None:
@@ -288,6 +290,68 @@ with wave.open(args.audio_out, "wb") as wav_file:
         check=True,
     )
 
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert data == {"audio_path": str(audio), "duration_ms": 100}
+
+
+def test_f5_tts_engine_command_can_use_audio_output_dir_and_name(tmp_path) -> None:
+    engine_script = tmp_path / "engine_dir.py"
+    engine_script.write_text(
+        """
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import wave
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--output-dir", required=True)
+parser.add_argument("--output-file", required=True)
+args = parser.parse_args()
+
+audio_out = Path(args.output_dir) / args.output_file
+audio_out.parent.mkdir(parents=True, exist_ok=True)
+with wave.open(str(audio_out), "wb") as wav_file:
+    wav_file.setnchannels(1)
+    wav_file.setsampwidth(2)
+    wav_file.setframerate(16000)
+    wav_file.writeframes(b"\\x00\\x00" * 1600)
+""",
+        encoding="utf-8",
+    )
+    audio = tmp_path / "nested" / "speech.wav"
+    output = tmp_path / "tts.json"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "examples/local_commands/f5_tts_command.py",
+            "--text",
+            "你好。",
+            "--speaker",
+            "speaker-1",
+            "--audio-out",
+            str(audio),
+            "--json-out",
+            str(output),
+            "--duration-ms",
+            "100",
+            "--engine-command-json",
+            json.dumps(
+                [
+                    sys.executable,
+                    str(engine_script),
+                    "--output-dir",
+                    "{audio_out_dir}",
+                    "--output-file",
+                    "{audio_out_name}",
+                ]
+            ),
+        ],
+        check=True,
+    )
+
+    assert audio.is_file()
     data = json.loads(output.read_text(encoding="utf-8"))
     assert data == {"audio_path": str(audio), "duration_ms": 100}
 

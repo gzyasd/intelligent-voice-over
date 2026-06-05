@@ -124,7 +124,15 @@ F5-TTS 可作为音色克隆备选：
 huggingface-cli download SWivid/F5-TTS --local-dir .\models\tts\F5-TTS
 ```
 
-注意：F5-TTS 代码是 MIT，但预训练模型是 CC-BY-NC，商业用途需要格外谨慎。
+也可以让官方 CLI 首次运行时下载权重，并通过项目 wrapper 的 engine command 调用：
+
+```powershell
+uv sync --extra local-tts-f5
+uv run f5-tts_infer-cli --help
+uv run python .\examples\local_commands\f5_tts_command.py --text "你好，我们继续测试。" --speaker speaker-1 --audio-out .\scratch\f5-real.wav --json-out .\scratch\f5-real.json --reference-audio .\scratch\ref.wav --reference-text "参考音频文本" --duration-ms 2500 --engine-command-json-file .\examples\engine_commands\f5_tts_engine_command.example.json
+```
+
+Windows 真实验证中，`f5-tts==1.1.20` 搭配 `transformers 5.x` 会因当前 `torch==2.5.1` 缺少部分 float8 属性而无法启动；项目的 `local-tts-f5` extra 使用 `transformers<5`。注意：F5-TTS 代码是 MIT，但预训练模型是 CC-BY-NC，商业用途需要格外谨慎。
 
 ### 本地翻译
 

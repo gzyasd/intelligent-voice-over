@@ -25,6 +25,10 @@ local-separation = [
     "torch==2.5.1",
     "torchaudio==2.5.1",
 ]
+local-tts-f5 = [
+    "f5-tts==1.1.20",
+    "transformers<5",
+]
 
 [project.scripts]
 ivo = "ivo.cli:app"

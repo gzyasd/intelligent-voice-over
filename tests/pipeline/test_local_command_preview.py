@@ -218,8 +218,9 @@ def test_local_command_preview_can_use_custom_tts_adapter(tmp_path) -> None:
             output_path: Path,
             style_prompt: str | None,
             reference_audio_path: Path | None,
+            reference_text: str,
             target_duration_ms: int,
-            ) -> int:
+        ) -> int:
             self.texts.append(text)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with wave.open(str(output_path), "wb") as wav_file:
@@ -291,6 +292,7 @@ def test_local_command_preview_marks_failed_stage_for_tts_error(tmp_path) -> Non
             output_path: Path,
             style_prompt: str | None,
             reference_audio_path: Path | None,
+            reference_text: str,
             target_duration_ms: int,
         ) -> int:
             raise RuntimeError("tts model crashed")
@@ -393,6 +395,7 @@ def test_local_command_preview_resumes_completed_file_stages(tmp_path) -> None:
             output_path: Path,
             style_prompt: str | None,
             reference_audio_path: Path | None,
+            reference_text: str,
             target_duration_ms: int,
         ) -> int:
             _write_silent_wav(output_path, duration_ms=target_duration_ms)
@@ -498,6 +501,7 @@ def test_local_command_preview_resumes_failed_tts_from_rendered_segments(tmp_pat
             output_path: Path,
             style_prompt: str | None,
             reference_audio_path: Path | None,
+            reference_text: str,
             target_duration_ms: int,
         ) -> int:
             if text == "第二句。":
@@ -517,6 +521,7 @@ def test_local_command_preview_resumes_failed_tts_from_rendered_segments(tmp_pat
             output_path: Path,
             style_prompt: str | None,
             reference_audio_path: Path | None,
+            reference_text: str,
             target_duration_ms: int,
         ) -> int:
             self.texts.append(text)

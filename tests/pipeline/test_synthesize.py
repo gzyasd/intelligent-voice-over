@@ -270,6 +270,68 @@ def test_local_command_tts_receives_extracted_reference_audio(tmp_path) -> None:
     assert duration_ms == 1000
 
 
+def test_local_command_tts_receives_source_text_as_reference_text(tmp_path) -> None:
+    from ivo.adapters.local import LocalCommandProfile
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import LocalCommandTtsAdapter, synthesize_segment
+
+    project = DubbingProject.create(
+        tmp_path / "reference-text-tts.ivoproj",
+        name="Reference Text TTS",
+        source_language="ja",
+        target_language="zh",
+    )
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        speaker_id="speaker-1",
+        source_language="ja",
+        source_text="konnichiwa",
+        target_language="zh",
+        target_text="ni hao",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+    output_json = tmp_path / "tts-result.json"
+    captured_reference_texts: list[str] = []
+
+    def runner(command: list[str]) -> None:
+        captured_reference_texts.append(command[command.index("--reference-text") + 1])
+        audio_path = command[command.index("--audio-out") + 1]
+        _write_test_wav(Path(audio_path), duration_ms=1000)
+        output_json.write_text(
+            json.dumps({"audio_path": audio_path, "duration_ms": 1000}),
+            encoding="utf-8",
+        )
+
+    adapter = LocalCommandTtsAdapter(
+        LocalCommandProfile(
+            id="voice-clone-command",
+            stage="tts",
+            command=[
+                "python",
+                "tts.py",
+                "--text",
+                "{{ segment_text }}",
+                "--reference-text",
+                "{{ reference_text }}",
+                "--audio-out",
+                "{{ output_audio_path }}",
+                "--json-out",
+                "{{ output_json_path }}",
+            ],
+            output_json_path=str(output_json),
+        ),
+        runner=runner,
+    )
+
+    synthesize_segment(project, segment, adapter)
+
+    assert captured_reference_texts == [segment.source_text]
+
+
 def test_extract_reference_audio_falls_back_to_current_unapproved_segment(tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.core.timeline import DubbingSegment

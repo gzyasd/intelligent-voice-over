@@ -72,6 +72,8 @@ def render_engine_command(raw_json: str, args: argparse.Namespace) -> list[str]:
         "text": args.text,
         "speaker": args.speaker,
         "audio_out": args.audio_out,
+        "audio_out_dir": str(Path(args.audio_out).parent),
+        "audio_out_name": Path(args.audio_out).name,
         "json_out": args.json_out,
         "reference_audio": args.reference_audio or "",
         "reference_text": args.reference_text,

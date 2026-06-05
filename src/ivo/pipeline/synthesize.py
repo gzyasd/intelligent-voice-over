@@ -32,6 +32,7 @@ class TtsAdapter(Protocol):
         output_path: Path,
         style_prompt: str | None,
         reference_audio_path: Path | None,
+        reference_text: str,
         target_duration_ms: int,
     ) -> int: ...
 
@@ -48,6 +49,7 @@ class MockTtsAdapter:
         output_path: Path,
         style_prompt: str | None,
         reference_audio_path: Path | None,
+        reference_text: str,
         target_duration_ms: int,
     ) -> int:
         duration_ms = self.generated_duration_ms or target_duration_ms
@@ -73,6 +75,7 @@ class LocalCommandTtsAdapter:
         output_path: Path,
         style_prompt: str | None,
         reference_audio_path: Path | None,
+        reference_text: str,
         target_duration_ms: int,
     ) -> int:
         result = self.adapter.run(
@@ -83,6 +86,7 @@ class LocalCommandTtsAdapter:
                 target_language="zh",
                 speaker_id=speaker_id,
                 reference_audio_path=reference_audio_path,
+                reference_text=reference_text,
                 extra={
                     "output_audio_path": str(output_path),
                     "style_prompt": style_prompt or "",
@@ -129,6 +133,7 @@ class HttpTtsAdapter:
         output_path: Path,
         style_prompt: str | None,
         reference_audio_path: Path | None,
+        reference_text: str,
         target_duration_ms: int,
     ) -> int:
         result = self.adapter.run(
@@ -139,6 +144,7 @@ class HttpTtsAdapter:
                 target_language="zh",
                 speaker_id=speaker_id,
                 reference_audio_path=reference_audio_path,
+                reference_text=reference_text,
                 extra={
                     "output_audio_path": str(output_path),
                     "style_prompt": style_prompt or "",
@@ -205,6 +211,7 @@ def synthesize_segment(
         output_path=output_path,
         style_prompt=segment.style_prompt,
         reference_audio_path=reference_audio_path,
+        reference_text=segment.source_text,
         target_duration_ms=target_duration_ms,
     )
     duration_flag = (

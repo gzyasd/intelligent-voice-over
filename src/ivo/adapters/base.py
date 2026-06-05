@@ -13,6 +13,7 @@ class AdapterContext(BaseModel):
     target_language: str
     speaker_id: str
     reference_audio_path: Path | None = None
+    reference_text: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
 
     def template_values(self) -> dict[str, Any]:
@@ -25,6 +26,7 @@ class AdapterContext(BaseModel):
             "reference_audio_path": (
                 str(self.reference_audio_path) if self.reference_audio_path is not None else ""
             ),
+            "reference_text": self.reference_text,
         }
         values.update(self.extra)
         return values
