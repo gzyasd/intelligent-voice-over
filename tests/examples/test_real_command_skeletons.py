@@ -7,6 +7,8 @@ import sys
 import wave
 from pathlib import Path
 
+import pytest
+
 
 def test_tts_engine_command_examples_are_valid_json_arrays() -> None:
     for path in (
@@ -128,7 +130,9 @@ def test_demucs_separate_accepts_two_stems_option_in_dry_run(tmp_path) -> None:
 
 
 def test_demucs_soundfile_save_writes_tensor_as_wav(tmp_path) -> None:
-    import torch
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("soundfile")
+    pytest.importorskip("demucs")
 
     spec = importlib.util.spec_from_file_location(
         "demucs_separate", "examples/local_commands/demucs_separate.py"
@@ -183,7 +187,8 @@ def test_f5_tts_dry_run_writes_contract(tmp_path) -> None:
 
 
 def test_f5_soundfile_load_returns_torchaudio_compatible_shape(tmp_path) -> None:
-    import numpy as np
+    pytest.importorskip("torch")
+    pytest.importorskip("soundfile")
 
     spec = importlib.util.spec_from_file_location(
         "f5_tts_command", "examples/local_commands/f5_tts_command.py"
@@ -198,7 +203,7 @@ def test_f5_soundfile_load_returns_torchaudio_compatible_shape(tmp_path) -> None
         wav_file.setnchannels(2)
         wav_file.setsampwidth(2)
         wav_file.setframerate(16000)
-        wav_file.writeframes(np.zeros((1600, 2), dtype=np.int16).tobytes())
+        wav_file.writeframes(b"\x00\x00\x00\x00" * 1600)
 
     wav, sample_rate = module.load_audio_with_soundfile(audio)
 
