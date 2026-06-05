@@ -83,3 +83,10 @@ def test_sample_media_script_dry_run_outputs_ffmpeg_commands() -> None:
     assert "sample-media-test/en_synthetic_1min.mp4" in outputs
     assert "sample-media-test/multi_speaker_synthetic_1min.mp4" in outputs
     assert "authorized synthetic media" in payload["note"]
+
+
+def test_ci_runs_windows_package_dry_run() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "Build package dry-run" in workflow
+    assert "scripts/build_windows_package.py --dry-run" in workflow
