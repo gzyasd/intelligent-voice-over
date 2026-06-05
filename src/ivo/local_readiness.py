@@ -86,7 +86,7 @@ def _missing_dependency_messages(dependency: OptionalDependencyStatus) -> list[s
     prefix = f"{dependency.stage}/{dependency.name}"
     if not dependency.installed:
         missing.append(f"{prefix}: package missing")
-    if not dependency.model_dir_exists:
+    if dependency.model_dir_required and not dependency.model_dir_exists:
         missing.append(f"{prefix}: model dir missing")
     if dependency.required_env_var is not None and not dependency.env_var_set:
         missing.append(f"{prefix}: env {dependency.required_env_var} missing")

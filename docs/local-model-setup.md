@@ -76,9 +76,12 @@ huggingface-cli download openai/whisper-large-v3-turbo --local-dir .\models\asr\
 Demucs 通常会在首次运行时下载命名 checkpoint。先安装包，再运行 dry-run 和真实样片验证：
 
 ```powershell
-uv pip install demucs
+uv sync --extra local-separation
 uv run python examples/local_commands/demucs_separate.py --help
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_separation_asr_cpu_small.json --project-name "CPU Small Probe" --source-language ja --no-watermark
 ```
+
+Windows 真实验证中，`demucs==4.0.1` 搭配最新 `torch/torchaudio` 可能在保存 WAV 时遇到 `torchcodec` 或音频 backend 问题；当前项目的 `local-separation` extra 固定为 `torch==2.5.1`、`torchaudio==2.5.1` 并安装 `soundfile`，这是已用 20 秒日语真实样片跑通过的组合。`real_separation_asr_cpu_small` profile 使用 CPU Demucs 和 `faster-whisper small`，适合首次真实验收；高质量整片再切回 `real_separation_asr` 的 large-v3/GPU 配置。
 
 ### 说话人分离
 

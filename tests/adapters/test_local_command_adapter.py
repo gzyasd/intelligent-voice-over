@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 
 
 def test_local_command_adapter_renders_command_and_reads_json_output(tmp_path) -> None:
@@ -44,6 +45,41 @@ def test_local_command_adapter_renders_command_and_reads_json_output(tmp_path) -
     assert result.ok is True
     assert result.payload == {"target_text": "你好", "emotion": "warm"}
     assert commands == [["python", "translate.py", "--text", "Hello", "--out", str(output)]]
+
+
+def test_local_command_adapter_exposes_current_python_executable(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
+
+    output = tmp_path / "result.json"
+    commands: list[list[str]] = []
+
+    def runner(command: list[str]) -> None:
+        commands.append(command)
+        output.write_text("{}", encoding="utf-8")
+
+    adapter = LocalCommandAdapter(
+        LocalCommandProfile(
+            id="local-asr",
+            stage="asr",
+            command=["{{ python_executable }}", "asr.py", "--out", "{{ output_json_path }}"],
+            output_json_path=str(output),
+        ),
+        runner=runner,
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="",
+            source_language="ja",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is True
+    assert commands == [[sys.executable, "asr.py", "--out", str(output)]]
 
 
 def test_local_command_adapter_returns_error_when_output_missing(tmp_path) -> None:

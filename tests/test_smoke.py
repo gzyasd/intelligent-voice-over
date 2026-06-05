@@ -1399,6 +1399,16 @@ def test_pyproject_declares_local_asr_extra() -> None:
     assert "faster-whisper" in pyproject
 
 
+def test_pyproject_declares_local_separation_extra() -> None:
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert "local-separation" in pyproject
+    assert "demucs" in pyproject
+    assert "torch==2.5.1" in pyproject
+    assert "torchaudio==2.5.1" in pyproject
+    assert "soundfile" in pyproject
+
+
 def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
     document = Path("docs/local-model-setup.md").read_text(encoding="utf-8")
 

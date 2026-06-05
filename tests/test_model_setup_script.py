@@ -26,7 +26,7 @@ def test_model_setup_script_comments_manual_download_steps(tmp_path: Path) -> No
 
     assert "separation / demucs" in script
     assert "# Download: Demucs downloads named checkpoints on first use." in script
-    assert "uv pip install demucs" in script
+    assert "uv sync --extra local-separation" in script
 
 
 def test_model_setup_script_comments_llm_server_framework_installs(tmp_path: Path) -> None:

@@ -19,6 +19,12 @@ dependencies = [
 local-asr = [
     "faster-whisper>=1.2.0",
 ]
+local-separation = [
+    "demucs==4.0.1",
+    "soundfile>=0.13.0",
+    "torch==2.5.1",
+    "torchaudio==2.5.1",
+]
 
 [project.scripts]
 ivo = "ivo.cli:app"

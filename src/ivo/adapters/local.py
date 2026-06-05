@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,7 @@ class LocalCommandAdapter:
     def run(self, context: AdapterContext) -> AdapterResult:
         values = context.template_values()
         values.update(self.profile.extra)
+        values["python_executable"] = sys.executable
         values["output_json_path"] = self._render_string(self.profile.output_json_path, values)
         command = [self._render_string(part, values) for part in self.profile.command]
         output_path = Path(str(values["output_json_path"]))

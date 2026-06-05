@@ -150,6 +150,26 @@ def test_real_separation_asr_profile_uses_demucs_and_faster_whisper() -> None:
     assert profile.tts.id == "f5-tts-dry-run"
 
 
+def test_real_separation_asr_cpu_small_profile_is_fast_real_probe() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_separation_asr_cpu_small.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.separation.id == "demucs-htdemucs-cpu"
+    assert "--device" in profile.separation.command
+    assert "cpu" in profile.separation.command
+    assert "--dry-run" not in profile.separation.command
+    assert profile.asr.id == "faster-whisper-small-cpu"
+    assert "small" in profile.asr.command
+    assert "int8" in profile.asr.command
+    assert "--dry-run" not in profile.asr.command
+    assert profile.tts.id == "f5-tts-dry-run"
+
+
 def test_real_diarization_profile_uses_pyannote_command() -> None:
     profile = LocalCommandPipelineProfiles.model_validate(
         json.loads(

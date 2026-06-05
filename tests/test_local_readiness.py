@@ -125,10 +125,71 @@ def test_build_local_readiness_report_reports_missing_dependency_and_model_dir(
     )
 
     assert report.ok is False
-    assert "separation/demucs: model dir missing" in report.missing
     assert "asr/faster-whisper: package missing" in report.missing
-    assert "asr/faster-whisper: model dir missing" in report.missing
     assert "tts/CosyVoice: package missing" in report.missing
+
+
+def test_build_local_readiness_report_allows_optional_model_directories(
+    tmp_path: Path,
+) -> None:
+    from ivo.adapters.local import LocalCommandProfile
+    from ivo.environment import OptionalDependencyStatus
+    from ivo.local_readiness import build_local_readiness_report
+    from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+
+    report = build_local_readiness_report(
+        LocalCommandPipelineProfiles(
+            separation=LocalCommandProfile(
+                id="demucs-real",
+                stage="separation",
+                command=["{{ python_executable }}", "demucs_separate.py"],
+                output_json_path="sep.json",
+            ),
+            asr=LocalCommandProfile(
+                id="faster-whisper-small",
+                stage="asr",
+                command=["{{ python_executable }}", "faster_whisper_asr.py", "--model", "small"],
+                output_json_path="asr.json",
+            ),
+            tts=LocalCommandProfile(
+                id="f5-tts-dry-run",
+                stage="tts",
+                command=["{{ python_executable }}", "f5_tts_command.py", "--dry-run"],
+                output_json_path="tts.json",
+            ),
+        ),
+        dependencies=[
+            OptionalDependencyStatus(
+                name="demucs",
+                stage="separation",
+                import_name="demucs",
+                installed=True,
+                install_hint="uv sync --extra local-separation",
+                download_hint="download on first use",
+                license_hint="license",
+                model_dir=tmp_path / "models" / "demucs",
+                model_dir_exists=False,
+                model_dir_required=False,
+                verify_hint="verify",
+            ),
+            OptionalDependencyStatus(
+                name="faster-whisper",
+                stage="asr",
+                import_name="faster_whisper",
+                installed=True,
+                install_hint="uv sync --extra local-asr",
+                download_hint="download on first use",
+                license_hint="license",
+                model_dir=tmp_path / "models" / "asr",
+                model_dir_exists=False,
+                model_dir_required=False,
+                verify_hint="verify",
+            ),
+        ],
+    )
+
+    assert report.ok is True
+    assert report.missing == []
 
 
 def test_build_local_readiness_report_reports_missing_engine_command_file(

@@ -3,7 +3,7 @@
     "id": "demucs-dry-run",
     "stage": "separation",
     "command": [
-      "python",
+      "{{ python_executable }}",
       "examples/local_commands/demucs_separate.py",
       "--audio",
       "{{ audio_path }}",
@@ -27,7 +27,7 @@
     "id": "faster-whisper-dry-run",
     "stage": "asr",
     "command": [
-      "python",
+      "{{ python_executable }}",
       "examples/local_commands/faster_whisper_asr.py",
       "--audio",
       "{{ audio_path }}",
@@ -49,7 +49,7 @@
     "id": "f5-tts-local",
     "stage": "tts",
     "command": [
-      "python",
+      "{{ python_executable }}",
       "examples/local_commands/f5_tts_command.py",
       "--text",
       "{{ segment_text }}",

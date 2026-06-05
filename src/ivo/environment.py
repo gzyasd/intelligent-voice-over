@@ -28,6 +28,7 @@ class OptionalDependencyStatus(BaseModel):
     license_hint: str
     model_dir: Path
     model_dir_exists: bool
+    model_dir_required: bool = True
     verify_hint: str
     required_env_var: str | None = None
     env_var_set: bool | None = None
@@ -43,6 +44,7 @@ class OptionalDependencySpec:
     license_hint: str
     model_subdir: Path
     verify_hint: str
+    model_dir_required: bool = True
     required_env_var: str | None = None
 
 
@@ -91,16 +93,18 @@ def collect_optional_model_dependencies(
             license_hint="MIT package; confirm the selected Whisper checkpoint license.",
             model_subdir=Path("asr") / "faster-whisper-large-v3",
             verify_hint="uv run ivo model smoke-asr --dry-run",
+            model_dir_required=False,
         ),
         OptionalDependencySpec(
             name="demucs",
             stage="separation",
             import_name="demucs",
-            install_hint="uv pip install demucs",
+            install_hint="uv sync --extra local-separation",
             download_hint="Demucs downloads named checkpoints on first use.",
             license_hint="MIT; confirm checkpoint terms before distribution.",
             model_subdir=Path("separation") / "demucs",
             verify_hint="uv run python examples/local_commands/demucs_separate.py --help",
+            model_dir_required=False,
         ),
         OptionalDependencySpec(
             name="pyannote.audio",
@@ -185,6 +189,7 @@ def collect_optional_model_dependencies(
             license_hint=dependency.license_hint,
             model_dir=root / dependency.model_subdir,
             model_dir_exists=(root / dependency.model_subdir).is_dir(),
+            model_dir_required=dependency.model_dir_required,
             verify_hint=dependency.verify_hint,
             required_env_var=dependency.required_env_var,
             env_var_set=(
