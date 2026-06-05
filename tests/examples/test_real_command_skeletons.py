@@ -22,6 +22,19 @@ def test_tts_engine_command_examples_are_valid_json_arrays() -> None:
         )
 
 
+def test_cosyvoice_engine_command_can_use_audio_output_dir_and_name() -> None:
+    command = json.loads(
+        Path("examples/engine_commands/cosyvoice_engine_command.example.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "{audio_out_dir}" in command
+    assert "{audio_out_name}" in command
+    assert "{reference_text}" in command
+    assert "{text}" in command
+
+
 def test_faster_whisper_asr_dry_run_writes_contract(tmp_path) -> None:
     audio = tmp_path / "audio.wav"
     audio.write_bytes(b"fake")

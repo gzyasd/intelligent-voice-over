@@ -96,6 +96,8 @@ class LocalCommandAdapter:
         returncode: int | None = None,
         stderr: str | bytes | None = None,
     ) -> AdapterResult:
+        stderr_summary = _summarize_stderr(stderr)
+        output_json_path = str(output_path) if output_path is not None else None
         return AdapterResult(
             stage=self.stage,
             provider=self.provider,
@@ -108,9 +110,13 @@ class LocalCommandAdapter:
                     command=command,
                     output_path=output_path,
                     returncode=returncode,
-                    stderr=stderr,
+                    stderr_summary=stderr_summary,
                 ),
                 retryable=False,
+                command=command,
+                exit_code=returncode,
+                stderr_summary=stderr_summary or None,
+                output_json_path=output_json_path,
             ),
         )
 
@@ -121,7 +127,7 @@ class LocalCommandAdapter:
         command: list[str] | None,
         output_path: Path | None,
         returncode: int | None,
-        stderr: str | bytes | None,
+        stderr_summary: str,
     ) -> str:
         lines = [
             message,
@@ -134,7 +140,6 @@ class LocalCommandAdapter:
             lines.append(f"command: {' '.join(command)}")
         if output_path is not None:
             lines.append(f"output JSON: {output_path}")
-        stderr_summary = _summarize_stderr(stderr)
         if stderr_summary:
             lines.append(f"stderr: {stderr_summary}")
         return "\n".join(lines)

@@ -193,6 +193,7 @@ def test_batch_local_preview_command_continues_after_video_failure(monkeypatch, 
     def fake_run_local_command_preview(project, **kwargs):
         processed.append(project.name)
         if project.name == "episode-01":
+            project.jobs.mark_failed("asr", "asr provider failed")
             raise RuntimeError("asr provider failed")
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.parent.mkdir(parents=True, exist_ok=True)
@@ -228,10 +229,17 @@ def test_batch_local_preview_command_continues_after_video_failure(monkeypatch, 
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["processed"] == 2
     assert report["failed"] == 1
+    assert report["completed"] == 1
+    assert report["videos"][0]["source_video"].endswith("episode-01.mp4")
+    assert "duration_seconds" in report["videos"][0]
     assert report["videos"][0]["status"] == "failed"
+    assert report["videos"][0]["failed_stage"] == "asr"
     assert report["videos"][0]["error"] == "asr provider failed"
-    assert report["videos"][1]["status"] == "completed"
+    assert report["videos"][1]["source_video"].endswith("episode-02.mp4")
+    assert report["videos"][1]["status"] == "passed"
+    assert report["videos"][1]["failed_stage"] is None
     assert report["videos"][1]["final_video"].endswith("local-preview.mp4")
+    assert "duration_seconds" in report["videos"][1]
 
 
 def test_batch_local_preview_command_skips_existing_outputs(monkeypatch, tmp_path) -> None:
@@ -282,8 +290,11 @@ def test_batch_local_preview_command_skips_existing_outputs(monkeypatch, tmp_pat
     assert "episode-01.mp4: SKIPPED existing output" in result.output
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["skipped"] == 1
+    assert report["videos"][0]["source_video"].endswith("episode-01.mp4")
     assert report["videos"][0]["status"] == "skipped"
+    assert report["videos"][0]["failed_stage"] is None
     assert report["videos"][0]["final_video"].endswith("local-preview.mp4")
+    assert "duration_seconds" in report["videos"][0]
 
 
 def test_batch_local_preview_command_can_resume_existing_projects(monkeypatch, tmp_path) -> None:
@@ -1219,6 +1230,7 @@ def test_doctor_models_reports_optional_dependency_status() -> None:
     assert "license:" in result.output
     assert "model dir:" in result.output
     assert "uv run ivo model smoke-asr --dry-run" in result.output
+    assert "uv run ivo model write-setup-script --models-dir .\\models" in result.output
 
 
 def test_doctor_models_can_filter_by_stage() -> None:
@@ -1417,6 +1429,13 @@ def test_pyproject_declares_local_tts_f5_extra() -> None:
     assert "transformers<5" in pyproject
 
 
+def test_pyproject_declares_local_tts_cosyvoice_extra() -> None:
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert "local-tts-cosyvoice" in pyproject
+    assert "modelscope" in pyproject
+
+
 def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
     document = Path("docs/local-model-setup.md").read_text(encoding="utf-8")
 
@@ -1425,6 +1444,40 @@ def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
     assert "uv run ivo model write-setup-script" in document
     assert "uv run ivo model smoke-asr" in document
     assert "uv run ivo model smoke-adapters" in document
+
+
+def test_gitignore_excludes_real_media_models_and_secrets() -> None:
+    text = Path(".gitignore").read_text(encoding="utf-8")
+
+    for pattern in ("models/", "测试视频/", "*.mp4", "*.wav", ".env", "scratch/"):
+        assert pattern in text
+
+
+def test_compliance_document_covers_model_and_user_license_responsibilities() -> None:
+    text = Path("docs/compliance-and-licenses.md").read_text(encoding="utf-8")
+
+    for required in (
+        "项目代码许可证：MIT",
+        "第三方模型许可证彼此独立",
+        "F5-TTS",
+        "CC-BY-NC",
+        "CosyVoice",
+        "pyannote",
+        "Hugging Face",
+        "用户必须确认拥有视频处理权利",
+        "AI 配音元数据",
+        "可见水印",
+    ):
+        assert required in text
+
+
+def test_readme_points_to_compliance_and_contribution_guidance() -> None:
+    text = Path("README.md").read_text(encoding="utf-8")
+
+    assert "docs/compliance-and-licenses.md" in text
+    assert "如何提交 issue" in text
+    assert "如何贡献 profile" in text
+    assert "不接受模型权重、真实影视片段或 API key" in text
 
 
 def _write_smoke_local_profiles(tmp_path: Path) -> Path:

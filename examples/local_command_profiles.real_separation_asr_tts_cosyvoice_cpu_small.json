@@ -1,6 +1,6 @@
 {
   "separation": {
-    "id": "demucs-dry-run",
+    "id": "demucs-htdemucs-cpu",
     "stage": "separation",
     "command": [
       "{{ python_executable }}",
@@ -16,15 +16,14 @@
       "--model",
       "htdemucs",
       "--device",
-      "cuda",
+      "cpu",
       "--two-stems",
-      "vocals",
-      "--dry-run"
+      "vocals"
     ],
-    "output_json_path": "{{ project_path }}/demucs-dry-run.json"
+    "output_json_path": "{{ project_path }}/demucs-htdemucs-cpu.json"
   },
   "asr": {
-    "id": "faster-whisper-dry-run",
+    "id": "faster-whisper-small-cpu",
     "stage": "asr",
     "command": [
       "{{ python_executable }}",
@@ -34,16 +33,15 @@
       "--language",
       "{{ source_language }}",
       "--model",
-      "base",
+      "small",
       "--device",
-      "cuda",
+      "cpu",
       "--compute-type",
-      "float16",
+      "int8",
       "--out",
-      "{{ output_json_path }}",
-      "--dry-run"
+      "{{ output_json_path }}"
     ],
-    "output_json_path": "{{ project_path }}/faster-whisper-dry-run.json"
+    "output_json_path": "{{ project_path }}/faster-whisper-small-cpu.json"
   },
   "tts": {
     "id": "cosyvoice3-local",

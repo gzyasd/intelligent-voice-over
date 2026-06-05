@@ -99,6 +99,7 @@ def run_local_command_preview(
             separation.vocals_path,
             source_language=project.source_language,
         ),
+        resume_from=lambda: _resume_source_segments(project),
     )
     active_diarization_adapter = diarization_adapter
     if active_diarization_adapter is None and profiles.diarization is not None:
@@ -157,6 +158,7 @@ def run_local_command_preview(
             ExportConfirmation(accepted=True),
             ffmpeg_path=ffmpeg_path,
         ),
+        resume_from=lambda: _resume_file(project.path / "renders" / "local-preview.mp4"),
     )
     return LocalCommandPreviewResult(
         final_video=final_video,
@@ -203,6 +205,27 @@ def _resume_separation(project: DubbingProject) -> SeparationResult | None:
 def _resume_translated_segments(project: DubbingProject) -> list[DubbingSegment] | None:
     segments = project.timeline.list_segments()
     return segments or None
+
+
+def _resume_source_segments(project: DubbingProject) -> list[TranscriptionSegment] | None:
+    translation_record = project.jobs.get("translation")
+    if translation_record is None or translation_record.status != "completed":
+        return None
+    segments = project.timeline.list_segments()
+    if not segments:
+        return None
+    return [
+        TranscriptionSegment(
+            id=segment.id,
+            start_ms=segment.start_ms,
+            end_ms=segment.end_ms,
+            source_language=segment.source_language,
+            source_text=segment.source_text,
+            speaker_id=segment.speaker_id,
+            quality_flags=segment.quality_flags,
+        )
+        for segment in segments
+    ]
 
 
 def _synthesize_segments(

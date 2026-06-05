@@ -13,6 +13,8 @@
   "{reference_text}",
   "--style-prompt",
   "{style_prompt}",
-  "--audio-out",
-  "{audio_out}"
+  "--output-dir",
+  "{audio_out_dir}",
+  "--output-file",
+  "{audio_out_name}"
 ]

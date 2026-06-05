@@ -107,3 +107,17 @@ def test_http_tts_profile_marks_duration_optional() -> None:
     assert "audio_path" in profile.optional_response_keys
     assert profile.response_mapping["duration_ms"] == "$.duration_ms"
     assert "duration_ms" in profile.optional_response_keys
+
+
+def test_http_api_profiles_doc_covers_required_modes() -> None:
+    text = Path("docs/http-api-profiles.md").read_text(encoding="utf-8")
+
+    for phrase in (
+        "JSON API",
+        "multipart",
+        "OpenAI-compatible",
+        "audio_base64",
+        "audio_path",
+        "--translation-var api_key",
+    ):
+        assert phrase in text

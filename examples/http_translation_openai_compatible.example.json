@@ -19,7 +19,7 @@
       },
       {
         "role": "user",
-        "content": "source_language={{ source_language }}\ntarget_language={{ target_language }}\nspeaker_id={{ speaker_id }}\nduration_ms={{ duration_ms }}\nsource_text={{ segment_text }}\n\n请输出适合原时长的中文配音台词。"
+        "content": "{{ prompt }}\n\nsource_language={{ source_language }}\ntarget_language={{ target_language }}\nspeaker_id={{ speaker_id }}\nduration_ms={{ duration_ms }}\nsource_text={{ segment_text }}"
       }
     ]
   },

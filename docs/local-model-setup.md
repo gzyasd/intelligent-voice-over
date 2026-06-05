@@ -49,6 +49,8 @@ uv run ivo model smoke-asr --output .\scratch\asr-smoke.json --dry-run
 uv run ivo model smoke-adapters --output .\scratch\adapter-smoke.json
 ```
 
+仓库提供 `scripts/setup-local-models.example.ps1` 作为只读示例，列出常见安装、下载和验证命令。实际使用时建议通过 `uv run ivo model write-setup-script` 生成自己的本机脚本；生成脚本会保留许可证确认、`huggingface-cli login` 和“不要提交 models/”提示。运行前请逐项确认模型卡、下载渠道和用途许可，脚本不应写入 API key、HF_TOKEN 或任何真实影视素材路径。
+
 `doctor-models` 会检查以下信息：
 
 - 阶段：ASR、人声分离、说话人分离、翻译、TTS。
@@ -103,6 +105,7 @@ $env:HF_TOKEN="你的 token"
 首选先评估 Fun-CosyVoice3：
 
 ```powershell
+uv sync --extra local-tts-cosyvoice
 huggingface-cli download FunAudioLLM/Fun-CosyVoice3-0.5B-2512 --local-dir .\models\tts\Fun-CosyVoice3-0.5B
 ```
 
@@ -117,6 +120,14 @@ snapshot_download(
 )
 snapshot_download("iic/CosyVoice2-0.5B", local_dir="models/tts/CosyVoice2-0.5B")
 ```
+
+项目提供了 `examples/local_commands/cosyvoice_tts.py` wrapper。默认建议先通过 `--engine-command-json-file` 调用你本机可运行的 CosyVoice 推理脚本；示例 engine command 会把 `{audio_out_dir}` 和 `{audio_out_name}` 分开传入，适合官方或自定义脚本使用输出目录/文件名两个参数的情况：
+
+```powershell
+uv run python .\examples\local_commands\cosyvoice_tts.py --text "你好，我们继续测试。" --speaker speaker-1 --audio-out .\scratch\cosyvoice-real.wav --json-out .\scratch\cosyvoice-real.json --model-dir .\models\tts\Fun-CosyVoice3-0.5B --reference-audio .\scratch\ref.wav --reference-text "参考音频文本" --duration-ms 2500 --engine-command-json-file .\examples\engine_commands\cosyvoice_engine_command.example.json
+```
+
+完整 CPU 小模型链路可使用 `examples/local_command_profiles.real_separation_asr_tts_cosyvoice_cpu_small.json`。该 profile 会复用 Demucs CPU、faster-whisper small CPU/int8，并把 `reference_audio_path` 与 `reference_text` 一起传给 CosyVoice wrapper。
 
 F5-TTS 可作为音色克隆备选：
 

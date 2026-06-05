@@ -26,6 +26,79 @@ def test_build_translation_prompt_preserves_emotion_fillers_and_timing() -> None
     assert "Well, I mean... hi." in prompt
 
 
+def test_translation_prompt_includes_glossary_terms_style_and_length_controls() -> None:
+    from ivo.pipeline.translate import build_translation_prompt
+
+    prompt = build_translation_prompt(
+        source_language="ja",
+        target_language="zh",
+        source_text="先輩、お願いします",
+        duration_ms=1_800,
+        speaker_id="speaker-1",
+        glossary={"先輩": "前辈"},
+        style_notes="日剧口吻，自然，不要书面腔。",
+        preserve_fillers=True,
+        max_length_ratio=1.15,
+    )
+
+    assert "先輩 -> 前辈" in prompt
+    assert "日剧口吻" in prompt
+    assert "1800ms" in prompt
+    assert "1.15" in prompt
+    assert "语气词" in prompt
+
+
+def test_translate_segments_uses_project_translation_settings(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.settings import TranslationSettings
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import TranslationResult, translate_segments
+
+    class CapturingAdapter:
+        prompts: list[str]
+
+        def __init__(self) -> None:
+            self.prompts = []
+
+        def translate(self, segment: TranscriptionSegment, *, prompt: str) -> TranslationResult:
+            self.prompts.append(prompt)
+            return TranslationResult(segment_id=segment.id, target_text="前辈，拜托了。")
+
+    project = DubbingProject.create(
+        tmp_path / "translate-settings.ivoproj",
+        name="Translate Settings",
+        source_language="ja",
+        target_language="zh",
+    )
+    project.settings.update_translation(
+        TranslationSettings(
+            translation_style_notes="日剧口吻，自然，不要书面腔。",
+            glossary={"先輩": "前辈"},
+            preserve_fillers=True,
+            max_length_ratio=1.15,
+        )
+    )
+    adapter = CapturingAdapter()
+
+    translate_segments(
+        project,
+        [
+            TranscriptionSegment(
+                id="seg-001",
+                start_ms=0,
+                end_ms=1_800,
+                source_language="ja",
+                source_text="先輩、お願いします",
+                speaker_id="speaker-1",
+            )
+        ],
+        adapter,
+    )
+
+    assert "先輩 -> 前辈" in adapter.prompts[0]
+    assert "日剧口吻" in adapter.prompts[0]
+
+
 def test_translate_segments_writes_needs_review_timeline_entries(tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.pipeline.transcribe import TranscriptionSegment

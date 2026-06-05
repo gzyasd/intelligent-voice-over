@@ -104,3 +104,34 @@ def test_timeline_updates_editable_segment_fields(tmp_path) -> None:
 
     reloaded = DubbingProject.load(project.path)
     assert reloaded.timeline.get_segment("seg-001") == updated
+
+
+def test_speaker_profile_stores_reference_segments(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.speakers import SpeakerProfile
+
+    project = DubbingProject.create(
+        tmp_path / "speakers.ivoproj",
+        name="Speakers",
+        source_language="ja",
+        target_language="zh",
+    )
+
+    project.speakers.upsert(
+        SpeakerProfile(
+            id="speaker-1",
+            display_name="角色 A",
+            reference_segment_ids=["seg-001"],
+            preferred_tts_profile_id="f5-tts-local",
+            notes="Use calm references.",
+        )
+    )
+
+    loaded = project.speakers.get("speaker-1")
+    reloaded = DubbingProject.load(project.path).speakers.get("speaker-1")
+
+    assert loaded is not None
+    assert loaded.display_name == "角色 A"
+    assert loaded.reference_segment_ids == ["seg-001"]
+    assert loaded.notes == "Use calm references."
+    assert reloaded == loaded

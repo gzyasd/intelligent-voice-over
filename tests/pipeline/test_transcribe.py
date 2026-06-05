@@ -77,6 +77,53 @@ def test_assign_speakers_prefers_largest_overlap_over_midpoint() -> None:
     assert assigned[0].quality_flags == []
 
 
+def test_merge_speakers_assigns_speaker_by_largest_overlap() -> None:
+    from ivo.pipeline.transcribe import DiarizationSegment, TranscriptionSegment, merge_speakers
+
+    segments = [
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=1_000,
+            end_ms=3_000,
+            source_language="ja",
+            source_text="こんにちは",
+            speaker_id="unknown",
+        )
+    ]
+    diarization = [
+        DiarizationSegment(start_ms=900, end_ms=1_500, speaker_id="speaker-1"),
+        DiarizationSegment(start_ms=1_500, end_ms=3_200, speaker_id="speaker-2"),
+    ]
+
+    merged = merge_speakers(segments, diarization)
+
+    assert merged[0].speaker_id == "speaker-2"
+
+
+def test_assign_speakers_flags_ambiguous_when_overlaps_are_close() -> None:
+    from ivo.pipeline.transcribe import DiarizationSegment, TranscriptionSegment, assign_speakers
+
+    segments = [
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            source_language="ko",
+            source_text="안녕하세요.",
+            speaker_id="unknown",
+        )
+    ]
+    diarization = [
+        DiarizationSegment(start_ms=0, end_ms=560, speaker_id="speaker-a"),
+        DiarizationSegment(start_ms=450, end_ms=1_000, speaker_id="speaker-b"),
+    ]
+
+    assigned = assign_speakers(segments, diarization)
+
+    assert assigned[0].speaker_id == "speaker-a"
+    assert assigned[0].quality_flags == ["speaker_ambiguous"]
+
+
 def test_assign_speakers_flags_segments_without_diarization_overlap() -> None:
     from ivo.pipeline.transcribe import DiarizationSegment, TranscriptionSegment, assign_speakers
 

@@ -50,6 +50,71 @@ def test_main_window_runs_local_preview_from_model_settings(monkeypatch, qtbot, 
     assert window.progress_label.text() == "本地命令预览已完成"
 
 
+def test_model_settings_panel_shows_structured_readiness_results(qtbot) -> None:
+    from ivo.ui.model_settings import ModelSettingsPanel
+
+    panel = ModelSettingsPanel()
+    qtbot.addWidget(panel)
+
+    panel.show_readiness_results(
+        [
+            {
+                "stage": "tts",
+                "provider": "CosyVoice",
+                "status": "missing",
+                "message": "cosyvoice package is missing",
+            }
+        ]
+    )
+
+    summary = panel.readiness_summary_text()
+    assert "CosyVoice" in summary
+    assert "missing" in summary
+    assert "cosyvoice package is missing" in summary
+
+
+def test_main_window_saves_selected_profile_paths_to_project_settings(
+    monkeypatch,
+    qtbot,
+    tmp_path,
+) -> None:
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+    from ivo.ui.main_window import MainWindow
+
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
+    profiles_path = _write_local_profiles(tmp_path)
+    translation_profile_path = _write_translation_profile(tmp_path)
+
+    def fake_run_local_command_preview(project, **kwargs):
+        final_video = project.path / "renders" / "local-preview.mp4"
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr("ivo.ui.main_window.run_local_command_preview", fake_run_local_command_preview)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    project = window.create_project_from_inputs(
+        project_name="Episode 01",
+        source_video=source,
+        output_dir=tmp_path,
+        source_language="en",
+    )
+    window.model_settings.local_command_profiles_path_edit.setText(str(profiles_path))
+    window.model_settings.translation_profile_path_edit.setText(str(translation_profile_path))
+
+    window.run_local_preview()
+
+    saved = project.settings.load().profiles
+    assert saved.local_command_profiles_path == str(profiles_path)
+    assert saved.translation_profile_path == str(translation_profile_path)
+
+
 def test_main_window_builds_background_worker_for_local_preview(monkeypatch, qtbot, tmp_path) -> None:
     from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
     from ivo.ui.main_window import MainWindow

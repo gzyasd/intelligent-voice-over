@@ -1,6 +1,6 @@
 {
   "separation": {
-    "id": "demucs-dry-run",
+    "id": "demucs-htdemucs-cpu",
     "stage": "separation",
     "command": [
       "{{ python_executable }}",
@@ -16,15 +16,14 @@
       "--model",
       "htdemucs",
       "--device",
-      "cuda",
+      "cpu",
       "--two-stems",
-      "vocals",
-      "--dry-run"
+      "vocals"
     ],
-    "output_json_path": "{{ project_path }}/demucs-dry-run.json"
+    "output_json_path": "{{ project_path }}/demucs-htdemucs-cpu-fast-preview.json"
   },
   "asr": {
-    "id": "faster-whisper-dry-run",
+    "id": "faster-whisper-small-gpu",
     "stage": "asr",
     "command": [
       "{{ python_executable }}",
@@ -34,23 +33,22 @@
       "--language",
       "{{ source_language }}",
       "--model",
-      "base",
+      "small",
       "--device",
       "cuda",
       "--compute-type",
       "float16",
       "--out",
-      "{{ output_json_path }}",
-      "--dry-run"
+      "{{ output_json_path }}"
     ],
-    "output_json_path": "{{ project_path }}/faster-whisper-dry-run.json"
+    "output_json_path": "{{ project_path }}/faster-whisper-small-gpu.json"
   },
   "tts": {
-    "id": "cosyvoice3-local",
+    "id": "f5-tts-dry-run",
     "stage": "tts",
     "command": [
       "{{ python_executable }}",
-      "examples/local_commands/cosyvoice_tts.py",
+      "examples/local_commands/f5_tts_command.py",
       "--text",
       "{{ segment_text }}",
       "--speaker",
@@ -59,19 +57,10 @@
       "{{ output_audio_path }}",
       "--duration-ms",
       "{{ target_duration_ms }}",
-      "--style-prompt",
-      "{{ style_prompt }}",
-      "--reference-audio",
-      "{{ reference_audio_path }}",
-      "--reference-text",
-      "{{ reference_text }}",
       "--json-out",
       "{{ output_json_path }}",
-      "--model-dir",
-      "models/tts/Fun-CosyVoice3-0.5B",
-      "--engine-command-json-file",
-      "examples/engine_commands/cosyvoice_engine_command.example.json"
+      "--dry-run"
     ],
-    "output_json_path": "{{ project_path }}/cosyvoice3-local.json"
+    "output_json_path": "{{ project_path }}/f5-tts-dry-run-fast-preview.json"
   }
 }

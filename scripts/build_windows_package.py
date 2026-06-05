@@ -49,7 +49,15 @@ def build_release_manifest(output_dir: Path) -> dict[str, object]:
         "version": read_project_version(),
         "entrypoint": str(output_dir / APP_NAME / f"{APP_NAME}.exe"),
         "included_data": ["examples", "docs"],
-        "excluded_paths": ["models", "sample_media", "scratch"],
+        "excluded_paths": [
+            "models",
+            "测试视频",
+            "sample_media",
+            "scratch",
+            "*.mp4",
+            "*.wav",
+            ".env",
+        ],
         "excluded_secrets": ["API keys and tokens", "HF_TOKEN", "ModelScope token"],
         "notes": [
             "Model weights are not bundled.",

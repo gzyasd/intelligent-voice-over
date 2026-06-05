@@ -12,6 +12,9 @@ from ivo.adapters.local import CommandRunner, LocalCommandAdapter, LocalCommandP
 from ivo.core.timeline import SourceLanguage
 
 
+_AMBIGUOUS_SPEAKER_OVERLAP_RATIO_PERCENT = 80
+
+
 class TranscriptionSegment(BaseModel):
     id: str
     start_ms: int
@@ -292,17 +295,42 @@ def assign_speakers(
     assigned: list[TranscriptionSegment] = []
     for segment in segments:
         speaker_id = segment.speaker_id
-        best_overlap_ms = 0
+        overlaps_by_speaker: dict[str, int] = {}
         for diarization in diarization_segments:
             overlap_ms = _overlap_ms(segment, diarization)
-            if overlap_ms > best_overlap_ms:
-                best_overlap_ms = overlap_ms
-                speaker_id = diarization.speaker_id
+            if overlap_ms > 0:
+                overlaps_by_speaker[diarization.speaker_id] = (
+                    overlaps_by_speaker.get(diarization.speaker_id, 0) + overlap_ms
+                )
         quality_flags = list(segment.quality_flags)
-        if best_overlap_ms == 0 and "speaker_unmatched" not in quality_flags:
+        ranked_overlaps = sorted(overlaps_by_speaker.items(), key=lambda item: item[1], reverse=True)
+        best_overlap_ms = ranked_overlaps[0][1] if ranked_overlaps else 0
+        if best_overlap_ms > 0:
+            speaker_id = ranked_overlaps[0][0]
+            if _has_ambiguous_speaker_overlap(ranked_overlaps) and "speaker_ambiguous" not in quality_flags:
+                quality_flags.append("speaker_ambiguous")
+        elif "speaker_unmatched" not in quality_flags:
             quality_flags.append("speaker_unmatched")
         assigned.append(segment.model_copy(update={"speaker_id": speaker_id, "quality_flags": quality_flags}))
     return assigned
+
+
+def merge_speakers(
+    segments: list[TranscriptionSegment],
+    diarization_segments: list[DiarizationSegment],
+) -> list[TranscriptionSegment]:
+    return assign_speakers(segments, diarization_segments)
+
+
+def _has_ambiguous_speaker_overlap(ranked_overlaps: list[tuple[str, int]]) -> bool:
+    if len(ranked_overlaps) < 2:
+        return False
+    best_overlap_ms = ranked_overlaps[0][1]
+    second_overlap_ms = ranked_overlaps[1][1]
+    return (
+        second_overlap_ms > 0
+        and second_overlap_ms * 100 >= best_overlap_ms * _AMBIGUOUS_SPEAKER_OVERLAP_RATIO_PERCENT
+    )
 
 
 def _overlap_ms(segment: TranscriptionSegment, diarization: DiarizationSegment) -> int:

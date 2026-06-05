@@ -43,14 +43,33 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command() -> None:
     assert "examples" in manifest["included_data"]
     assert "docs" in manifest["included_data"]
     assert "models" in manifest["excluded_paths"]
+    assert "测试视频" in manifest["excluded_paths"]
     assert "sample_media" in manifest["excluded_paths"]
+    assert "*.mp4" in manifest["excluded_paths"]
+    assert "*.wav" in manifest["excluded_paths"]
+    assert ".env" in manifest["excluded_paths"]
     assert "API keys and tokens" in manifest["excluded_secrets"]
+
+
+def test_windows_package_powershell_script_excludes_models_and_media() -> None:
+    text = Path("scripts/package-windows.ps1").read_text(encoding="utf-8")
+
+    assert "models" in text
+    assert "测试视频" in text
+    assert "*.mp4" in text
+    assert "*.wav" in text
+    assert ".env" in text
+    assert "pyinstaller" in text.lower()
+    assert "uv run pytest" in text
+    assert "uv run ruff check ." in text
+    assert "uv run mypy src" in text
 
 
 def test_windows_packaging_documentation_mentions_build_command() -> None:
     document = Path("docs/windows-packaging.md").read_text(encoding="utf-8")
 
     assert "scripts/build_windows_package.py" in document
+    assert "scripts/package-windows.ps1" in document
     assert "uv tool run pyinstaller" in document
     assert "ffmpeg" in document.lower()
     assert "IntelligentVoiceOver.exe" in document

@@ -38,6 +38,10 @@ class AdapterError(BaseModel):
     message: str
     http_status: int | None = None
     retryable: bool = False
+    command: list[str] | None = None
+    exit_code: int | None = None
+    stderr_summary: str | None = None
+    output_json_path: str | None = None
 
 
 class AdapterResult(BaseModel):

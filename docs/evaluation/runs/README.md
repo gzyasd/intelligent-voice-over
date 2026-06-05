@@ -32,3 +32,11 @@ YYYY-MM-DD-language-model-stack.md
 - 可识别未授权剧集、集数、角色或时间戳的信息。
 
 评测模板见 `docs/evaluation/real-video-evaluation.md`。
+
+阶段验收口径见 `docs/evaluation/acceptance-matrix.md`。运行记录应说明使用的 profile、模型组合、命令、自动质量标记、结论和下一步；不要记录可识别未授权剧集或角色的信息。
+
+可以用 CLI 自动生成运行记录：
+
+```powershell
+uv run ivo evaluation write-run --title "Real F5 20s" --source-language ja --duration-seconds 20 --profile .\examples\local_command_profiles.real_separation_asr_tts_f5_cpu_small.json --command "uv run ivo local-preview ..." --status passed --note "5 segments rendered"
+```

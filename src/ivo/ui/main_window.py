@@ -18,6 +18,7 @@ from ivo.compliance.confirmation import ExportConfirmation
 from ivo.adapters.http import ApiAdapterProfile
 from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
+from ivo.core.settings import ProfileSelectionSettings, TranslationSettings
 from ivo.core.timeline import SourceLanguage
 from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
@@ -40,6 +41,7 @@ from ivo.pipeline.translate import HttpTranslationAdapter
 from ivo.ui.export_dialog import ExportDialog
 from ivo.ui.model_settings import ModelSettings
 from ivo.ui.project_wizard import ProjectWizard
+from ivo.ui.run_log import RunLogPanel
 from ivo.ui.timeline_editor import TimelineEditor
 from ivo.ui.workers import PipelineWorker
 
@@ -57,6 +59,7 @@ class MainWindow(QMainWindow):
         self.progress_label = QLabel("\u5c1a\u672a\u5f00\u59cb")
         self.timeline_editor = TimelineEditor()
         self.model_settings = ModelSettings()
+        self.run_log_panel = RunLogPanel()
         self.current_project: DubbingProject | None = None
         self.source_video_path: Path | None = None
         self.local_preview_worker: PipelineWorker | None = None
@@ -73,6 +76,7 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
         tabs.addTab(self.timeline_editor, "\u65f6\u95f4\u7ebf")
         tabs.addTab(self.model_settings, "\u6a21\u578b\u8bbe\u7f6e")
+        tabs.addTab(self.run_log_panel, "\u8fd0\u884c\u65e5\u5fd7")
 
         root = QWidget()
         layout = QVBoxLayout()
@@ -111,12 +115,20 @@ class MainWindow(QMainWindow):
 
     def create_project_from_wizard(self, wizard: ProjectWizard) -> DubbingProject:
         values = wizard.values()
-        return self.create_project_from_inputs(
+        project = self.create_project_from_inputs(
             project_name=values.project_name,
             source_video=values.source_video,
             output_dir=values.output_dir,
             source_language=values.source_language,
         )
+        project.settings.update_translation(
+            TranslationSettings(
+                series_type=values.series_type,
+                translation_style_notes=values.translation_style_notes,
+                glossary=_load_glossary(values.glossary_path),
+            )
+        )
+        return project
 
     def open_project_wizard(self) -> DubbingProject | None:
         wizard = ProjectWizard(self)
@@ -174,12 +186,15 @@ class MainWindow(QMainWindow):
 
     def run_local_preview(self) -> LocalCommandPreviewResult:
         self.progress_label.setText("\u6b63\u5728\u751f\u6210\u672c\u5730\u547d\u4ee4\u9884\u89c8")
+        self.run_log_panel.append_stage_message("local-preview", "started")
         result = self._execute_local_preview()
+        self.run_log_panel.append_stage_message("local-preview", f"output: {result.final_video}")
         self._refresh_after_local_preview()
         return result
 
     def create_local_preview_worker(self) -> PipelineWorker:
         self.progress_label.setText("\u6b63\u5728\u751f\u6210\u672c\u5730\u547d\u4ee4\u9884\u89c8")
+        self.run_log_panel.append_stage_message("local-preview", "started")
         self.local_preview_button.setEnabled(False)
         worker = PipelineWorker(self._execute_local_preview)
         worker.succeeded.connect(self.handle_local_preview_succeeded)
@@ -193,11 +208,17 @@ class MainWindow(QMainWindow):
         return worker
 
     def handle_local_preview_succeeded(self) -> None:
+        if self.local_preview_worker is not None and self.local_preview_worker.result is not None:
+            result = self.local_preview_worker.result
+            final_video = getattr(result, "final_video", None)
+            if final_video is not None:
+                self.run_log_panel.append_stage_message("local-preview", f"output: {final_video}")
         self._refresh_after_local_preview()
         self.local_preview_button.setEnabled(True)
 
     def handle_local_preview_failed(self, message: str) -> None:
         self.progress_label.setText(f"\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25: {message}")
+        self.run_log_panel.append_stage_message("local-preview", f"failed: {message}")
         self.local_preview_button.setEnabled(True)
         QMessageBox.warning(self, "\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25", message)
 
@@ -340,6 +361,7 @@ class MainWindow(QMainWindow):
         if self.source_video_path is None:
             raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u89c6\u9891")
 
+        self._save_model_profile_settings()
         return run_local_command_preview(
             self.current_project,
             source_video=self.source_video_path,
@@ -349,6 +371,20 @@ class MainWindow(QMainWindow):
             diarization_adapter=self._build_http_diarization_adapter(),
             translation_adapter=self._build_translation_adapter(),
             tts_adapter=self._build_http_tts_adapter(),
+        )
+
+    def _save_model_profile_settings(self) -> None:
+        if self.current_project is None:
+            return
+        self.current_project.settings.update_profiles(
+            ProfileSelectionSettings(
+                local_command_profiles_path=self.model_settings.local_command_profiles_path_edit.text().strip(),
+                separation_profile_path=self.model_settings.separation_profile_path_edit.text().strip(),
+                asr_profile_path=self.model_settings.asr_profile_path_edit.text().strip(),
+                diarization_profile_path=self.model_settings.diarization_profile_path_edit.text().strip(),
+                translation_profile_path=self.model_settings.translation_profile_path_edit.text().strip(),
+                tts_profile_path=self.model_settings.tts_profile_path_edit.text().strip(),
+            )
         )
 
     def _refresh_after_local_preview(self) -> None:
@@ -504,3 +540,12 @@ def _parse_key_value_text(raw_text: str) -> dict[str, object]:
             raise ValueError(f"Expected KEY=VALUE, got: {item}")
         parsed[key] = value
     return parsed
+
+
+def _load_glossary(path: Path | None) -> dict[str, str]:
+    if path is None:
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("Glossary JSON must be an object.")
+    return {str(source): str(target) for source, target in raw.items()}

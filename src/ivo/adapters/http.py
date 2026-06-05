@@ -133,7 +133,7 @@ class HttpStageAdapter:
         return mapped
 
     def _provider_error(self, response: httpx.Response) -> AdapterResult:
-        message = response.text[:500]
+        message = self._provider_error_message(response)
         return AdapterResult(
             stage=self.stage,
             provider=self.provider,
@@ -146,6 +146,24 @@ class HttpStageAdapter:
                 retryable=response.status_code == 429 or response.status_code >= 500,
             ),
         )
+
+    def _provider_error_message(self, response: httpx.Response) -> str:
+        try:
+            payload = response.json()
+        except ValueError:
+            return response.text[:500]
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict):
+                nested_message = error.get("message")
+                if isinstance(nested_message, str) and nested_message:
+                    return nested_message[:500]
+            if isinstance(error, str) and error:
+                return error[:500]
+            message = payload.get("message")
+            if isinstance(message, str) and message:
+                return message[:500]
+        return response.text[:500]
 
     def _error(self, message: str, *, retryable: bool) -> AdapterResult:
         return AdapterResult(

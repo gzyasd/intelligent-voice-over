@@ -9,6 +9,13 @@ from ivo.core.project import DubbingProject
 from ivo.core.timeline import SourceLanguage, TargetLanguage
 
 
+class ReviewSummary(BaseModel):
+    total_segments: int
+    reviewed_segments: int
+    rendered_segments: int
+    quality_flagged_segments: int
+
+
 class ProjectEvaluationReport(BaseModel):
     project_name: str
     project_path: Path
@@ -18,6 +25,7 @@ class ProjectEvaluationReport(BaseModel):
     speaker_count: int
     status_counts: dict[str, int]
     quality_flag_counts: dict[str, int]
+    review_summary: ReviewSummary
     jobs: list[JobRecord]
 
 
@@ -60,6 +68,14 @@ def build_project_evaluation_report(project: DubbingProject) -> ProjectEvaluatio
         speaker_count=len(speakers),
         status_counts=dict(sorted(status_counts.items())),
         quality_flag_counts=dict(sorted(quality_flag_counts.items())),
+        review_summary=ReviewSummary(
+            total_segments=len(segments),
+            reviewed_segments=sum(
+                1 for segment in segments if segment.status in {"approved", "rendered"}
+            ),
+            rendered_segments=sum(1 for segment in segments if segment.status == "rendered"),
+            quality_flagged_segments=sum(1 for segment in segments if segment.quality_flags),
+        ),
         jobs=project.jobs.list_records(),
     )
 
@@ -113,6 +129,10 @@ def render_evaluation_markdown(report: ProjectEvaluationReport) -> str:
         f"- 目标语言：{report.target_language}",
         f"- 片段数：{report.segment_count}",
         f"- 说话人数：{report.speaker_count}",
+        f"- 总片段：{report.review_summary.total_segments}",
+        f"- 已审核片段：{report.review_summary.reviewed_segments}",
+        f"- 已生成片段：{report.review_summary.rendered_segments}",
+        f"- 有质量标记片段：{report.review_summary.quality_flagged_segments}",
         "",
         "## 片段状态",
         "",

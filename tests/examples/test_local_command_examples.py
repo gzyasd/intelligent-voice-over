@@ -235,7 +235,59 @@ def test_real_tts_cosyvoice_profile_uses_cosyvoice_command() -> None:
     assert "examples/local_commands/cosyvoice_tts.py" in profile.tts.command
     assert "--model-dir" in profile.tts.command
     assert "models/tts/Fun-CosyVoice3-0.5B" in profile.tts.command
+    assert "--reference-text" in profile.tts.command
+    assert "{{ reference_text }}" in profile.tts.command
+    assert "--engine-command-json-file" in profile.tts.command
+    assert "examples/engine_commands/cosyvoice_engine_command.example.json" in profile.tts.command
     assert "--dry-run" not in profile.tts.command
+
+
+def test_real_separation_asr_tts_cosyvoice_cpu_small_profile_uses_real_tts() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path(
+                "examples/local_command_profiles.real_separation_asr_tts_cosyvoice_cpu_small.json"
+            ).read_text(encoding="utf-8")
+        )
+    )
+
+    assert profile.separation.id == "demucs-htdemucs-cpu"
+    assert profile.asr.id == "faster-whisper-small-cpu"
+    assert profile.tts.id == "cosyvoice3-local"
+    assert "--reference-text" in profile.tts.command
+    assert "{{ reference_text }}" in profile.tts.command
+    assert "--engine-command-json-file" in profile.tts.command
+    assert "examples/engine_commands/cosyvoice_engine_command.example.json" in profile.tts.command
+    assert "--dry-run" not in profile.tts.command
+
+
+def test_real_gpu_quality_profile_uses_gpu_models() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_gpu_quality.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert "cuda" in profile.separation.command
+    assert "cuda" in profile.asr.command
+    assert "float16" in profile.asr.command
+    assert profile.tts.id in {"f5-tts-local", "cosyvoice3-local"}
+
+
+def test_real_gpu_fast_preview_profile_uses_fast_gpu_asr() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_gpu_fast_preview.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert "cuda" in profile.asr.command
+    assert any(model in profile.asr.command for model in ("small", "distil-large-v3", "turbo"))
+    assert profile.tts.id in {"f5-tts-dry-run", "f5-tts-local", "cosyvoice3-local"}
 
 
 def test_real_tts_f5_profile_uses_f5_command_without_dry_run() -> None:

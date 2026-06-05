@@ -1,12 +1,70 @@
 from __future__ import annotations
 
-from typing import Literal
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
-from ivo.core.project import DubbingProject
+if TYPE_CHECKING:
+    from ivo.core.project import DubbingProject
 
 ProcessingMode = Literal["fast_preview", "high_quality_export"]
+SeriesType = Literal["american_drama", "japanese_drama", "korean_drama", "other"]
+
+
+class TranslationSettings(BaseModel):
+    series_type: SeriesType = "other"
+    translation_style_notes: str = ""
+    glossary: dict[str, str] = Field(default_factory=dict)
+    preserve_fillers: bool = True
+    max_length_ratio: float = 1.2
+
+    @field_validator("max_length_ratio")
+    @classmethod
+    def require_positive_length_ratio(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("max_length_ratio must be positive")
+        return value
+
+
+class ProfileSelectionSettings(BaseModel):
+    local_command_profiles_path: str = ""
+    separation_profile_path: str = ""
+    asr_profile_path: str = ""
+    diarization_profile_path: str = ""
+    translation_profile_path: str = ""
+    tts_profile_path: str = ""
+
+
+class ProjectSettings(BaseModel):
+    translation: TranslationSettings = Field(default_factory=TranslationSettings)
+    profiles: ProfileSelectionSettings = Field(default_factory=ProfileSelectionSettings)
+
+
+class ProjectSettingsStore:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def load(self) -> ProjectSettings:
+        if not self.path.is_file():
+            return ProjectSettings()
+        return ProjectSettings.model_validate(json.loads(self.path.read_text(encoding="utf-8")))
+
+    def save(self, settings: ProjectSettings) -> ProjectSettings:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(settings.model_dump_json(indent=2), encoding="utf-8")
+        return settings
+
+    def update_translation(self, translation: TranslationSettings) -> ProjectSettings:
+        settings = self.load()
+        updated = settings.model_copy(update={"translation": translation})
+        return self.save(updated)
+
+    def update_profiles(self, profiles: ProfileSelectionSettings) -> ProjectSettings:
+        settings = self.load()
+        updated = settings.model_copy(update={"profiles": profiles})
+        return self.save(updated)
 
 
 class ProcessingProfile(BaseModel):

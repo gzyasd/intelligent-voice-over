@@ -120,6 +120,42 @@ def test_timeline_editor_summarizes_quality_flags(qtbot, tmp_path) -> None:
     )
 
 
+def test_timeline_editor_shows_readable_tts_quality_flags(qtbot, tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.ui.timeline_editor import TimelineEditor
+
+    project = DubbingProject.create(
+        tmp_path / "timeline-readable-quality.ivoproj",
+        name="Timeline Readable Quality",
+        source_language="en",
+        target_language="zh",
+    )
+    project.timeline.add_segment(
+        DubbingSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            speaker_id="speaker-1",
+            source_language="en",
+            source_text="Hello.",
+            target_language="zh",
+            target_text="你好。",
+            status="needs_review",
+            quality_flags=["duration_too_short", "duration_too_long", "tts_retried"],
+        )
+    )
+
+    editor = TimelineEditor()
+    qtbot.addWidget(editor)
+    editor.set_project(project)
+
+    quality_text = editor.table.item(0, editor.COLUMN_QUALITY_FLAGS).text()
+    assert "配音偏短" in quality_text
+    assert "配音偏长" in quality_text
+    assert "已自动重试" in quality_text
+
+
 def test_timeline_editor_shows_empty_quality_summary(qtbot, tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.ui.timeline_editor import TimelineEditor

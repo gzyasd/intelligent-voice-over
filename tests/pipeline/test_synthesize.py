@@ -81,18 +81,113 @@ def test_mock_tts_generates_wav_and_duration_quality_flags(tmp_path) -> None:
 
     assert result.audio_path == project.path / "work" / "generated_segments" / "seg-001.wav"
     assert result.quality_flags == [
-        "duration_mismatch",
+        "duration_too_long",
+        "tts_retried",
         "missing_reference_audio",
         "silent_audio",
     ]
     assert project.timeline.get_segment("seg-001").quality_flags == [
-        "duration_mismatch",
+        "duration_too_long",
+        "tts_retried",
         "missing_reference_audio",
         "silent_audio",
     ]
     with wave.open(str(result.audio_path), "rb") as wav_file:
         assert wav_file.getnchannels() == 1
         assert wav_file.getframerate() == 16000
+
+
+def test_synthesize_segment_marks_short_audio(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import MockTtsAdapter, synthesize_segment
+
+    project = DubbingProject.create(
+        tmp_path / "tts-short.ivoproj",
+        name="TTS Short",
+        source_language="en",
+        target_language="zh",
+    )
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=2_000,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Hello.",
+        target_language="zh",
+        target_text="Hello.",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+
+    result = synthesize_segment(
+        project,
+        segment,
+        MockTtsAdapter(generated_duration_ms=1_000),
+        tolerance_ms=200,
+        max_duration_retries=0,
+    )
+
+    assert "duration_too_short" in result.quality_flags
+    assert "duration_mismatch" not in result.quality_flags
+
+
+def test_synthesize_retries_once_for_long_audio_with_faster_style_prompt(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import synthesize_segment
+
+    class RetryingTtsAdapter:
+        def __init__(self) -> None:
+            self.durations = [1_600, 1_000]
+            self.style_prompts: list[str | None] = []
+
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+        ) -> int:
+            self.style_prompts.append(style_prompt)
+            duration_ms = self.durations.pop(0)
+            _write_test_wav(output_path, duration_ms=duration_ms, silent=False)
+            return duration_ms
+
+    project = DubbingProject.create(
+        tmp_path / "tts-retry.ivoproj",
+        name="TTS Retry",
+        source_language="ja",
+        target_language="zh",
+    )
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        speaker_id="speaker-1",
+        source_language="ja",
+        source_text="konnichiwa",
+        target_language="zh",
+        target_text="你好。",
+        style_prompt="自然、克制",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+    adapter = RetryingTtsAdapter()
+
+    result = synthesize_segment(project, segment, adapter, tolerance_ms=100, max_duration_retries=1)
+
+    assert result.generated_duration_ms == 1_000
+    assert "duration_ok" in result.quality_flags
+    assert "tts_retried" in result.quality_flags
+    assert adapter.style_prompts[0] == "自然、克制"
+    assert adapter.style_prompts[1] is not None
+    assert "语速稍快" in adapter.style_prompts[1]
 
 
 def test_synthesize_preserves_existing_quality_flags(tmp_path) -> None:
@@ -366,12 +461,67 @@ def test_extract_reference_audio_falls_back_to_current_unapproved_segment(tmp_pa
     assert duration_ms == 1000
 
 
-def _write_test_wav(output_path: Path, *, duration_ms: int) -> None:
+def test_extract_reference_audio_prefers_speaker_profile_reference_segment(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.speakers import SpeakerProfile
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import extract_reference_audio
+
+    project = DubbingProject.create(
+        tmp_path / "profile-reference.ivoproj",
+        name="Profile Reference",
+        source_language="en",
+        target_language="zh",
+    )
+    _write_test_wav(project.path / "assets" / "extracted_audio.wav", duration_ms=3_000)
+    reference_segment = DubbingSegment(
+        id="seg-ref",
+        start_ms=0,
+        end_ms=500,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Reference.",
+        target_language="zh",
+        target_text="Reference.",
+        status="needs_review",
+    )
+    current_segment = DubbingSegment(
+        id="seg-current",
+        start_ms=1_000,
+        end_ms=2_000,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Current.",
+        target_language="zh",
+        target_text="Current.",
+        status="needs_review",
+    )
+    project.timeline.add_segment(reference_segment)
+    project.timeline.add_segment(current_segment)
+    project.speakers.upsert(
+        SpeakerProfile(
+            id="speaker-1",
+            display_name="Speaker 1",
+            reference_segment_ids=["seg-ref"],
+        )
+    )
+
+    reference_path = extract_reference_audio(project, current_segment)
+
+    assert reference_path == project.path / "work" / "reference_segments" / "speaker-1-seg-ref.wav"
+    assert reference_path.is_file()
+    with wave.open(str(reference_path), "rb") as wav_file:
+        duration_ms = int(wav_file.getnframes() / wav_file.getframerate() * 1000)
+    assert duration_ms == 500
+
+
+def _write_test_wav(output_path: Path, *, duration_ms: int, silent: bool = True) -> None:
     sample_rate = 16_000
     sample_count = int(sample_rate * duration_ms / 1000)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    frame = b"\x00\x00" if silent else b"\x01\x00"
     with wave.open(str(output_path), "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(sample_rate)
-        wav_file.writeframes(b"\x00\x00" * sample_count)
+        wav_file.writeframes(frame * sample_count)

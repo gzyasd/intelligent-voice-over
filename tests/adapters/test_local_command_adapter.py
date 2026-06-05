@@ -160,3 +160,14 @@ def test_local_command_adapter_error_includes_command_context(tmp_path) -> None:
     assert "command: python asr.py --audio voice.wav" in result.error.message
     assert f"output JSON: {output}" in result.error.message
     assert "stderr: model path not found" in result.error.message
+    assert result.error.command == [
+        "python",
+        "asr.py",
+        "--audio",
+        "voice.wav",
+        "--out",
+        str(output),
+    ]
+    assert result.error.exit_code == 7
+    assert result.error.stderr_summary == "model path not found full traceback omitted"
+    assert result.error.output_json_path == str(output)

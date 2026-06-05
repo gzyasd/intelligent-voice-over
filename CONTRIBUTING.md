@@ -41,3 +41,12 @@ uv run mypy src
 - 已运行的验证命令。
 - 对用户工作流的影响。
 - 任何剩余限制或后续计划。
+
+## Profile 贡献
+
+欢迎贡献本地命令 profile、HTTP profile 或 engine command 示例。请确保：
+
+- 不包含真实 API key、token、cookie、私钥或 `.env`。
+- 不包含模型权重、真实影视片段、真实人声音频或生成产物。
+- 明确说明模型或服务许可证、下载渠道、最小验证命令和 JSON 输入输出合约。
+- 对需要 Hugging Face、ModelScope 或商业服务账号的 profile，只写占位符和配置说明。

@@ -90,6 +90,42 @@ api_key=YOUR_API_KEY
 
 本地命令失败时，错误文本会尽量包含阶段、provider、渲染后的命令、退出码、stderr 摘要和期望的输出 JSON 路径。这样可以直接定位是模型路径、Python 包、token、输出文件还是脚本参数问题。
 
+## Profile 选择和 readiness 面板
+
+推荐从较小的真实链路开始：
+
+```text
+examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json
+```
+
+如果要测试 CosyVoice 路线，可以选择：
+
+```text
+examples/local_command_profiles.real_separation_asr_tts_cosyvoice_cpu_small.json
+```
+
+在“模型设置”页填写本地命令 profiles JSON 后，可以先点击 `Check local model readiness`。UI 会把结果写入列表，并在 readiness 表格中显示：
+
+- `stage`：阶段，例如 `asr`、`tts`、`diarization`。
+- `provider`：依赖或 profile 名称，例如 `CosyVoice`、`pyannote.audio`。
+- `status`：`ok`、`missing` 或 `skipped`。
+- `message`：缺少的包、模型目录、环境变量或 engine command 文件。
+
+常见处理方式：
+
+- `tts/CosyVoice: package missing`：先执行 `uv sync --extra local-tts-cosyvoice`，再按 CosyVoice 官方仓库说明安装本体。
+- `diarization/pyannote.audio: env HF_TOKEN missing`：在本机设置 `HF_TOKEN`，并确认 Hugging Face 模型条款已接受。不要把 token 写入仓库。
+- `model dir missing`：按 `docs/local-model-setup.md` 下载对应模型，或确认该模型目录对当前 profile 是否必需。
+- `engine command file missing`：检查 profile 中 `--engine-command-json-file` 指向的 JSON 文件是否存在。
+
+线上 API override 可以逐阶段填写，例如只把翻译换成 OpenAI-compatible 服务：
+
+```text
+examples/http_translation_openai_compatible.example.json
+```
+
+该路径会随项目设置保存到 `settings.json`，但 API key 这类变量只从 UI 文本框读取，不会写入项目设置。
+
 ## 当前限制
 
 - 当前 UI 已接入核心流水线，并对本地命令预览、单句重生成和最终导出提供 `PipelineWorker` 后台执行入口；真实模型或 FFmpeg 导出运行时间较长时，可以避免直接阻塞主线程。

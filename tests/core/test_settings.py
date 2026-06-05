@@ -52,3 +52,32 @@ def test_high_quality_profile_requires_approved_or_rendered_segments(tmp_path) -
     validate_project_for_profile(project, get_processing_profile("fast_preview"))
     project.timeline.update_segment("seg-001", status="approved")
     validate_project_for_profile(project, get_processing_profile("high_quality_export"))
+
+
+def test_project_translation_settings_persist_glossary_and_style(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.settings import TranslationSettings
+
+    project = DubbingProject.create(
+        tmp_path / "translation-settings.ivoproj",
+        name="Translation Settings",
+        source_language="ja",
+        target_language="zh",
+    )
+
+    project.settings.update_translation(
+        TranslationSettings(
+            series_type="japanese_drama",
+            translation_style_notes="日剧口吻，自然，不要书面腔。",
+            glossary={"先輩": "前辈"},
+            preserve_fillers=True,
+            max_length_ratio=1.15,
+        )
+    )
+
+    reloaded = DubbingProject.load(project.path).settings.load()
+
+    assert reloaded.translation.series_type == "japanese_drama"
+    assert reloaded.translation.translation_style_notes == "日剧口吻，自然，不要书面腔。"
+    assert reloaded.translation.glossary == {"先輩": "前辈"}
+    assert reloaded.translation.max_length_ratio == 1.15

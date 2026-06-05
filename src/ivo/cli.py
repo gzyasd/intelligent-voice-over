@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import date
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 
@@ -18,8 +19,13 @@ from ivo.evaluation import (
     build_project_evaluation_report,
     render_evaluation_markdown,
 )
+from ivo.evaluation_runs import (
+    EvaluationRunRecord,
+    default_run_output_path,
+    render_run_markdown,
+)
 from ivo.local_readiness import LocalReadinessReport, build_local_readiness_report
-from ivo.model_setup import build_model_setup_script
+from ivo.model_setup import write_setup_script
 from ivo.model_smoke import (
     default_adapter_smoke_output_path,
     default_asr_smoke_output_path,
@@ -38,8 +44,10 @@ from ivo.profile_validation import validate_http_profile, validate_local_command
 app = typer.Typer(help="Intelligent Voice Over developer tools.", no_args_is_help=True)
 adapter_app = typer.Typer(help="Manage custom HTTP model API adapter profiles.")
 model_app = typer.Typer(help="Manage local model profiles.")
+evaluation_app = typer.Typer(help="Write and manage evaluation run records.")
 app.add_typer(adapter_app, name="adapter")
 app.add_typer(model_app, name="model")
+app.add_typer(evaluation_app, name="evaluation")
 
 
 @app.callback()
@@ -108,6 +116,12 @@ def doctor_models(
         typer.echo(f"  download: {dependency.download_hint}")
         typer.echo(f"  license: {dependency.license_hint}")
         typer.echo(f"  verify: {dependency.verify_hint}")
+    models_dir_hint = ".\\models" if models_dir == Path("models") else str(models_dir)
+    typer.echo(
+        "Run `uv run ivo model write-setup-script "
+        f"--models-dir {models_dir_hint} --output .\\scripts\\setup-local-models.ps1` "
+        "to generate a local setup script."
+    )
 
 
 @app.command("mock-preview")
@@ -223,13 +237,12 @@ def batch_local_preview(
         final_video = project_path / "renders" / "local-preview.mp4"
         if skip_existing and final_video.is_file():
             report_items.append(
-                {
-                    "video": str(source_video),
-                    "project_path": str(project_path),
-                    "status": "skipped",
-                    "final_video": str(final_video),
-                    "error": None,
-                }
+                _build_batch_report_item(
+                    source_video=source_video,
+                    project_path=project_path,
+                    status="skipped",
+                    final_video=final_video,
+                )
             )
             typer.echo(f"{source_video.name}: SKIPPED existing output")
             continue
@@ -240,12 +253,12 @@ def batch_local_preview(
             )
             failures.append(source_video.name)
             report_items.append(
-                {
-                    "video": str(source_video),
-                    "project_path": str(project_path),
-                    "status": "failed",
-                    "error": message,
-                }
+                _build_batch_report_item(
+                    source_video=source_video,
+                    project_path=project_path,
+                    status="failed",
+                    error=message,
+                )
             )
             typer.echo(f"{source_video.name}: FAILED: {message}")
             continue
@@ -269,23 +282,23 @@ def batch_local_preview(
         except Exception as exc:
             failures.append(source_video.name)
             report_items.append(
-                {
-                    "video": str(source_video),
-                    "project_path": str(project.path),
-                    "status": "failed",
-                    "error": str(exc),
-                }
+                _build_batch_report_item(
+                    source_video=source_video,
+                    project_path=project.path,
+                    status="failed",
+                    error=str(exc),
+                    failed_stage=_latest_failed_stage(project),
+                )
             )
             typer.echo(f"{source_video.name}: FAILED: {exc}")
             continue
         report_items.append(
-            {
-                "video": str(source_video),
-                "project_path": str(project.path),
-                "status": "completed",
-                "final_video": str(result.final_video),
-                "error": None,
-            }
+            _build_batch_report_item(
+                source_video=source_video,
+                project_path=project.path,
+                status="passed",
+                final_video=result.final_video,
+            )
         )
         typer.echo(f"{source_video.name}: {result.final_video}")
     typer.echo(f"Processed {len(video_paths)} videos")
@@ -344,6 +357,39 @@ def evaluate_batch(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     typer.echo(f"Batch evaluation written: {output}")
+
+
+@evaluation_app.command("write-run")
+def evaluation_write_run(
+    title: Annotated[str, typer.Option("--title")],
+    source_language: Annotated[str, typer.Option("--source-language")],
+    duration_seconds: Annotated[int, typer.Option("--duration-seconds")],
+    profile_path: Annotated[str, typer.Option("--profile")],
+    command_text: Annotated[str, typer.Option("--command")],
+    status: Annotated[Literal["passed", "failed", "partial"], typer.Option("--status")],
+    output_video: Annotated[str | None, typer.Option("--output-video")] = None,
+    notes: Annotated[list[str] | None, typer.Option("--note")] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", dir_okay=False, help="Markdown run record output path."),
+    ] = None,
+) -> None:
+    """Write a Markdown record for a real model evaluation run."""
+    record = EvaluationRunRecord(
+        date=f"{date.today():%Y-%m-%d}",
+        title=title,
+        source_language=source_language,
+        duration_seconds=duration_seconds,
+        profile_path=profile_path,
+        command=command_text,
+        output_video=output_video,
+        status=status,
+        notes=notes or [],
+    )
+    output_path = output or default_run_output_path(title)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(render_run_markdown(record), encoding="utf-8")
+    typer.echo(f"Evaluation run written: {output_path}")
 
 
 @app.command("validate-local-profiles")
@@ -737,9 +783,7 @@ def model_write_setup_script(
     ] = None,
 ) -> None:
     """Write a PowerShell script for recommended local model setup steps."""
-    script = build_model_setup_script(models_dir, stage=stage)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(script, encoding="utf-8")
+    write_setup_script(output, models_dir=models_dir, stage=stage)
     typer.echo(f"Model setup script written: {output}")
 
 
@@ -820,15 +864,85 @@ def _iter_video_paths(input_dir: Path) -> list[Path]:
     ]
 
 
+def _build_batch_report_item(
+    *,
+    source_video: Path,
+    project_path: Path,
+    status: str,
+    final_video: Path | None = None,
+    error: str | None = None,
+    failed_stage: str | None = None,
+) -> dict[str, object]:
+    return {
+        "source_video": str(source_video),
+        "video": str(source_video),
+        "project_path": str(project_path),
+        "status": status,
+        "failed_stage": failed_stage,
+        "final_video": str(final_video) if final_video is not None else None,
+        "duration_seconds": _probe_duration_seconds(source_video),
+        "error": error,
+    }
+
+
+def _probe_duration_seconds(source_video: Path) -> int | None:
+    try:
+        completed = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(source_video),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
+        return None
+    output = completed.stdout.strip()
+    if not output:
+        return None
+    try:
+        return round(float(output))
+    except ValueError:
+        return None
+
+
+def _latest_failed_stage(project: DubbingProject) -> str | None:
+    failed_stages = {
+        record.stage for record in project.jobs.list_records() if record.status == "failed"
+    }
+    for stage in (
+        "import",
+        "audio_extract",
+        "separation",
+        "asr",
+        "diarization",
+        "translation",
+        "tts",
+        "export",
+    ):
+        if stage in failed_stages:
+            return stage
+    return next(iter(sorted(failed_stages)), None)
+
+
 def _write_batch_report(report_path: Path, videos: list[dict[str, object]]) -> None:
     failed = sum(1 for item in videos if item["status"] == "failed")
     skipped = sum(1 for item in videos if item["status"] == "skipped")
+    passed = sum(1 for item in videos if item["status"] in {"passed", "completed"})
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(
             {
                 "processed": len(videos),
-                "completed": len(videos) - failed - skipped,
+                "completed": passed,
                 "skipped": skipped,
                 "failed": failed,
                 "videos": videos,

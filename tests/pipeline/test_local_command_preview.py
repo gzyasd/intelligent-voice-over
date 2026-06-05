@@ -460,6 +460,81 @@ def test_local_command_preview_resumes_completed_file_stages(tmp_path) -> None:
     assert project.jobs.get("separation").status == "completed"  # type: ignore[union-attr]
 
 
+def test_local_command_preview_resumes_completed_timeline_and_export_artifacts(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.local_command_preview import run_local_command_preview
+    from ivo.pipeline.transcribe import TranscriptionSegment
+
+    class ExplodingAsrAdapter:
+        def transcribe(
+            self,
+            audio_path: Path,
+            *,
+            source_language: str,
+        ) -> list[TranscriptionSegment]:
+            raise AssertionError("asr should have been resumed from timeline")
+
+    class ExplodingTtsAdapter:
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+        ) -> int:
+            raise AssertionError("rendered segment audio should have been reused")
+
+    project = DubbingProject.create(
+        tmp_path / "resume-complete.ivoproj",
+        name="Resume Complete",
+        source_language="en",
+        target_language="zh",
+    )
+    (project.path / "assets" / "source_video.mp4").write_bytes(b"source video")
+    for audio_path in (
+        project.path / "assets" / "extracted_audio.wav",
+        project.path / "work" / "vocals.wav",
+        project.path / "work" / "background.wav",
+        project.path / "work" / "generated_segments" / "seg-001.wav",
+    ):
+        _write_silent_wav(audio_path, duration_ms=1_000)
+    final_video = project.path / "renders" / "local-preview.mp4"
+    final_video.write_bytes(b"existing final")
+    project.timeline.add_segment(
+        DubbingSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            speaker_id="speaker-1",
+            source_language="en",
+            source_text="Already transcribed.",
+            target_language="zh",
+            target_text="Already translated.",
+            status="rendered",
+        )
+    )
+    for stage in ("import", "audio_extract", "separation", "asr", "translation", "tts", "export"):
+        project.jobs.mark_completed(stage, "completed")
+
+    result = run_local_command_preview(
+        project,
+        source_video=tmp_path / "missing-source.mp4",
+        profiles=_mock_profiles(tmp_path),
+        asr_adapter=ExplodingAsrAdapter(),
+        tts_adapter=ExplodingTtsAdapter(),
+        watermark_text=None,
+    )
+
+    assert result.final_video == final_video
+    assert final_video.read_bytes() == b"existing final"
+    assert result.generated_segments == [project.path / "work" / "generated_segments" / "seg-001.wav"]
+
+
 def test_local_command_preview_resumes_failed_tts_from_rendered_segments(tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg

@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -19,7 +21,7 @@ from ivo.environment import collect_optional_model_dependencies
 from ivo.local_readiness import build_local_readiness_report
 from ivo.model_setup import build_model_setup_script
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
-from ivo.profile_validation import validate_local_command_profiles
+from ivo.profile_validation import validate_http_profile, validate_local_command_profiles
 
 
 class ModelSettings(QWidget):
@@ -33,8 +35,13 @@ class ModelSettings(QWidget):
         self.local_command_profiles_browse_button = QPushButton("浏览本地命令 profile")
         self.validate_local_profiles_button = QPushButton("校验本地命令 profile")
         self.check_local_readiness_button = QPushButton("Check local model readiness")
+        self.validate_http_profiles_button = QPushButton("Validate HTTP profiles")
         self.local_profile_summary_list = QListWidget()
         self.model_diagnostics_list = QListWidget()
+        self.readiness_results_table = QTableWidget(0, 4)
+        self.readiness_results_table.setHorizontalHeaderLabels(
+            ["stage", "provider", "status", "message"]
+        )
         self.separation_profile_path_edit = QLineEdit()
         self.separation_profile_browse_button = QPushButton("浏览人声分离 profile")
         self.separation_vars_edit = QLineEdit()
@@ -64,6 +71,7 @@ class ModelSettings(QWidget):
         )
         self.validate_local_profiles_button.clicked.connect(self.validate_local_command_profiles)
         self.check_local_readiness_button.clicked.connect(self.check_local_readiness)
+        self.validate_http_profiles_button.clicked.connect(self.validate_http_profiles)
         self.separation_profile_browse_button.clicked.connect(self.browse_separation_profile)
         self.asr_profile_browse_button.clicked.connect(self.browse_asr_profile)
         self.diarization_profile_browse_button.clicked.connect(self.browse_diarization_profile)
@@ -84,10 +92,13 @@ class ModelSettings(QWidget):
         layout.addWidget(self.local_command_profiles_browse_button)
         layout.addWidget(self.validate_local_profiles_button)
         layout.addWidget(self.check_local_readiness_button)
+        layout.addWidget(self.validate_http_profiles_button)
         layout.addWidget(QLabel("本地命令 profile 阶段摘要"))
         layout.addWidget(self.local_profile_summary_list)
         layout.addWidget(QLabel("本地模型环境诊断"))
         layout.addWidget(self.model_diagnostics_list)
+        layout.addWidget(QLabel("Readiness results"))
+        layout.addWidget(self.readiness_results_table)
         layout.addWidget(QLabel("人声分离 HTTP profile JSON"))
         layout.addWidget(self.separation_profile_path_edit)
         layout.addWidget(self.separation_profile_browse_button)
@@ -268,6 +279,58 @@ class ModelSettings(QWidget):
             self.model_diagnostics_list.addItem(f"skipped dry-run: {profile}")
         for missing in report.missing:
             self.model_diagnostics_list.addItem(f"missing: {missing}")
+        self.show_readiness_results([result.model_dump() for result in report.ui_results])
+
+    def show_readiness_results(self, results: list[dict[str, object]]) -> None:
+        self.readiness_results_table.setRowCount(len(results))
+        for row, result in enumerate(results):
+            for column, key in enumerate(("stage", "provider", "status", "message")):
+                self.readiness_results_table.setItem(
+                    row,
+                    column,
+                    QTableWidgetItem(str(result.get(key, ""))),
+                )
+
+    def readiness_summary_text(self) -> str:
+        lines: list[str] = []
+        for row in range(self.readiness_results_table.rowCount()):
+            values: list[str] = []
+            for column in range(self.readiness_results_table.columnCount()):
+                item = self.readiness_results_table.item(row, column)
+                values.append(item.text() if item is not None else "")
+            lines.append(" | ".join(values))
+        return "\n".join(lines)
+
+    def validate_http_profiles(self) -> None:
+        self.model_diagnostics_list.clear()
+        found_profile = False
+        for stage, path_edit in (
+            ("separation", self.separation_profile_path_edit),
+            ("asr", self.asr_profile_path_edit),
+            ("diarization", self.diarization_profile_path_edit),
+            ("translation", self.translation_profile_path_edit),
+            ("tts", self.tts_profile_path_edit),
+        ):
+            raw_path = path_edit.text().strip()
+            if not raw_path:
+                continue
+            found_profile = True
+            try:
+                profile = ApiAdapterProfile.model_validate(
+                    json.loads(Path(raw_path).read_text(encoding="utf-8"))
+                )
+                report = validate_http_profile(profile)
+            except (OSError, ValueError) as exc:
+                self.model_diagnostics_list.addItem(f"http validation: {stage}: failed")
+                self.model_diagnostics_list.addItem(f"error: {exc}")
+                continue
+            self.model_diagnostics_list.addItem(
+                f"http validation: {stage}: {'ok' if report.ok else 'failed'}"
+            )
+            for error in report.errors:
+                self.model_diagnostics_list.addItem(f"error: {error}")
+        if not found_profile:
+            self.model_diagnostics_list.addItem("http validation: skipped")
 
     def _stage_summary(self, stage: str, local_id: str, http_path_edit: QLineEdit) -> str:
         raw_http_path = http_path_edit.text().strip()
@@ -381,3 +444,6 @@ class ModelSettings(QWidget):
                 raise ValueError(f"File upload field needs KEY=VALUE format: {item}")
             mapping[key] = value
         return mapping
+
+
+ModelSettingsPanel = ModelSettings

@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import json
+import shutil
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ivo.adapters.local import LocalCommandProfile
-from ivo.environment import OptionalDependencyStatus
+from ivo.environment import OptionalDependencyStatus, collect_optional_model_dependencies
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+
+
+class ReadinessResult(BaseModel):
+    stage: str
+    provider: str
+    status: str
+    message: str
 
 
 class LocalReadinessReport(BaseModel):
@@ -14,35 +23,121 @@ class LocalReadinessReport(BaseModel):
     checked_profiles: list[str]
     skipped_dry_run_profiles: list[str]
     missing: list[str]
+    ui_results: list[ReadinessResult] = Field(default_factory=list)
 
 
 def build_local_readiness_report(
     profiles: LocalCommandPipelineProfiles,
     *,
     dependencies: list[OptionalDependencyStatus],
+    nvidia_tool_available: bool | None = None,
 ) -> LocalReadinessReport:
     dependency_by_stage = _index_dependencies(dependencies)
+    has_nvidia_tool = (
+        shutil.which("nvidia-smi") is not None
+        if nvidia_tool_available is None
+        else nvidia_tool_available
+    )
     checked_profiles: list[str] = []
     skipped_dry_run_profiles: list[str] = []
     missing: list[str] = []
+    ui_results: list[ReadinessResult] = []
 
     for profile in _iter_profiles(profiles):
         label = f"{profile.stage}:{profile.id}"
         if _is_dry_run_profile(profile):
             skipped_dry_run_profiles.append(label)
+            ui_results.append(
+                ReadinessResult(
+                    stage=profile.stage,
+                    provider=profile.id,
+                    status="skipped",
+                    message="dry-run profile skipped",
+                )
+            )
             continue
 
         checked_profiles.append(label)
-        missing.extend(_missing_engine_command_file_messages(profile))
+        if _uses_cuda(profile) and not has_nvidia_tool:
+            message = (
+                f"{profile.stage}/{profile.id}: NVIDIA tooling not detected for CUDA profile; "
+                "use the CPU small profile if this machine has no NVIDIA GPU."
+            )
+            missing.append(message)
+            ui_results.append(
+                ReadinessResult(
+                    stage=profile.stage,
+                    provider=profile.id,
+                    status="missing",
+                    message=message,
+                )
+            )
+        profile_missing = _missing_engine_command_file_messages(profile)
+        missing.extend(profile_missing)
+        ui_results.extend(
+            ReadinessResult(
+                stage=profile.stage,
+                provider=profile.id,
+                status="missing",
+                message=message,
+            )
+            for message in profile_missing
+        )
+        dependency_matched = False
         for dependency in dependency_by_stage.get(profile.stage, []):
             if _profile_uses_dependency(profile, dependency):
-                missing.extend(_missing_dependency_messages(dependency))
+                dependency_matched = True
+                dependency_missing = _missing_dependency_messages(dependency)
+                missing.extend(dependency_missing)
+                if dependency_missing:
+                    ui_results.extend(
+                        ReadinessResult(
+                            stage=dependency.stage,
+                            provider=dependency.name,
+                            status="missing",
+                            message=message,
+                        )
+                        for message in dependency_missing
+                    )
+                else:
+                    ui_results.append(
+                        ReadinessResult(
+                            stage=dependency.stage,
+                            provider=dependency.name,
+                            status="ok",
+                            message="ready",
+                        )
+                    )
+        if not profile_missing and not dependency_matched:
+            ui_results.append(
+                ReadinessResult(
+                    stage=profile.stage,
+                    provider=profile.id,
+                    status="ok",
+                    message="ready",
+                )
+            )
 
     return LocalReadinessReport(
         ok=not missing,
         checked_profiles=checked_profiles,
         skipped_dry_run_profiles=skipped_dry_run_profiles,
         missing=missing,
+        ui_results=ui_results,
+    )
+
+
+def check_profiles_readiness(
+    profiles_path: Path,
+    *,
+    models_dir: Path,
+) -> LocalReadinessReport:
+    profiles = LocalCommandPipelineProfiles.model_validate(
+        json.loads(profiles_path.read_text(encoding="utf-8"))
+    )
+    return build_local_readiness_report(
+        profiles,
+        dependencies=collect_optional_model_dependencies(models_dir),
     )
 
 
@@ -64,6 +159,10 @@ def _index_dependencies(
 
 def _is_dry_run_profile(profile: LocalCommandProfile) -> bool:
     return "--dry-run" in profile.command
+
+
+def _uses_cuda(profile: LocalCommandProfile) -> bool:
+    return any(item.lower() == "cuda" for item in profile.command)
 
 
 def _profile_uses_dependency(

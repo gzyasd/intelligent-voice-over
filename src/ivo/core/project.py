@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from ivo.core.jobs import JobStore
+from ivo.core.settings import ProjectSettingsStore
+from ivo.core.speakers import SpeakerProfileStore
 from ivo.core.timeline import SourceLanguage, TargetLanguage, TimelineStore
 
 
@@ -24,6 +26,8 @@ class DubbingProject:
         self.target_language = metadata.target_language
         self.source_video_path = metadata.source_video_path
         self.timeline = TimelineStore(path / "segments.sqlite")
+        self.speakers = SpeakerProfileStore(path / "speakers.json")
+        self.settings = ProjectSettingsStore(path / "settings.json")
         self.jobs = JobStore(path / "jobs.sqlite")
 
     @classmethod

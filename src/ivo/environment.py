@@ -126,7 +126,10 @@ def collect_optional_model_dependencies(
             name="CosyVoice",
             stage="tts",
             import_name="cosyvoice",
-            install_hint="install CosyVoice from https://github.com/FunAudioLLM/CosyVoice",
+            install_hint=(
+                "uv sync --extra local-tts-cosyvoice, then install CosyVoice from "
+                "https://github.com/FunAudioLLM/CosyVoice"
+            ),
             download_hint=(
                 "huggingface-cli download FunAudioLLM/Fun-CosyVoice3-0.5B-2512 "
                 "--local-dir models/tts/Fun-CosyVoice3-0.5B"
@@ -134,6 +137,7 @@ def collect_optional_model_dependencies(
             license_hint="Fun-CosyVoice3 model card currently lists Apache-2.0; re-check before use.",
             model_subdir=Path("tts") / "Fun-CosyVoice3-0.5B",
             verify_hint="uv run python examples/local_commands/cosyvoice_tts.py --help",
+            model_dir_required=False,
         ),
         OptionalDependencySpec(
             name="f5_tts",
