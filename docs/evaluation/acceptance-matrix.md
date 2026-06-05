@@ -35,8 +35,9 @@
 | Dry Run Real Commands | `examples/local_command_profiles.real_dry_run.json` | 验证本地命令合约 | 已可用 |
 | CPU Separation + ASR | `examples/local_command_profiles.real_separation_asr_cpu_small.json` | 快速真实分离/ASR 验收 | 已通过 20 秒真实样片 |
 | CPU F5 Full Preview | `examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json` | 真实本地 TTS 预览 | 已通过 20 秒和 1 分钟真实样片 |
+| GPU F5 Small Preview | `examples/local_command_profiles.real_separation_asr_tts_f5_gpu_small.json` | RTX/CUDA 环境下的真实本地 F5 预览 | 已通过 20 秒和 1 分钟真实样片，1 分钟耗时约 122 秒 |
 | CosyVoice Full Preview | `examples/local_command_profiles.real_separation_asr_tts_cosyvoice_cpu_small.json` | 下一条优先 TTS 路线 | 待实现和验证 |
-| GPU Quality | `examples/local_command_profiles.real_gpu_quality.json` | 高质量本地模式 | profile 已提供，待 CUDA 版 PyTorch 真实验收 |
+| GPU Quality | `examples/local_command_profiles.real_gpu_quality.json` | 高质量本地模式 | profile 已提供；CosyVoice 模型安装后再做质量验收 |
 | HTTP Hybrid | HTTP stage override profiles | 线上 API 或本地 OpenAI-compatible 服务 | 待真实验证 |
 
 ## 通过条件

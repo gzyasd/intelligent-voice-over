@@ -3,10 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 
 def main() -> int:
@@ -38,9 +37,6 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         command = [
-            sys.executable,
-            "-m",
-            "demucs.separate",
             "-n",
             args.model,
             "-d",
@@ -52,8 +48,8 @@ def main() -> int:
             str(source),
         ]
         try:
-            subprocess.run(command, check=True)
-        except (OSError, subprocess.CalledProcessError) as exc:
+            run_demucs_with_soundfile_save(command)
+        except (OSError, RuntimeError, SystemExit) as exc:
             raise SystemExit(
                 "Demucs command failed. Install demucs and verify CUDA/audio dependencies in this "
                 "environment, for example: uv pip install demucs"
@@ -68,6 +64,46 @@ def main() -> int:
 
     write_contract(Path(args.json_out), vocals, background)
     return 0
+
+
+def run_demucs_with_soundfile_save(command: list[str]) -> None:
+    import demucs.audio
+    import demucs.separate
+
+    demucs.audio.save_audio = save_wav_with_soundfile
+    demucs.separate.save_audio = save_wav_with_soundfile
+    demucs.separate.main(command)
+
+
+def save_wav_with_soundfile(
+    wav: Any,
+    path: str | Path,
+    *,
+    samplerate: int,
+    bitrate: int = 320,
+    clip: str = "rescale",
+    bits_per_sample: int = 16,
+    as_float: bool = False,
+    preset: int = 2,
+) -> None:
+    del bitrate, preset
+
+    import soundfile as sf
+    from demucs.audio import prevent_clip
+
+    output_path = Path(path)
+    if output_path.suffix.lower() != ".wav":
+        raise ValueError(f"Only WAV output is supported by this adapter: {output_path}")
+
+    clipped = prevent_clip(wav.detach().cpu(), mode=clip)
+    if clipped.ndim == 1:
+        samples = clipped.numpy()
+    else:
+        samples = clipped.transpose(0, 1).contiguous().numpy()
+
+    subtype = "FLOAT" if as_float or bits_per_sample == 32 else f"PCM_{bits_per_sample}"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(output_path), samples, samplerate, subtype=subtype)
 
 
 def write_contract(output_path: Path, vocals_path: Path, background_path: Path) -> None:

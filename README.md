@@ -4,7 +4,7 @@
 
 当前状态：已完成 v1 的可测试工程骨架、mock 端到端流水线、本地命令 adapter、HTTP adapter、基础桌面 UI、时间线编辑/单句后台重生成、最终导出和导出合规闸门。详细计划见 `docs/superpowers/plans/2026-06-01-intelligent-video-dubbing-v1.md`。
 
-最新真实模型基线：已在本机授权日语 20 秒和 1 分钟样片上跑通 Demucs CPU 分离、faster-whisper small CPU/int8 ASR、F5-TTS CPU 真实生成、背景混音和 MP4 导出。当前剩余完整实施计划见 `docs/superpowers/plans/2026-06-05-complete-remaining-implementation-plan.md`，验收矩阵见 `docs/evaluation/acceptance-matrix.md`，最终验收记录见 `docs/evaluation/runs/2026-06-final-acceptance.md`。
+最新真实模型基线：已在本机授权日语 20 秒和 1 分钟样片上跑通 CPU 与 GPU 两条 F5-TTS 预览链路。CPU 路线使用 Demucs CPU 分离、faster-whisper small CPU/int8 ASR、F5-TTS CPU 真实生成；GPU 路线使用 RTX/CUDA 环境下的 Demucs、faster-whisper small/float16 和 F5-TTS CUDA，1 分钟样片耗时约 122 秒。当前剩余完整实施计划见 `docs/superpowers/plans/2026-06-05-complete-remaining-implementation-plan.md`，验收矩阵见 `docs/evaluation/acceptance-matrix.md`，最终验收记录见 `docs/evaluation/runs/2026-06-final-acceptance.md`。
 
 注意：F5-TTS 代码是 MIT，但默认预训练权重为 CC-BY-NC，商业用途前必须换用许可证合适的模型或服务。下一条优先评估的真实 TTS 路线是 CosyVoice。真实视频素材、生成音频/视频、模型权重、API key 和 token 都不要提交到 Git。
 

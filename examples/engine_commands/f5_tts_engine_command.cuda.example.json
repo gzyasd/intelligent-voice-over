@@ -1,0 +1,17 @@
+[
+  "f5-tts_infer-cli",
+  "--model",
+  "F5TTS_v1_Base",
+  "--ref_audio",
+  "{reference_audio}",
+  "--ref_text",
+  "{reference_text}",
+  "--gen_text",
+  "{text}",
+  "--output_dir",
+  "{audio_out_dir}",
+  "--output_file",
+  "{audio_out_name}",
+  "--device",
+  "cuda"
+]

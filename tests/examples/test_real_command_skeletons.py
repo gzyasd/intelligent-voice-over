@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import subprocess
 import sys
 import wave
@@ -10,6 +11,7 @@ from pathlib import Path
 def test_tts_engine_command_examples_are_valid_json_arrays() -> None:
     for path in (
         Path("examples/engine_commands/f5_tts_engine_command.example.json"),
+        Path("examples/engine_commands/f5_tts_engine_command.cuda.example.json"),
         Path("examples/engine_commands/cosyvoice_engine_command.example.json"),
     ):
         command = json.loads(path.read_text(encoding="utf-8"))
@@ -125,6 +127,33 @@ def test_demucs_separate_accepts_two_stems_option_in_dry_run(tmp_path) -> None:
     assert data["background_path"] == str(background)
 
 
+def test_demucs_soundfile_save_writes_tensor_as_wav(tmp_path) -> None:
+    import torch
+
+    spec = importlib.util.spec_from_file_location(
+        "demucs_separate", "examples/local_commands/demucs_separate.py"
+    )
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    output = tmp_path / "vocals.wav"
+    module.save_wav_with_soundfile(
+        torch.zeros((2, 1600)),
+        output,
+        samplerate=16000,
+        clip="clamp",
+        bits_per_sample=16,
+        as_float=False,
+    )
+
+    with wave.open(str(output), "rb") as wav_file:
+        assert wav_file.getnchannels() == 2
+        assert wav_file.getframerate() == 16000
+        assert wav_file.getnframes() == 1600
+
+
 def test_f5_tts_dry_run_writes_contract(tmp_path) -> None:
     audio = tmp_path / "speech.wav"
     output = tmp_path / "tts.json"
@@ -151,6 +180,30 @@ def test_f5_tts_dry_run_writes_contract(tmp_path) -> None:
     assert data["duration_ms"] > 0
     with wave.open(str(audio), "rb") as wav_file:
         assert wav_file.getframerate() == 16000
+
+
+def test_f5_soundfile_load_returns_torchaudio_compatible_shape(tmp_path) -> None:
+    import numpy as np
+
+    spec = importlib.util.spec_from_file_location(
+        "f5_tts_command", "examples/local_commands/f5_tts_command.py"
+    )
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    audio = tmp_path / "reference.wav"
+    with wave.open(str(audio), "wb") as wav_file:
+        wav_file.setnchannels(2)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(16000)
+        wav_file.writeframes(np.zeros((1600, 2), dtype=np.int16).tobytes())
+
+    wav, sample_rate = module.load_audio_with_soundfile(audio)
+
+    assert sample_rate == 16000
+    assert tuple(wav.shape) == (2, 1600)
 
 
 def test_pyannote_diarization_dry_run_writes_contract(tmp_path) -> None:

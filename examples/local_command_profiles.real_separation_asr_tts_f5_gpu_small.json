@@ -1,0 +1,73 @@
+{
+  "separation": {
+    "id": "demucs-htdemucs-gpu-small-preview",
+    "stage": "separation",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/demucs_separate.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--vocals-out",
+      "{{ vocals_path }}",
+      "--background-out",
+      "{{ background_path }}",
+      "--json-out",
+      "{{ output_json_path }}",
+      "--model",
+      "htdemucs",
+      "--device",
+      "cuda",
+      "--two-stems",
+      "vocals"
+    ],
+    "output_json_path": "{{ project_path }}/demucs-htdemucs-gpu-small-preview.json"
+  },
+  "asr": {
+    "id": "faster-whisper-small-gpu",
+    "stage": "asr",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/faster_whisper_asr.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--language",
+      "{{ source_language }}",
+      "--model",
+      "small",
+      "--device",
+      "cuda",
+      "--compute-type",
+      "float16",
+      "--out",
+      "{{ output_json_path }}"
+    ],
+    "output_json_path": "{{ project_path }}/faster-whisper-small-gpu.json"
+  },
+  "tts": {
+    "id": "f5-tts-local-gpu",
+    "stage": "tts",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/f5_tts_command.py",
+      "--text",
+      "{{ segment_text }}",
+      "--speaker",
+      "{{ speaker_id }}",
+      "--audio-out",
+      "{{ output_audio_path }}",
+      "--duration-ms",
+      "{{ target_duration_ms }}",
+      "--style-prompt",
+      "{{ style_prompt }}",
+      "--reference-audio",
+      "{{ reference_audio_path }}",
+      "--reference-text",
+      "{{ reference_text }}",
+      "--json-out",
+      "{{ output_json_path }}",
+      "--engine-command-json-file",
+      "examples/engine_commands/f5_tts_engine_command.cuda.example.json"
+    ],
+    "output_json_path": "{{ project_path }}/f5-tts-local-gpu.json"
+  }
+}

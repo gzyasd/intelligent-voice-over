@@ -62,6 +62,43 @@ uv run ivo evaluate-project "$env:TEMP\ivo_final_f5_60s\JP-Final-F5-60s.ivoproj"
 - 作业阶段：`import`、`audio_extract`、`separation`、`asr`、`translation`、`tts`、`export` 全部 `completed`。
 - 中断后项目可通过 `--resume-existing` 继续；本次验收期间已验证生成片段和最终导出保留在临时项目目录。
 
+## 真实 GPU F5 本地链路
+
+环境：
+- GPU：NVIDIA GeForce RTX 5090。
+- PyTorch：`torch 2.11.0+cu128`，`torchaudio 2.11.0+cu128`。
+- Profile：`examples/local_command_profiles.real_separation_asr_tts_f5_gpu_small.json`。
+- F5 engine command：`examples/engine_commands/f5_tts_engine_command.cuda.example.json`。
+
+说明：
+- Windows 上官方 PyTorch CUDA wheel 源当前没有可用的 `torchcodec` Windows wheel；`torchaudio 2.11` 默认音频读写链路会尝试加载 torchcodec。
+- 项目已在 Demucs 和 F5 adapter 中使用 `soundfile` 绕过该读写链路，仍复用 Demucs/F5 官方推理逻辑。
+
+20 秒命令：
+```powershell
+uv run ivo local-preview "$env:TEMP\ivo_gpu_real_probe\jp_gpu_probe_20s.mp4" "$env:TEMP\ivo_final_f5_gpu_20s" --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_gpu_small.json --project-name JP-Final-F5-GPU-20s --source-language ja --require-readiness --resume-existing --no-watermark
+uv run ivo evaluate-project "$env:TEMP\ivo_final_f5_gpu_20s\JP-Final-F5-GPU-20s.ivoproj" --format json
+```
+
+20 秒结果：
+- 导出视频：`%TEMP%\ivo_final_f5_gpu_20s\JP-Final-F5-GPU-20s.ivoproj\renders\local-preview.mp4`。
+- 片段：3 个，全部 `rendered`。
+- 质量标记：`duration_ok: 3`。
+- 作业阶段：`import`、`audio_extract`、`separation`、`asr`、`translation`、`tts`、`export` 全部 `completed`。
+
+1 分钟命令：
+```powershell
+uv run ivo local-preview "$env:TEMP\ivo_gpu_real_probe\jp_gpu_probe_60s.mp4" "$env:TEMP\ivo_final_f5_gpu_60s" --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_gpu_small.json --project-name JP-Final-F5-GPU-60s --source-language ja --require-readiness --resume-existing --no-watermark
+uv run ivo evaluate-project "$env:TEMP\ivo_final_f5_gpu_60s\JP-Final-F5-GPU-60s.ivoproj" --format json
+```
+
+1 分钟结果：
+- 总耗时：约 122.24 秒。
+- 导出视频：`%TEMP%\ivo_final_f5_gpu_60s\JP-Final-F5-GPU-60s.ivoproj\renders\local-preview.mp4`。
+- 片段：9 个，全部 `rendered`。
+- 质量标记：`duration_ok: 9`。
+- 作业阶段：`import`、`audio_extract`、`separation`、`asr`、`translation`、`tts`、`export` 全部 `completed`。
+
 ## 打包 dry-run
 
 命令：
@@ -78,11 +115,12 @@ uv run python scripts/build_windows_package.py --dry-run --output-dir dist
 
 ## 已知限制
 
-- 当前虚拟环境中的 `torch` 是 `2.5.1+cpu`，虽然本机有 RTX 5090 和 NVIDIA 工具，但这次真实 F5 验收仍按 CPU 路线完成。
-- GPU profile 已提供，后续若要显著提速，需要切换 CUDA 版 PyTorch，并按 `examples/local_command_profiles.real_gpu_quality.json` 或 `examples/local_command_profiles.real_gpu_fast_preview.json` 重新做真实 GPU 验收。
+- 当前开源依赖配置仍保留 CPU 稳定路线：`local-separation` extra 固定 `torch==2.5.1`、`torchaudio==2.5.1`，避免普通用户在 Windows 上被新版 torchcodec 音频链路阻塞。
+- 本机 GPU 验收通过的是额外安装的 CUDA wheel 环境：`uv pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio`。重新 `uv sync` 可能会回到锁定的 CPU 组合，GPU 验收前需要再次确认 `torch.cuda.is_available()`。
+- `real_gpu_quality` 的 CosyVoice 高质量路线仍需要安装 CosyVoice 模型和本地推理脚本后再做质量验收。
 - CosyVoice profile 和安装脚本已补齐，但本次最终验收的真实 TTS 路线仍以 F5-TTS 为准。
 - 真实素材、生成视频、音频片段和模型权重均保存在本机临时目录或忽略目录，不进入 Git。
 
 ## 结论
 
-截至 2026-06-05，本项目已达到可开源预览和继续真实样片迭代的状态：本地/HTTP profile 架构、桌面 UI、运行日志、时间线审核、质量统计、恢复重跑、模型安装脚本、GPU profile、Windows 打包 dry-run、合规文档、mock E2E、真实 20 秒与真实 1 分钟 F5 本地链路均已完成或验证。
+截至 2026-06-05，本项目已达到可开源预览和继续真实样片迭代的状态：本地/HTTP profile 架构、桌面 UI、运行日志、时间线审核、质量统计、恢复重跑、模型安装脚本、GPU profile、Windows 打包 dry-run、合规文档、mock E2E、真实 CPU/GPU 20 秒与真实 CPU/GPU 1 分钟 F5 本地链路均已完成或验证。
