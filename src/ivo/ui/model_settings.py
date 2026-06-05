@@ -21,6 +21,7 @@ from ivo.environment import collect_optional_model_dependencies
 from ivo.local_readiness import build_local_readiness_report
 from ivo.model_setup import build_model_setup_script
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+from ivo.profile_defaults import default_local_command_profiles_path
 from ivo.profile_validation import validate_http_profile, validate_local_command_profiles
 
 
@@ -31,7 +32,10 @@ class ModelSettings(QWidget):
         self.setup_script_path_edit = QLineEdit("scripts/setup-local-models.ps1")
         self.write_model_setup_script_button = QPushButton("生成本地模型安装脚本")
         self.refresh_model_diagnostics_button = QPushButton("刷新本地模型诊断")
-        self.local_command_profiles_path_edit = QLineEdit()
+        default_profiles_path = default_local_command_profiles_path()
+        self.local_command_profiles_path_edit = QLineEdit(
+            str(default_profiles_path) if default_profiles_path is not None else ""
+        )
         self.local_command_profiles_browse_button = QPushButton("浏览本地命令 profile")
         self.validate_local_profiles_button = QPushButton("校验本地命令 profile")
         self.check_local_readiness_button = QPushButton("Check local model readiness")

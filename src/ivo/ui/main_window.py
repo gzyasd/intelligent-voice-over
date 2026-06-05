@@ -38,6 +38,7 @@ from ivo.pipeline.synthesize import (
 )
 from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
+from ivo.profile_defaults import default_local_command_profiles_path
 from ivo.ui.export_dialog import ExportDialog
 from ivo.ui.model_settings import ModelSettings
 from ivo.ui.project_wizard import ProjectWizard
@@ -418,10 +419,9 @@ class MainWindow(QMainWindow):
 
     def _load_local_command_profiles(self) -> LocalCommandPipelineProfiles:
         raw_path = self.model_settings.local_command_profiles_path_edit.text().strip()
-        if not raw_path:
+        profiles_path = Path(raw_path) if raw_path else default_local_command_profiles_path()
+        if profiles_path is None:
             raise ValueError("\u8bf7\u5148\u9009\u62e9\u672c\u5730\u547d\u4ee4 profiles JSON")
-
-        profiles_path = Path(raw_path)
         if not profiles_path.is_file():
             raise FileNotFoundError(profiles_path)
 

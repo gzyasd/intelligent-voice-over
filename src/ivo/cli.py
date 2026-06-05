@@ -39,6 +39,7 @@ from ivo.pipeline.separate_audio import HttpSeparationAdapter
 from ivo.pipeline.synthesize import HttpTtsAdapter
 from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
+from ivo.profile_defaults import default_local_command_profiles_path
 from ivo.profile_validation import validate_http_profile, validate_local_command_profiles
 
 app = typer.Typer(help="Intelligent Voice Over developer tools.", no_args_is_help=True)
@@ -179,15 +180,14 @@ def batch_local_preview(
     input_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
     output_dir: Annotated[Path, typer.Argument(file_okay=False)],
     profiles_path: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--profiles",
-            exists=True,
             dir_okay=False,
             readable=True,
             help="JSON file containing local command profiles for the dubbing pipeline.",
         ),
-    ],
+    ] = None,
     source_language: Annotated[SourceLanguage, typer.Option()] = "en",
     target_language: Annotated[TargetLanguage, typer.Option()] = "zh",
     watermark: Annotated[bool, typer.Option("--watermark/--no-watermark")] = True,
@@ -216,8 +216,14 @@ def batch_local_preview(
     ] = False,
 ) -> None:
     """Run local command preview for every video file in a directory."""
+    resolved_profiles_path = profiles_path or default_local_command_profiles_path()
+    if resolved_profiles_path is None:
+        raise typer.BadParameter(
+            "No local command profiles were provided and no default GPU/CPU profile was found. "
+            "Use --profiles to select one explicitly."
+        )
     profiles = LocalCommandPipelineProfiles.model_validate(
-        json.loads(profiles_path.read_text(encoding="utf-8"))
+        json.loads(resolved_profiles_path.read_text(encoding="utf-8"))
     )
     if require_readiness:
         readiness = build_local_readiness_report(
@@ -480,15 +486,14 @@ def local_preview(
     source_video: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
     output_dir: Annotated[Path, typer.Argument(file_okay=False)],
     profiles_path: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--profiles",
-            exists=True,
             dir_okay=False,
             readable=True,
             help="JSON file containing local command profiles for the dubbing pipeline.",
         ),
-    ],
+    ] = None,
     project_name: Annotated[str, typer.Option()] = "Local Preview",
     source_language: Annotated[SourceLanguage, typer.Option()] = "en",
     target_language: Annotated[TargetLanguage, typer.Option()] = "zh",
@@ -537,8 +542,14 @@ def local_preview(
     ] = False,
 ) -> None:
     """Create a project and run local command adapters from a profile JSON file."""
+    resolved_profiles_path = profiles_path or default_local_command_profiles_path()
+    if resolved_profiles_path is None:
+        raise typer.BadParameter(
+            "No local command profiles were provided and no default GPU/CPU profile was found. "
+            "Use --profiles to select one explicitly."
+        )
     profiles = LocalCommandPipelineProfiles.model_validate(
-        json.loads(profiles_path.read_text(encoding="utf-8"))
+        json.loads(resolved_profiles_path.read_text(encoding="utf-8"))
     )
     if require_readiness:
         readiness = build_local_readiness_report(
