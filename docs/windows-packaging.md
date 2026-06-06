@@ -67,6 +67,12 @@ uv run python .\scripts\build_windows_package.py --output-dir .\dist
 dist\IntelligentVoiceOver\IntelligentVoiceOver.exe
 ```
 
+同时会生成一个完整便携包：
+
+```text
+dist\IntelligentVoiceOver-0.1.0-win64-portable.zip
+```
+
 同一目录还会生成发布清单：
 
 ```text
@@ -77,7 +83,9 @@ dist\IntelligentVoiceOver\release-manifest.json
 
 ## 安装与分发
 
-- 将 `dist\IntelligentVoiceOver\` 整个目录复制到目标机器。
+- 推荐分发 `dist\IntelligentVoiceOver-0.1.0-win64-portable.zip`，用户解压后双击 `IntelligentVoiceOver\IntelligentVoiceOver.exe`。
+- 不要只复制 `IntelligentVoiceOver.exe`。该 exe 依赖同目录下的 `_internal` 文件夹；如果只复制 exe，会出现 `Failed to load Python DLL ... _internal\python310.dll` 这类错误。
+- 如果不使用 zip，也必须将 `dist\IntelligentVoiceOver\` 整个目录复制到目标机器。
 - FFmpeg 已随发布包内置。程序运行时会优先使用包内 `ffmpeg\bin\ffmpeg.exe` 和 `ffmpeg\bin\ffprobe.exe`，然后才回退到本机环境变量或 PATH。
 - 本地模型权重不会被打包进程序。需要在目标机器上按 `docs/local-model-command-profiles.md` 配置模型目录、许可证确认和本地命令 profile。
 - 本地模型运行时、GPU 驱动、CUDA、LM Studio 或其他模型服务仍需用户在目标机器上自行安装和配置。

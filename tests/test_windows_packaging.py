@@ -4,7 +4,21 @@ import json
 import os
 import subprocess
 import sys
+import zipfile
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+
+
+def load_windows_packager():
+    spec = spec_from_file_location(
+        "build_windows_package",
+        Path("scripts") / "build_windows_package.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_windows_package_script_dry_run_outputs_pyinstaller_command(tmp_path) -> None:
@@ -33,6 +47,7 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command(tmp_path) ->
     command = payload["command"]
     manifest = payload["manifest"]
 
+    assert payload["portable_archive_path"].endswith("-win64-portable.zip")
     assert command[:3] == ["uv", "run", "pyinstaller"]
     assert "pyinstaller" in command
     assert "--name" in command
@@ -81,6 +96,30 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command(tmp_path) ->
     assert "API keys and tokens" in manifest["excluded_secrets"]
 
 
+def test_windows_package_archive_contains_whole_app_directory(tmp_path) -> None:
+    packager = load_windows_packager()
+    app_dir = tmp_path / "dist" / "IntelligentVoiceOver"
+    internal = app_dir / "_internal"
+    ffmpeg_bin = internal / "ffmpeg" / "bin"
+    ffmpeg_bin.mkdir(parents=True)
+    (app_dir / "IntelligentVoiceOver.exe").write_bytes(b"exe")
+    (internal / "python310.dll").write_bytes(b"dll")
+    (ffmpeg_bin / "ffmpeg.exe").write_bytes(b"ffmpeg")
+
+    readme_path = packager.write_portable_readme(tmp_path / "dist")
+    archive_path = packager.build_portable_archive(tmp_path / "dist")
+
+    assert readme_path == app_dir / "README_FIRST.txt"
+    assert "不要只复制" in readme_path.read_text(encoding="utf-8")
+    with zipfile.ZipFile(archive_path) as archive:
+        names = set(archive.namelist())
+
+    assert "IntelligentVoiceOver/IntelligentVoiceOver.exe" in names
+    assert "IntelligentVoiceOver/_internal/python310.dll" in names
+    assert "IntelligentVoiceOver/_internal/ffmpeg/bin/ffmpeg.exe" in names
+    assert "IntelligentVoiceOver/README_FIRST.txt" in names
+
+
 def test_windows_package_powershell_script_excludes_models_and_media() -> None:
     text = Path("scripts/package-windows.ps1").read_text(encoding="utf-8")
 
@@ -105,6 +144,7 @@ def test_windows_packaging_documentation_mentions_build_command() -> None:
     assert "FFmpeg 已随发布包内置" in document
     assert "IntelligentVoiceOver.exe" in document
     assert "release-manifest.json" in document
+    assert "win64-portable.zip" in document
     assert "模型权重不会被打包" in document
     assert "未授权" in document
     assert "GitHub Release" in document

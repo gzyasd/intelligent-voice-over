@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -47,6 +48,10 @@ def build_command(output_dir: Path, *, ffmpeg_dir: Path | None = None) -> list[s
 
 def release_manifest_path(output_dir: Path) -> Path:
     return output_dir / APP_NAME / "release-manifest.json"
+
+
+def portable_archive_path(output_dir: Path) -> Path:
+    return output_dir / f"{APP_NAME}-{read_project_version()}-win64-portable.zip"
 
 
 def build_release_manifest(
@@ -146,6 +151,44 @@ def write_release_manifest(output_dir: Path, *, ffmpeg_dir: Path | None = None) 
     return manifest_path
 
 
+def write_portable_readme(output_dir: Path) -> Path:
+    app_dir = output_dir / APP_NAME
+    readme_path = app_dir / "README_FIRST.txt"
+    readme_path.write_text(
+        "\n".join(
+            [
+                "Intelligent Voice Over Windows 便携版使用说明",
+                "",
+                "不要只复制 IntelligentVoiceOver.exe。",
+                "本程序依赖同目录下的 _internal 文件夹，里面包含 Python、PySide6、FFmpeg 等运行时文件。",
+                "",
+                "正确使用方式：",
+                "1. 解压整个 win64-portable.zip。",
+                "2. 保持 IntelligentVoiceOver 文件夹结构完整。",
+                "3. 双击 IntelligentVoiceOver\\IntelligentVoiceOver.exe 启动。",
+                "",
+                "模型权重不会内置在本包中，请按 docs 中的本地模型说明下载和配置。",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return readme_path
+
+
+def build_portable_archive(output_dir: Path) -> Path:
+    app_dir = output_dir / APP_NAME
+    if not app_dir.is_dir():
+        raise FileNotFoundError(app_dir)
+    archive_path = portable_archive_path(output_dir)
+    if archive_path.exists():
+        archive_path.unlink()
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(app_dir.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(output_dir).as_posix())
+    return archive_path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the Windows desktop package.")
     parser.add_argument("--output-dir", default="dist", type=Path)
@@ -167,6 +210,7 @@ def main() -> int:
                 {
                     "command": command,
                     "manifest_path": str(release_manifest_path(args.output_dir)),
+                    "portable_archive_path": str(portable_archive_path(args.output_dir)),
                     "manifest": build_release_manifest(args.output_dir, ffmpeg_dir=ffmpeg_dir),
                 },
                 ensure_ascii=False,
@@ -176,7 +220,10 @@ def main() -> int:
 
     subprocess.run(command, check=True)
     manifest_path = write_release_manifest(args.output_dir, ffmpeg_dir=ffmpeg_dir)
+    write_portable_readme(args.output_dir)
+    archive_path = build_portable_archive(args.output_dir)
     print(f"Release manifest written: {manifest_path}")
+    print(f"Portable archive written: {archive_path}")
     return 0
 
 
