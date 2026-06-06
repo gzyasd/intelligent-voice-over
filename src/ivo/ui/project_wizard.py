@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from ivo.core.settings import SeriesType
 from ivo.core.timeline import SourceLanguage
+from ivo.workspace_paths import default_runs_dir
 
 
 class ProjectWizardValues(BaseModel):
@@ -38,7 +39,7 @@ class ProjectWizard(QDialog):
         self.project_name_edit = QLineEdit()
         self.video_path_edit = QLineEdit()
         self.video_browse_button = QPushButton("浏览视频")
-        self.output_dir_edit = QLineEdit()
+        self.output_dir_edit = QLineEdit(str(default_runs_dir()))
         self.output_dir_browse_button = QPushButton("浏览输出目录")
         self.source_language_combo = QComboBox()
         self.source_language_combo.addItems(["en", "ja", "ko"])

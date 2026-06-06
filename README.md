@@ -8,6 +8,10 @@
 
 默认模型策略：CLI 和桌面 UI 在未手动指定本地命令 profile 时，会优先选择 `examples/local_command_profiles.real_separation_asr_tts_f5_gpu_small.json`；如果未检测到 NVIDIA 工具或 GPU profile 不存在，再回退到 `examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json`。手动传入 `--profiles` 或在 UI 里选择 profile 时，会尊重用户选择。
 
+默认输出策略：未显式指定输出目录时，项目默认写入程序当前工作目录下的 `runs/`；模型 smoke、探测音频和其他临时工作文件默认写入 `.ivo-work/`。真实项目内部的过程文件继续放在 `.ivoproj/assets`、`.ivoproj/work` 和 `.ivoproj/renders` 中，避免默认占用系统盘。用户仍可通过 CLI 参数或 UI 输出目录自定义存放位置。
+
+默认释放策略：本地命令模型随子进程结束自动释放；LM Studio 这类常驻本地服务在 HTTP 翻译阶段结束后会调用 LM Studio unload 接口卸载本次使用的模型实例，只释放模型资源，不关闭 LM Studio 程序。
+
 注意：F5-TTS 代码是 MIT，但默认预训练权重为 CC-BY-NC，商业用途前必须换用许可证合适的模型或服务。下一条优先评估的真实 TTS 路线是 CosyVoice。真实视频素材、生成音频/视频、模型权重、API key 和 token 都不要提交到 Git。
 
 ## 开源许可
@@ -88,25 +92,25 @@ uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" -
 使用本地命令 profile 跑预览链路：
 
 ```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --project-name "Episode 01" --source-language en --no-watermark
+uv run ivo local-preview .\sample.mp4 --profiles .\examples\local_command_profiles.mock.json --project-name "Episode 01" --source-language en --no-watermark
 ```
 
 真实模型 profile 建议增加 `--require-readiness --models-dir .\models`，在包、模型目录或 engine command 文件缺失时提前退出，不创建半成品项目。快速真实预览优先使用已经验收过的 F5 GPU 小预览 profile：
 
 ```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_gpu_small.json --project-name "Episode 01" --source-language ja --require-readiness --models-dir .\models --resume-existing --no-watermark
+uv run ivo local-preview .\sample.mp4 --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_gpu_small.json --project-name "Episode 01" --source-language ja --require-readiness --models-dir .\models --resume-existing --no-watermark
 ```
 
 正式质量优先流程使用完整 GPU + 说话人分离 + LM Studio 翻译 profile。运行前需要确认 `.venv-pyannote` 可用、LM Studio 已启动，并且 `http://127.0.0.1:1995/v1/models` 能看到 profile 中的模型 ID：
 
 ```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json --project-name "Full GPU Episode 01" --source-language ja --require-readiness --models-dir .\models --resume-existing --no-watermark
+uv run ivo local-preview .\sample.mp4 --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json --project-name "Full GPU Episode 01" --source-language ja --require-readiness --models-dir .\models --resume-existing --no-watermark
 ```
 
 如果真实本地模型运行中途失败，保留同一个输出目录和项目名，修复模型环境或 profile 后可用 `--resume-existing` 复用已有 `.ivoproj`、job 状态和已完成的文件阶段产物：
 
 ```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --resume-existing --no-watermark
+uv run ivo local-preview .\sample.mp4 --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --resume-existing --no-watermark
 ```
 
 运行真实模型前，可以先静态校验本地命令 profiles：
@@ -119,7 +123,7 @@ uv run ivo check-local-readiness .\examples\local_command_profiles.real_full_gpu
 批量处理一个目录里的多集视频，并为每个视频生成独立 `.ivoproj`：
 
 ```powershell
-uv run ivo batch-local-preview .\episodes .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --source-language en --no-watermark
+uv run ivo batch-local-preview .\episodes --profiles .\examples\local_command_profiles.real_dry_run.json --source-language en --no-watermark
 ```
 
 批处理可以加 `--report .\demo-output\batch-report.json` 写出机器可读结果；单个视频失败时会继续处理后续视频，最后用非零退出码汇总失败数。已经生成过 `renders/local-preview.mp4` 的项目可以用 `--skip-existing` 跳过；需要继续已有 `.ivoproj` 的阶段状态时使用 `--resume-existing`，适合长剧集续跑。

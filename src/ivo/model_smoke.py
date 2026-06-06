@@ -4,10 +4,12 @@ import math
 import json
 import subprocess
 import sys
-import tempfile
+import uuid
 import wave
 from dataclasses import dataclass
 from pathlib import Path
+
+from ivo.workspace_paths import default_work_dir
 
 
 @dataclass(frozen=True)
@@ -71,7 +73,7 @@ def run_local_adapter_smoke_probe(
     f5_tts_script: Path = Path("examples/local_commands/f5_tts_command.py"),
     cosyvoice_tts_script: Path = Path("examples/local_commands/cosyvoice_tts.py"),
 ) -> LocalAdapterSmokeProbeResult:
-    work_dir = Path(tempfile.mkdtemp(prefix="ivo-adapter-smoke-"))
+    work_dir = default_work_dir() / "smoke" / "adapters" / uuid.uuid4().hex
     audio_path = _write_probe_wav(work_dir / "input.wav")
     probes: list[dict[str, object]] = []
 
@@ -205,17 +207,17 @@ def run_local_adapter_smoke_probe(
 
 
 def default_asr_smoke_output_path() -> Path:
-    return Path(tempfile.gettempdir()) / "ivo_asr_smoke" / "asr-smoke.json"
+    return default_work_dir() / "smoke" / "asr" / "asr-smoke.json"
 
 
 def default_adapter_smoke_output_path() -> Path:
-    return Path(tempfile.gettempdir()) / "ivo_adapter_smoke" / "adapter-smoke.json"
+    return default_work_dir() / "smoke" / "adapters" / "adapter-smoke.json"
 
 
 def _write_probe_wav(output_path: Path | None = None) -> Path:
     sample_rate = 16_000
     duration_seconds = 1.5
-    audio_path = output_path or Path(tempfile.mkdtemp(prefix="ivo-asr-smoke-")) / "input.wav"
+    audio_path = output_path or default_work_dir() / "smoke" / "asr" / uuid.uuid4().hex / "input.wav"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(audio_path), "wb") as wav:
         wav.setnchannels(1)

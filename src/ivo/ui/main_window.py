@@ -288,6 +288,10 @@ class MainWindow(QMainWindow):
 
     def open_export_dialog(self) -> PipelineWorker | None:
         dialog = ExportDialog(self)
+        if self.current_project is not None and not dialog.output_path_edit.text().strip():
+            dialog.output_path_edit.setText(
+                str(self.current_project.path / "renders" / "final.mp4")
+            )
         if dialog.exec() != ExportDialog.DialogCode.Accepted:
             return None
         if not dialog.can_export():

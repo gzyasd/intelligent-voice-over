@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -1351,14 +1350,17 @@ def test_model_smoke_asr_command_runs_adapter_dry_run(tmp_path) -> None:
     assert payload["segments"][0]["text"] == "Well, hi."
 
 
-def test_model_smoke_asr_command_uses_temp_output_by_default() -> None:
+def test_model_smoke_asr_command_uses_workspace_work_dir_by_default(tmp_path, monkeypatch) -> None:
     from ivo.cli import app
 
+    monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(
         app,
         [
             "model",
             "smoke-asr",
+            "--adapter-script",
+            str(Path(__file__).resolve().parents[1] / "examples" / "local_commands" / "faster_whisper_asr.py"),
             "--dry-run",
         ],
     )
@@ -1368,7 +1370,7 @@ def test_model_smoke_asr_command_uses_temp_output_by_default() -> None:
     completed_line = next(
         line for line in result.output.splitlines() if line.startswith("ASR smoke probe completed:")
     )
-    assert str(Path(tempfile.gettempdir())) in completed_line
+    assert str(tmp_path / ".ivo-work" / "smoke" / "asr") in completed_line
 
 
 def test_model_smoke_adapters_command_validates_local_command_contracts(tmp_path) -> None:
@@ -1449,7 +1451,16 @@ def test_local_model_setup_doc_mentions_json_and_setup_plan_commands() -> None:
 def test_gitignore_excludes_real_media_models_and_secrets() -> None:
     text = Path(".gitignore").read_text(encoding="utf-8")
 
-    for pattern in ("models/", "测试视频/", "*.mp4", "*.wav", ".env", "scratch/"):
+    for pattern in (
+        "models/",
+        "测试视频/",
+        "*.mp4",
+        "*.wav",
+        ".env",
+        "scratch/",
+        "runs/",
+        ".ivo-work/",
+    ):
         assert pattern in text
 
 

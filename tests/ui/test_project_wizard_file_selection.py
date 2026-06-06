@@ -32,6 +32,16 @@ def test_project_wizard_browse_buttons_fill_video_and_output_paths(
     assert wizard.output_dir_edit.text() == str(output_dir)
 
 
+def test_project_wizard_defaults_output_dir_to_workspace_runs(qtbot) -> None:
+    from ivo.ui.project_wizard import ProjectWizard
+    from ivo.workspace_paths import default_runs_dir
+
+    wizard = ProjectWizard()
+    qtbot.addWidget(wizard)
+
+    assert wizard.output_dir_edit.text() == str(default_runs_dir())
+
+
 def test_project_wizard_collects_translation_style_inputs(qtbot, tmp_path) -> None:
     from ivo.ui.project_wizard import ProjectWizard
 

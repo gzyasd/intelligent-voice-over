@@ -7,6 +7,8 @@
 - 模型权重不进入 Git。默认使用 `models/` 作为本机缓存目录，该目录已被 `.gitignore` 忽略。
 - 真实影视素材不进入 Git。测试美剧、日剧、韩剧片段时只使用你拥有授权的本地文件。
 - API key、Hugging Face token、ModelScope token 不写进 JSON profile、文档或源码。
+- 默认输出目录为项目当前工作目录下的 `runs/`；默认临时工作目录为 `.ivo-work/`。用户可以显式传输出目录覆盖，但不要默认把真实处理产物放到系统盘。
+- LM Studio 等常驻本地服务在项目 HTTP 翻译阶段结束后应卸载本次使用的模型实例，释放 GPU 资源，但不关闭 LM Studio 程序。
 - 先跑 `uv run ivo doctor` 和 `uv run ivo doctor-models`，确认 FFmpeg、GPU 工具、Python 包和模型目录状态。
 - 优先用 1-3 分钟授权样片验证，再扩大到整集。
 

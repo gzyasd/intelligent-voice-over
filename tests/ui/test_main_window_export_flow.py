@@ -58,6 +58,45 @@ def test_main_window_opens_export_dialog_and_starts_background_export(
     assert window.progress_label.text() == "\u6b63\u5728\u6700\u7ec8\u5bfc\u51fa"
 
 
+def test_main_window_prefills_final_export_path_in_project_renders(
+    monkeypatch,
+    qtbot,
+    tmp_path,
+) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from ivo.core.project import DubbingProject
+    from ivo.ui.export_dialog import ExportDialog
+    from ivo.ui.main_window import MainWindow
+
+    source_video = tmp_path / "episode.mp4"
+    source_video.write_bytes(b"video")
+    project = DubbingProject.create(
+        tmp_path / "Episode 01.ivoproj",
+        name="Episode 01",
+        source_language="ja",
+        target_language="zh",
+        source_video=source_video,
+    )
+
+    captured: dict[str, object] = {}
+
+    class AcceptedExportDialog(ExportDialog):
+        def exec(self) -> int:
+            captured["output_path"] = self.output_path()
+            return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr("ivo.ui.main_window.ExportDialog", AcceptedExportDialog)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.current_project = project
+    window.source_video_path = source_video
+
+    assert window.open_export_dialog() is None
+    assert captured["output_path"] == project.path / "renders" / "final.mp4"
+
+
 def test_main_window_warns_when_export_dialog_is_incomplete(monkeypatch, qtbot) -> None:
     from PySide6.QtWidgets import QDialog
 

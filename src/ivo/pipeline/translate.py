@@ -13,6 +13,7 @@ from ivo.core.project import DubbingProject
 from ivo.core.settings import TranslationSettings
 from ivo.core.timeline import DubbingSegment, SourceLanguage, TargetLanguage
 from ivo.pipeline.transcribe import TranscriptionSegment
+from ivo.runtime_cleanup import unload_lm_studio_model_for_profile
 
 
 class TranslationResult(BaseModel):
@@ -88,6 +89,9 @@ class HttpTranslationAdapter:
             style_prompt=style_prompt if isinstance(style_prompt, str) else None,
         )
 
+    def cleanup(self) -> list[str]:
+        return unload_lm_studio_model_for_profile(self.profile)
+
 
 def build_translation_prompt(
     segment: TranscriptionSegment | None = None,
@@ -141,32 +145,37 @@ def translate_segments(
 ) -> list[DubbingSegment]:
     created: list[DubbingSegment] = []
     translation_settings = project.settings.load().translation
-    for source_segment in source_segments:
-        prompt = build_translation_prompt(
-            source_segment,
-            target_language=project.target_language,
-            glossary=translation_settings.glossary,
-            style_notes=_series_style_notes(translation_settings),
-            preserve_fillers=translation_settings.preserve_fillers,
-            max_length_ratio=translation_settings.max_length_ratio,
-        )
-        translation = adapter.translate(source_segment, prompt=prompt)
-        segment = DubbingSegment(
-            id=source_segment.id,
-            start_ms=source_segment.start_ms,
-            end_ms=source_segment.end_ms,
-            speaker_id=source_segment.speaker_id,
-            source_language=source_segment.source_language,
-            source_text=source_segment.source_text,
-            target_language=project.target_language,
-            target_text=translation.target_text,
-            emotion=translation.emotion,
-            style_prompt=translation.style_prompt or translation.emotion,
-            status="needs_review",
-            quality_flags=source_segment.quality_flags,
-        )
-        project.timeline.upsert_segment(segment)
-        created.append(segment)
+    try:
+        for source_segment in source_segments:
+            prompt = build_translation_prompt(
+                source_segment,
+                target_language=project.target_language,
+                glossary=translation_settings.glossary,
+                style_notes=_series_style_notes(translation_settings),
+                preserve_fillers=translation_settings.preserve_fillers,
+                max_length_ratio=translation_settings.max_length_ratio,
+            )
+            translation = adapter.translate(source_segment, prompt=prompt)
+            segment = DubbingSegment(
+                id=source_segment.id,
+                start_ms=source_segment.start_ms,
+                end_ms=source_segment.end_ms,
+                speaker_id=source_segment.speaker_id,
+                source_language=source_segment.source_language,
+                source_text=source_segment.source_text,
+                target_language=project.target_language,
+                target_text=translation.target_text,
+                emotion=translation.emotion,
+                style_prompt=translation.style_prompt or translation.emotion,
+                status="needs_review",
+                quality_flags=source_segment.quality_flags,
+            )
+            project.timeline.upsert_segment(segment)
+            created.append(segment)
+    finally:
+        cleanup = getattr(adapter, "cleanup", None)
+        if callable(cleanup):
+            cleanup()
     return created
 
 

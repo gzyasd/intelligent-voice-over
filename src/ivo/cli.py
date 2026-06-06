@@ -41,6 +41,7 @@ from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
 from ivo.profile_defaults import default_local_command_profiles_path
 from ivo.profile_validation import validate_http_profile, validate_local_command_profiles
+from ivo.workspace_paths import default_runs_dir
 
 app = typer.Typer(help="Intelligent Voice Over developer tools.", no_args_is_help=True)
 adapter_app = typer.Typer(help="Manage custom HTTP model API adapter profiles.")
@@ -128,11 +129,12 @@ def doctor_models(
 @app.command("mock-preview")
 def mock_preview(
     source_video: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
-    output_dir: Annotated[Path, typer.Argument(file_okay=False)],
+    output_dir: Annotated[Path | None, typer.Argument(file_okay=False)] = None,
     project_name: Annotated[str, typer.Option()] = "Mock Preview",
     source_language: Annotated[SourceLanguage, typer.Option()] = "en",
 ) -> None:
     """Create a project and run the built-in mock dubbing pipeline."""
+    output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     project = DubbingProject.create(
         output_dir / f"{project_name}.ivoproj",
@@ -147,11 +149,12 @@ def mock_preview(
 @app.command("batch-mock-preview")
 def batch_mock_preview(
     input_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
-    output_dir: Annotated[Path, typer.Argument(file_okay=False)],
+    output_dir: Annotated[Path | None, typer.Argument(file_okay=False)] = None,
     source_language: Annotated[SourceLanguage, typer.Option()] = "en",
     watermark: Annotated[bool, typer.Option("--watermark/--no-watermark")] = True,
 ) -> None:
     """Run mock preview for every video file in a directory."""
+    output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     video_paths = [
         path
@@ -178,7 +181,7 @@ def batch_mock_preview(
 @app.command("batch-local-preview")
 def batch_local_preview(
     input_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False, readable=True)],
-    output_dir: Annotated[Path, typer.Argument(file_okay=False)],
+    output_dir: Annotated[Path | None, typer.Argument(file_okay=False)] = None,
     profiles_path: Annotated[
         Path | None,
         typer.Option(
@@ -234,6 +237,7 @@ def batch_local_preview(
         if not readiness.ok:
             raise typer.Exit(1)
 
+    output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     video_paths = _iter_video_paths(input_dir)
     failures: list[str] = []
@@ -484,7 +488,7 @@ def validate_http_profile_command(
 @app.command("local-preview")
 def local_preview(
     source_video: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
-    output_dir: Annotated[Path, typer.Argument(file_okay=False)],
+    output_dir: Annotated[Path | None, typer.Argument(file_okay=False)] = None,
     profiles_path: Annotated[
         Path | None,
         typer.Option(
@@ -560,6 +564,7 @@ def local_preview(
         if not readiness.ok:
             raise typer.Exit(1)
 
+    output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     project_path = output_dir / f"{project_name}.ivoproj"
     if resume_existing and project_path.is_dir():
