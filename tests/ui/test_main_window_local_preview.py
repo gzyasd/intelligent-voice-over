@@ -88,6 +88,26 @@ def test_main_window_pause_and_resume_generation(qtbot) -> None:
     assert window.progress_label.text() == "生成已继续"
 
 
+def test_main_window_enables_pause_button_when_generation_worker_is_created(qtbot, tmp_path) -> None:
+    from ivo.ui.main_window import MainWindow
+
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.create_project_from_inputs(
+        project_name="Episode",
+        source_video=source,
+        output_dir=tmp_path,
+        source_language="en",
+    )
+
+    window.create_local_preview_worker()
+
+    assert window.generation_progress.pause_button.isEnabled() is True
+    assert window.generation_progress.resume_button.isEnabled() is False
+
+
 def test_model_settings_panel_shows_structured_readiness_results(qtbot) -> None:
     from ivo.ui.model_settings import ModelSettingsPanel
 

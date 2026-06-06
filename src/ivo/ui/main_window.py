@@ -357,10 +357,10 @@ class MainWindow(QMainWindow):
         return result
 
     def run_local_preview(self) -> LocalCommandPreviewResult:
+        self.generation_progress.reset()
         self._mark_generation_started()
         self.progress_label.setText("正在生成配音，请稍候")
         self.run_log_panel.append_stage_message("配音生成", "已开始")
-        self.generation_progress.reset()
         try:
             result = self._execute_local_preview(
                 progress_callback=self.handle_generation_progress,
@@ -376,11 +376,11 @@ class MainWindow(QMainWindow):
 
     def create_local_preview_worker(self) -> PipelineWorker:
         self.show_generation_progress()
+        self.generation_progress.reset()
         self._mark_generation_started()
         self.progress_label.setText("正在生成配音，请稍候")
         self.run_log_panel.append_stage_message("配音生成", "已开始")
         self.local_preview_button.setEnabled(False)
-        self.generation_progress.reset()
         worker = PipelineWorker(
             lambda: self._execute_local_preview(
                 progress_callback=worker.progress.emit,
