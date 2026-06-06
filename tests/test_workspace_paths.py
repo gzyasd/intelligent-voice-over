@@ -7,10 +7,11 @@ from typer.testing import CliRunner
 
 
 def test_default_runtime_dirs_are_inside_workspace(tmp_path: Path) -> None:
-    from ivo.workspace_paths import default_runs_dir, default_work_dir
+    from ivo.workspace_paths import default_runs_dir, default_user_settings_path, default_work_dir
 
     assert default_runs_dir(root=tmp_path) == tmp_path / "runs"
     assert default_work_dir(root=tmp_path) == tmp_path / ".ivo-work"
+    assert default_user_settings_path(root=tmp_path) == tmp_path / ".ivo-work" / "user-settings.json"
 
 
 def test_model_smoke_defaults_use_workspace_work_dir(monkeypatch, tmp_path: Path) -> None:

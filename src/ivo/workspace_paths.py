@@ -13,3 +13,7 @@ def default_runs_dir(*, root: Path | None = None) -> Path:
 
 def default_work_dir(*, root: Path | None = None) -> Path:
     return workspace_root(root) / ".ivo-work"
+
+
+def default_user_settings_path(*, root: Path | None = None) -> Path:
+    return default_work_dir(root=root) / "user-settings.json"

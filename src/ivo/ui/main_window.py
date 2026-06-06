@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -41,12 +42,17 @@ from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
 from ivo.profile_defaults import default_local_command_profiles_path
 from ivo.profile_runtime import prepare_local_command_profiles
+from ivo.core.project_library import scan_project_library
+from ivo.ui.app_shell import AppShell
 from ivo.ui.export_dialog import ExportDialog
-from ivo.ui.model_settings import ModelSettings
+from ivo.ui.model_center import ModelCenter
+from ivo.ui.project_library_page import ProjectLibraryPage
 from ivo.ui.project_wizard import ProjectWizard
 from ivo.ui.run_log import RunLogPanel
+from ivo.ui.theme import CARD_STYLE, PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
 from ivo.ui.timeline_editor import TimelineEditor
 from ivo.ui.workers import PipelineWorker
+from ivo.workspace_paths import default_runs_dir
 
 
 class MainWindow(QMainWindow):
@@ -62,9 +68,16 @@ class MainWindow(QMainWindow):
         self.local_preview_button = QPushButton(self.START_DUBBING_TEXT)
         self.evaluation_report_button = QPushButton("\u751f\u6210\u8bc4\u4f30\u62a5\u544a")
         self.export_button = QPushButton("\u6700\u7ec8\u5bfc\u51fa")
+        self.create_project_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.local_preview_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.open_project_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self.evaluation_report_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self.export_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
         self.progress_label = QLabel("\u5c1a\u672a\u5f00\u59cb")
         self.timeline_editor = TimelineEditor()
-        self.model_settings = ModelSettings()
+        self.model_center = ModelCenter()
+        self.model_settings = self.model_center.advanced_settings
+        self.project_library_page = ProjectLibraryPage()
         self.run_log_panel = RunLogPanel()
         self.current_project: DubbingProject | None = None
         self.source_video_path: Path | None = None
@@ -79,23 +92,82 @@ class MainWindow(QMainWindow):
         self.export_button.clicked.connect(self.open_export_dialog)
         self.timeline_editor.regenerate_requested.connect(self.start_segment_regeneration_background)
 
-        tabs = QTabWidget()
-        tabs.addTab(self.timeline_editor, "\u65f6\u95f4\u7ebf")
-        tabs.addTab(_scrollable(self.model_settings), "\u6a21\u578b\u8bbe\u7f6e")
-        tabs.addTab(self.run_log_panel, "\u8fd0\u884c\u65e5\u5fd7")
+        self.project_workspace_tabs = QTabWidget()
+        self.project_workspace_tabs.addTab(self.timeline_editor, "\u65f6\u95f4\u7ebf")
+        self.project_workspace_tabs.addTab(_scrollable(self.model_settings), "\u6a21\u578b\u8bbe\u7f6e")
+        self.project_workspace_tabs.addTab(self.run_log_panel, "\u8fd0\u884c\u65e5\u5fd7")
 
-        root = QWidget()
-        layout = QVBoxLayout()
-        layout.addWidget(self.create_project_button)
-        layout.addWidget(self.open_project_button)
-        layout.addWidget(self.local_preview_button)
-        layout.addWidget(self.evaluation_report_button)
-        layout.addWidget(self.export_button)
-        layout.addWidget(self.progress_label)
-        layout.addWidget(tabs)
-        root.setLayout(layout)
-        self.setCentralWidget(root)
+        self.app_shell = AppShell()
+        self.app_shell.add_page("home", "首页", self._build_home_page())
+        self.project_library_page.set_projects(
+            scan_project_library(default_runs_dir(), recent_projects=[])
+        )
+        self.app_shell.add_page("projects", "项目库", self.project_library_page)
+        self.app_shell.add_page("current", "当前项目", self._build_current_project_page())
+        self.app_shell.add_page("model_center", "模型中心", _scrollable(self.model_center))
+        self.app_shell.add_page("settings", "设置", self._placeholder_page("设置", "后续会集中管理默认模型目录、项目目录和 GPU 偏好。"))
+        self.setCentralWidget(self.app_shell)
         self.resize(1120, 720)
+
+    def _build_home_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(16)
+
+        title = QLabel("欢迎使用智能视频配音")
+        title.setObjectName("PageTitle")
+        subtitle = QLabel("从一个视频开始，选择模型方案，然后生成自然的中文配音。")
+        subtitle.setObjectName("SecondaryText")
+        card = QFrame()
+        card.setStyleSheet(CARD_STYLE)
+        card_layout = QVBoxLayout()
+        card_layout.setContentsMargins(18, 18, 18, 18)
+        card_layout.setSpacing(12)
+        card_layout.addWidget(title)
+        card_layout.addWidget(subtitle)
+        card_layout.addWidget(self.create_project_button)
+        card_layout.addWidget(self.open_project_button)
+        card_layout.addWidget(self.local_preview_button)
+        card_layout.addWidget(self.progress_label)
+        card.setLayout(card_layout)
+
+        layout.addWidget(card)
+        layout.addStretch()
+        page.setLayout(layout)
+        return page
+
+    def _build_current_project_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+        actions = QFrame()
+        actions.setStyleSheet(CARD_STYLE)
+        action_layout = QVBoxLayout()
+        action_layout.setContentsMargins(16, 16, 16, 16)
+        action_layout.addWidget(QLabel("当前项目"))
+        action_layout.addWidget(self.evaluation_report_button)
+        action_layout.addWidget(self.export_button)
+        actions.setLayout(action_layout)
+        layout.addWidget(actions)
+        layout.addWidget(self.project_workspace_tabs, 1)
+        page.setLayout(layout)
+        return page
+
+    def _placeholder_page(self, title: str, message: str) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(28, 28, 28, 28)
+        heading = QLabel(title)
+        heading.setObjectName("PageTitle")
+        detail = QLabel(message)
+        detail.setObjectName("SecondaryText")
+        layout.addWidget(heading)
+        layout.addWidget(detail)
+        layout.addStretch()
+        page.setLayout(layout)
+        return page
 
     def create_project_from_inputs(
         self,

@@ -8,6 +8,15 @@ def test_main_window_shows_project_controls(qtbot) -> None:
     qtbot.addWidget(window)
 
     assert window.windowTitle() == "智能视频配音"
+    assert window.app_shell.navigation_labels() == [
+        "首页",
+        "项目库",
+        "当前项目",
+        "模型中心",
+        "设置",
+    ]
+    assert window.app_shell.current_page_id() == "home"
+    assert window.project_library_page.project_count() >= 0
     assert window.create_project_button.text() == "新建项目"
     assert window.open_project_button.text() == "打开项目"
     assert window.local_preview_button.text() == "开始生成配音（完整流程）"
