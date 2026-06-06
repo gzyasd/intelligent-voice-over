@@ -88,6 +88,20 @@ ASR 返回的 `segments` 应与本地 ASR wrapper 一致：
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --translation-profile .\examples\http_translation_openai_compatible.example.json --translation-var base_url=http://127.0.0.1:8000 --translation-var model=Qwen3-8B --translation-var api_key=local-key --project-name "Qwen Translation" --source-language ja
 ```
 
+如果使用本机 LM Studio，并且服务地址是 `http://127.0.0.1:1995`，可以直接使用项目内置的 Qwen3.6 35B profile：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_gpu_small.json --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json --project-name "LM Studio Qwen Translation" --source-language ja --no-watermark
+```
+
+该 profile 当前固定使用 LM Studio 模型 ID：
+
+```text
+qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive-q4_k_p
+```
+
+LM Studio 当前接口不要求 API key。项目的 LM Studio profile 使用强提示词要求模型输出 JSON；解析器也兼容模型偶尔返回的 ```json 代码块包装。
+
 翻译 API 建议返回 JSON 字符串，至少包含：
 
 ```json

@@ -191,6 +191,7 @@ def _expand_content_json(payload: dict[str, object], *, provider_id: str) -> dic
         return {**payload, **content_json}
     if not isinstance(content_json, str):
         raise TranslationProviderError(f"{provider_id}: content_json must be a JSON object or string")
+    content_json = _strip_json_code_fence(content_json)
     try:
         parsed = json.loads(content_json)
     except json.JSONDecodeError as exc:
@@ -198,3 +199,18 @@ def _expand_content_json(payload: dict[str, object], *, provider_id: str) -> dic
     if not isinstance(parsed, dict):
         raise TranslationProviderError(f"{provider_id}: content_json must decode to an object")
     return {**payload, **parsed}
+
+
+def _strip_json_code_fence(content: str) -> str:
+    stripped = content.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if not lines:
+        return stripped
+    first_line = lines[0].strip().lower()
+    if first_line not in {"```", "```json"}:
+        return stripped
+    if len(lines) >= 2 and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return stripped

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 
 
 def test_build_project_evaluation_report_summarizes_timeline_and_jobs(tmp_path) -> None:
@@ -348,5 +349,5 @@ def test_evaluation_write_run_cli_writes_markdown(tmp_path) -> None:
     assert result.exit_code == 0
     assert output.is_file()
     text = output.read_text(encoding="utf-8")
-    assert "# 2026-06-05 Real F5 20s" in text
+    assert f"# {date.today().isoformat()} Real F5 20s" in text
     assert "5 segments rendered" in text

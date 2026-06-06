@@ -1,0 +1,27 @@
+{
+  "id": "lm-studio-qwen36-35b",
+  "stage": "translation",
+  "method": "POST",
+  "url": "http://127.0.0.1:1995/v1/chat/completions",
+  "headers": {},
+  "request_template": {
+    "model": "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive-q4_k_p",
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "max_tokens": 768,
+    "messages": [
+      {
+        "role": "system",
+        "content": "你是专业影视字幕和配音翻译。你的唯一任务是把用户提供的 source_text 翻译成自然中文配音台词。必须忠实 source_text，不得编造，不得输出示例文本，不得忽略 source_text。只输出 JSON 对象，不要 Markdown，不要解释。JSON 字段必须是 target_text、emotion、style_prompt。"
+      },
+      {
+        "role": "user",
+        "content": "请翻译下面的 source_text。必须逐句忠实翻译，不要改写成无关台词。可以为了中文配音自然度做轻微口语化，但不得改变意思。\nsource_language={{ source_language }}\ntarget_language={{ target_language }}\nspeaker_id={{ speaker_id }}\nduration_ms={{ duration_ms }}\nsource_text: {{ segment_text }}\n\n输出格式：{\"target_text\":\"中文配音台词\",\"emotion\":\"情绪\",\"style_prompt\":\"TTS语气提示\"}"
+      }
+    ]
+  },
+  "response_mapping": {
+    "content_json": "$.choices[0].message.content"
+  },
+  "timeout_seconds": 180
+}

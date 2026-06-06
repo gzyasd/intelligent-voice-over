@@ -477,3 +477,54 @@ def test_http_translation_adapter_parses_openai_compatible_content_json(tmp_path
     assert result.emotion == "warm"
     assert result.style_prompt == "温和、自然，带轻微笑意"
     assert "duration_ms=1500" in captured["body"]
+
+
+def test_http_translation_adapter_parses_fenced_content_json(tmp_path) -> None:
+    from ivo.adapters.http import ApiAdapterProfile
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import HttpTranslationAdapter
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '```json\n{"target_text":"别说了，别说那种话。",'
+                                '"emotion":"sorrowful","style_prompt":"温柔而略带忧伤"}\n```'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    adapter = HttpTranslationAdapter(
+        ApiAdapterProfile(
+            id="lm-studio-qwen36-35b",
+            stage="translation",
+            method="POST",
+            url="http://127.0.0.1:1995/v1/chat/completions",
+            request_template={"model": "qwen-local"},
+            response_mapping={"content_json": "$.choices[0].message.content"},
+        ),
+        project_path=tmp_path,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = adapter.translate(
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_800,
+            source_language="ja",
+            source_text="やめて、そんなこと言わないで。",
+        ),
+        prompt="translate",
+    )
+
+    assert result.target_text == "别说了，别说那种话。"
+    assert result.emotion == "sorrowful"
+    assert result.style_prompt == "温柔而略带忧伤"
