@@ -72,7 +72,10 @@ def test_http_tts_adapter_writes_base64_audio_from_online_api(tmp_path) -> None:
 
     assert result.generated_duration_ms == 1000
     assert result.audio_path.read_bytes() == audio_bytes
-    assert project.timeline.get_segment("seg-001").quality_flags == ["duration_ok"]
+    assert project.timeline.get_segment("seg-001").quality_flags == [
+        "duration_ok",
+        "missing_reference_audio",
+    ]
     assert '"text":"\u4f60\u597d\u3002"' in captured["body"]
     assert "warm and natural" in captured["body"]
 

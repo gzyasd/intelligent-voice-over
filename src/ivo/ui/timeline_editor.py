@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QHBoxLayout,
+    QInputDialog,
+    QLabel,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -11,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from ivo.core.project import DubbingProject
+from ivo.core.speakers import SpeakerProfile
 from ivo.core.timeline import DubbingSegment
 
 
@@ -21,6 +25,25 @@ VALID_STATUSES: set[str] = {
     "approved",
     "failed",
     "rendered",
+}
+
+STATUS_LABELS: dict[str, str] = {
+    "pending": "待处理",
+    "running": "处理中",
+    "needs_review": "待审核",
+    "approved": "已审核",
+    "failed": "失败",
+    "rendered": "已生成",
+}
+
+QUALITY_FILTERS: dict[str, str] = {
+    "all": "全部",
+    "failed": "失败",
+    "duration_too_long": "配音偏长",
+    "duration_too_short": "配音偏短",
+    "silent_audio": "静音",
+    "missing_reference_audio": "缺参考音频",
+    "speaker_ambiguous": "说话人不确定",
 }
 
 
@@ -53,10 +76,23 @@ class TimelineEditor(QWidget):
         self.project: DubbingProject | None = None
         self.save_buttons: list[QPushButton] = []
         self.regenerate_buttons: list[QPushButton] = []
+        self.set_reference_buttons: list[QPushButton] = []
+        self.clear_reference_buttons: list[QPushButton] = []
+        self.rename_speaker_buttons: list[QPushButton] = []
+        self._all_segments: list[DubbingSegment] = []
+        self._quality_filter = "all"
+        self.quality_filter_combo = QComboBox()
+        self.quality_filter_combo.addItems(list(QUALITY_FILTERS.values()))
+        self.quality_filter_combo.currentIndexChanged.connect(self._handle_quality_filter_changed)
+        self.review_summary_label = QLabel("总片段：0；已审核：0；已生成：0；质量标记：0")
+        self.quality_summary_label = QLabel("质量摘要：暂无质量问题")
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
 
         layout = QVBoxLayout()
+        layout.addWidget(self.quality_filter_combo)
+        layout.addWidget(self.review_summary_label)
+        layout.addWidget(self.quality_summary_label)
         layout.addWidget(self.table)
         self.setLayout(layout)
 
@@ -65,19 +101,26 @@ class TimelineEditor(QWidget):
         self.set_segments(project.timeline.list_segments())
 
     def set_segments(self, segments: list[DubbingSegment]) -> None:
+        self._all_segments = segments
+        visible_segments = self._filtered_segments(segments)
         self.save_buttons = []
         self.regenerate_buttons = []
-        self.table.setRowCount(len(segments))
-        for row, segment in enumerate(segments):
+        self.set_reference_buttons = []
+        self.clear_reference_buttons = []
+        self.rename_speaker_buttons = []
+        self.quality_summary_label.setText(_build_quality_summary(segments))
+        self.review_summary_label.setText(_build_review_summary(segments))
+        self.table.setRowCount(len(visible_segments))
+        for row, segment in enumerate(visible_segments):
             values = [
                 segment.id,
-                segment.speaker_id,
+                self._speaker_display_text(segment.speaker_id),
                 segment.source_text,
                 segment.target_text,
                 segment.emotion or "",
                 segment.style_prompt or "",
-                segment.status,
-                ", ".join(segment.quality_flags),
+                _status_label(segment.status),
+                ", ".join(_quality_flag_label(flag) for flag in segment.quality_flags),
             ]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -87,6 +130,8 @@ class TimelineEditor(QWidget):
                     self.COLUMN_QUALITY_FLAGS,
                 }:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if column == self.COLUMN_SPEAKER:
+                    item.setData(Qt.ItemDataRole.UserRole, segment.speaker_id)
                 self.table.setItem(row, column, item)
             self.table.setCellWidget(row, self.COLUMN_ACTION, self._build_action_widget(row, segment.id))
 
@@ -96,34 +141,100 @@ class TimelineEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         save_button = QPushButton("\u4fdd\u5b58")
         regenerate_button = QPushButton("\u91cd\u751f\u6210")
+        set_reference_button = QPushButton("\u8bbe\u53c2\u8003")
+        clear_reference_button = QPushButton("\u6e05\u53c2\u8003")
+        rename_speaker_button = QPushButton("\u91cd\u547d\u540d")
         save_button.clicked.connect(lambda _checked=False, row=row: self.save_row(row))
         regenerate_button.clicked.connect(
             lambda _checked=False, segment_id=segment_id: self.regenerate_requested.emit(segment_id)
         )
+        set_reference_button.clicked.connect(
+            lambda _checked=False, segment_id=segment_id: self.set_speaker_reference_segment(segment_id)
+        )
+        clear_reference_button.clicked.connect(
+            lambda _checked=False, segment_id=segment_id: self.clear_speaker_reference_segment(segment_id)
+        )
+        rename_speaker_button.clicked.connect(
+            lambda _checked=False, segment_id=segment_id: self.rename_speaker_from_segment(segment_id)
+        )
         layout.addWidget(save_button)
         layout.addWidget(regenerate_button)
+        layout.addWidget(set_reference_button)
+        layout.addWidget(clear_reference_button)
+        layout.addWidget(rename_speaker_button)
         widget.setLayout(layout)
         self.save_buttons.append(save_button)
         self.regenerate_buttons.append(regenerate_button)
+        self.set_reference_buttons.append(set_reference_button)
+        self.clear_reference_buttons.append(clear_reference_button)
+        self.rename_speaker_buttons.append(rename_speaker_button)
         return widget
 
     def save_row(self, row: int) -> DubbingSegment:
         if self.project is None:
-            raise RuntimeError("Timeline editor has no project.")
+            raise RuntimeError("请先创建或打开项目。")
 
         segment_id = self._cell_text(row, self.COLUMN_ID)
-        status = self._cell_text(row, self.COLUMN_STATUS)
+        status = _status_value(self._cell_text(row, self.COLUMN_STATUS))
         if status not in VALID_STATUSES:
-            raise ValueError(f"invalid segment status: {status}")
+            raise ValueError(f"无效片段状态：{status}")
+        current = self.project.timeline.get_segment(segment_id)
+        speaker_id = self._speaker_id_for_row(row)
+        target_text = self._cell_text(row, self.COLUMN_TARGET_TEXT)
+        style_prompt = self._optional_cell_text(row, self.COLUMN_STYLE_PROMPT)
+        editable_changed = (
+            speaker_id != current.speaker_id
+            or target_text != current.target_text
+            or style_prompt != current.style_prompt
+        )
+        if current.status == "rendered" and editable_changed:
+            status = "needs_review"
+            self._remove_rendered_audio(segment_id)
 
         return self.project.timeline.update_segment(
             segment_id,
-            speaker_id=self._cell_text(row, self.COLUMN_SPEAKER),
-            target_text=self._cell_text(row, self.COLUMN_TARGET_TEXT),
+            speaker_id=speaker_id,
+            target_text=target_text,
             emotion=self._optional_cell_text(row, self.COLUMN_EMOTION),
-            style_prompt=self._optional_cell_text(row, self.COLUMN_STYLE_PROMPT),
+            style_prompt=style_prompt,
             status=status,
         )
+
+    def set_speaker_reference_segment(self, segment_id: str) -> SpeakerProfile:
+        if self.project is None:
+            raise RuntimeError("请先创建或打开项目。")
+        segment = self.project.timeline.get_segment(segment_id)
+        profile = self.project.speakers.set_reference_segment(
+            segment.speaker_id,
+            segment.id,
+            display_name=segment.speaker_id,
+        )
+        self.set_project(self.project)
+        return profile
+
+    def clear_speaker_reference_segment(self, segment_id: str) -> SpeakerProfile:
+        if self.project is None:
+            raise RuntimeError("请先创建或打开项目。")
+        segment = self.project.timeline.get_segment(segment_id)
+        profile = self.project.speakers.clear_reference_segment(segment.speaker_id, segment.id)
+        self.set_project(self.project)
+        return profile
+
+    def rename_speaker_from_segment(self, segment_id: str) -> SpeakerProfile | None:
+        if self.project is None:
+            raise RuntimeError("请先创建或打开项目。")
+        segment = self.project.timeline.get_segment(segment_id)
+        display_name, accepted = QInputDialog.getText(
+            self,
+            "\u91cd\u547d\u540d\u89d2\u8272",
+            "\u89d2\u8272\u540d\u79f0",
+            text=self._speaker_display_text(segment.speaker_id),
+        )
+        if not accepted or not display_name.strip():
+            return None
+        profile = self.project.speakers.rename(segment.speaker_id, display_name.strip())
+        self.set_project(self.project)
+        return profile
 
     def _cell_text(self, row: int, column: int) -> str:
         item = self.table.item(row, column)
@@ -132,3 +243,111 @@ class TimelineEditor(QWidget):
     def _optional_cell_text(self, row: int, column: int) -> str | None:
         value = self._cell_text(row, column)
         return value or None
+
+    def _speaker_id_for_row(self, row: int) -> str:
+        item = self.table.item(row, self.COLUMN_SPEAKER)
+        if item is None:
+            return ""
+        text = item.text().strip()
+        stored_speaker_id = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(stored_speaker_id, str) and self._speaker_display_text(stored_speaker_id) == text:
+            return stored_speaker_id
+        return text
+
+    def _speaker_display_text(self, speaker_id: str) -> str:
+        if self.project is None:
+            return speaker_id
+        profile = self.project.speakers.get(speaker_id)
+        if profile is None:
+            return speaker_id
+        return profile.display_name
+
+    def set_quality_filter(self, quality_filter: str) -> None:
+        self._quality_filter = quality_filter
+        label = QUALITY_FILTERS.get(quality_filter)
+        if label is not None:
+            self.quality_filter_combo.setCurrentText(label)
+        self.set_segments(self._all_segments)
+
+    def visible_segment_ids(self) -> list[str]:
+        ids: list[str] = []
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, self.COLUMN_ID)
+            if item is not None:
+                ids.append(item.text())
+        return ids
+
+    def _filtered_segments(self, segments: list[DubbingSegment]) -> list[DubbingSegment]:
+        if self._quality_filter == "all":
+            return segments
+        if self._quality_filter == "failed":
+            return [segment for segment in segments if segment.status == "failed"]
+        return [
+            segment
+            for segment in segments
+            if self._quality_filter in segment.quality_flags
+        ]
+
+    def _handle_quality_filter_changed(self, index: int) -> None:
+        filters = list(QUALITY_FILTERS.keys())
+        if index < 0 or index >= len(filters):
+            return
+        self._quality_filter = filters[index]
+        self.set_segments(self._all_segments)
+
+    def _remove_rendered_audio(self, segment_id: str) -> None:
+        if self.project is None:
+            return
+        audio_path = self.project.path / "work" / "generated_segments" / f"{segment_id}.wav"
+        if audio_path.is_file():
+            audio_path.unlink()
+
+
+def _quality_flag_label(flag: str) -> str:
+    labels = {
+        "duration_too_short": "配音偏短",
+        "duration_too_long": "配音偏长",
+        "duration_mismatch": "时长不匹配",
+        "tts_retried": "已自动重试",
+        "duration_ok": "时长正常",
+        "silent_audio": "音频静音",
+        "missing_reference_audio": "缺少参考音频",
+        "speaker_unmatched": "说话人未匹配",
+        "speaker_ambiguous": "说话人不确定",
+    }
+    return labels.get(flag, flag)
+
+
+def _status_label(status: str) -> str:
+    return STATUS_LABELS.get(status, status)
+
+
+def _status_value(label_or_status: str) -> str:
+    if label_or_status in VALID_STATUSES:
+        return label_or_status
+    for status, label in STATUS_LABELS.items():
+        if label == label_or_status:
+            return status
+    return label_or_status
+
+
+def _build_review_summary(segments: list[DubbingSegment]) -> str:
+    total_segments = len(segments)
+    reviewed_segments = sum(1 for segment in segments if segment.status in {"approved", "rendered"})
+    rendered_segments = sum(1 for segment in segments if segment.status == "rendered")
+    quality_flagged_segments = sum(1 for segment in segments if segment.quality_flags)
+    return (
+        f"总片段：{total_segments}；已审核：{reviewed_segments}；"
+        f"已生成：{rendered_segments}；质量标记：{quality_flagged_segments}"
+    )
+
+
+def _build_quality_summary(segments: list[DubbingSegment]) -> str:
+    counts: dict[str, int] = {}
+    for segment in segments:
+        for flag in segment.quality_flags:
+            counts[flag] = counts.get(flag, 0) + 1
+    if not counts:
+        return "质量摘要：暂无质量问题"
+    joined = "; ".join(f"{_quality_flag_label(flag)}: {count}" for flag, count in counts.items())
+    return f"质量摘要：{joined}"

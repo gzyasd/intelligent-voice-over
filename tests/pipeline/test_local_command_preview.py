@@ -117,6 +117,18 @@ def test_local_command_preview_runs_from_video_to_preview_export(tmp_path) -> No
     assert result.generated_segments[0].is_file()
     assert segment.status == "rendered"
     assert segment.target_text == "Well, hello."
+    assert {
+        record.stage: record.status
+        for record in project.jobs.list_records()
+    } == {
+        "import": "completed",
+        "audio_extract": "completed",
+        "separation": "completed",
+        "asr": "completed",
+        "translation": "completed",
+        "tts": "completed",
+        "export": "completed",
+    }
 
 
 def test_local_command_preview_uses_translation_adapter(tmp_path) -> None:
@@ -206,8 +218,9 @@ def test_local_command_preview_can_use_custom_tts_adapter(tmp_path) -> None:
             output_path: Path,
             style_prompt: str | None,
             reference_audio_path: Path | None,
+            reference_text: str,
             target_duration_ms: int,
-            ) -> int:
+        ) -> int:
             self.texts.append(text)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with wave.open(str(output_path), "wb") as wav_file:
@@ -263,6 +276,397 @@ def test_local_command_preview_can_use_custom_tts_adapter(tmp_path) -> None:
     assert tts_adapter.texts == ["\u4f60\u597d\u3002"]
     assert result.generated_segments[0].is_file()
     assert project.timeline.get_segment("seg-001").status == "rendered"
+
+
+def test_local_command_preview_marks_failed_stage_for_tts_error(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg
+    from ivo.pipeline.local_command_preview import run_local_command_preview
+
+    class FailingTtsAdapter:
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+        ) -> int:
+            raise RuntimeError("tts model crashed")
+
+    try:
+        ffmpeg = require_ffmpeg()
+    except FFmpegNotFoundError:
+        pytest.skip("FFmpeg is not visible in this shell; set IVO_FFMPEG_PATH or restart terminal.")
+
+    source_video = tmp_path / "source.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:duration=1:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=550:duration=1",
+            "-shortest",
+            str(source_video),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    project = DubbingProject.create(
+        tmp_path / "failed-tts-preview.ivoproj",
+        name="Failed TTS Preview",
+        source_language="en",
+        target_language="zh",
+    )
+
+    with pytest.raises(RuntimeError, match="tts model crashed"):
+        run_local_command_preview(
+            project,
+            source_video=source_video,
+            profiles=_mock_profiles(tmp_path),
+            translation_overrides={"seg-001": "\u4f60\u597d\u3002"},
+            tts_adapter=FailingTtsAdapter(),
+            ffmpeg_path=ffmpeg,
+            watermark_text=None,
+        )
+
+    records = {record.stage: record for record in project.jobs.list_records()}
+    assert records["translation"].status == "completed"
+    assert records["tts"].status == "failed"
+    assert records["tts"].message == "tts model crashed"
+    assert "export" not in records
+
+
+def test_local_command_preview_resumes_completed_file_stages(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg
+    from ivo.pipeline.local_command_preview import run_local_command_preview
+    from ivo.pipeline.separate_audio import SeparationResult
+    from ivo.pipeline.transcribe import TranscriptionSegment
+
+    class ExplodingSeparationAdapter:
+        def separate(
+            self,
+            input_audio: Path,
+            *,
+            vocals_path: Path,
+            background_path: Path,
+        ) -> SeparationResult:
+            raise AssertionError("separation should have been resumed from existing files")
+
+    class RecordingAsrAdapter:
+        def __init__(self) -> None:
+            self.audio_paths: list[Path] = []
+
+        def transcribe(
+            self,
+            audio_path: Path,
+            *,
+            source_language: str,
+        ) -> list[TranscriptionSegment]:
+            self.audio_paths.append(audio_path)
+            return [
+                TranscriptionSegment(
+                    id="seg-001",
+                    start_ms=0,
+                    end_ms=1_000,
+                    source_language=source_language,
+                    source_text="Previously separated audio.",
+                    speaker_id="speaker-1",
+                )
+            ]
+
+    class SilentTtsAdapter:
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+        ) -> int:
+            _write_silent_wav(output_path, duration_ms=target_duration_ms)
+            return target_duration_ms
+
+    try:
+        ffmpeg = require_ffmpeg()
+    except FFmpegNotFoundError:
+        pytest.skip("FFmpeg is not visible in this shell; set IVO_FFMPEG_PATH or restart terminal.")
+
+    project = DubbingProject.create(
+        tmp_path / "resume-preview.ivoproj",
+        name="Resume Preview",
+        source_language="en",
+        target_language="zh",
+    )
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:duration=1:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-shortest",
+            str(project.path / "assets" / "source_video.mp4"),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    for audio_path in (
+        project.path / "assets" / "extracted_audio.wav",
+        project.path / "work" / "vocals.wav",
+        project.path / "work" / "background.wav",
+    ):
+        _write_silent_wav(audio_path, duration_ms=1_000)
+    for stage in ("import", "audio_extract", "separation"):
+        project.jobs.mark_completed(stage, "completed")
+
+    asr_adapter = RecordingAsrAdapter()
+    result = run_local_command_preview(
+        project,
+        source_video=tmp_path / "source-does-not-need-to-exist.mp4",
+        profiles=_mock_profiles(tmp_path),
+        separation_adapter=ExplodingSeparationAdapter(),
+        asr_adapter=asr_adapter,
+        tts_adapter=SilentTtsAdapter(),
+        translation_overrides={"seg-001": "\u4f60\u597d\u3002"},
+        ffmpeg_path=ffmpeg,
+        watermark_text=None,
+    )
+
+    assert asr_adapter.audio_paths == [project.path / "work" / "vocals.wav"]
+    assert result.final_video.is_file()
+    assert project.jobs.get("import").status == "completed"  # type: ignore[union-attr]
+    assert project.jobs.get("audio_extract").status == "completed"  # type: ignore[union-attr]
+    assert project.jobs.get("separation").status == "completed"  # type: ignore[union-attr]
+
+
+def test_local_command_preview_resumes_completed_timeline_and_export_artifacts(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.local_command_preview import run_local_command_preview
+    from ivo.pipeline.transcribe import TranscriptionSegment
+
+    class ExplodingAsrAdapter:
+        def transcribe(
+            self,
+            audio_path: Path,
+            *,
+            source_language: str,
+        ) -> list[TranscriptionSegment]:
+            raise AssertionError("asr should have been resumed from timeline")
+
+    class ExplodingTtsAdapter:
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+        ) -> int:
+            raise AssertionError("rendered segment audio should have been reused")
+
+    project = DubbingProject.create(
+        tmp_path / "resume-complete.ivoproj",
+        name="Resume Complete",
+        source_language="en",
+        target_language="zh",
+    )
+    (project.path / "assets" / "source_video.mp4").write_bytes(b"source video")
+    for audio_path in (
+        project.path / "assets" / "extracted_audio.wav",
+        project.path / "work" / "vocals.wav",
+        project.path / "work" / "background.wav",
+        project.path / "work" / "generated_segments" / "seg-001.wav",
+    ):
+        _write_silent_wav(audio_path, duration_ms=1_000)
+    final_video = project.path / "renders" / "local-preview.mp4"
+    final_video.write_bytes(b"existing final")
+    project.timeline.add_segment(
+        DubbingSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            speaker_id="speaker-1",
+            source_language="en",
+            source_text="Already transcribed.",
+            target_language="zh",
+            target_text="Already translated.",
+            status="rendered",
+        )
+    )
+    for stage in ("import", "audio_extract", "separation", "asr", "translation", "tts", "export"):
+        project.jobs.mark_completed(stage, "completed")
+
+    result = run_local_command_preview(
+        project,
+        source_video=tmp_path / "missing-source.mp4",
+        profiles=_mock_profiles(tmp_path),
+        asr_adapter=ExplodingAsrAdapter(),
+        tts_adapter=ExplodingTtsAdapter(),
+        watermark_text=None,
+    )
+
+    assert result.final_video == final_video
+    assert final_video.read_bytes() == b"existing final"
+    assert result.generated_segments == [project.path / "work" / "generated_segments" / "seg-001.wav"]
+
+
+def test_local_command_preview_resumes_failed_tts_from_rendered_segments(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg
+    from ivo.pipeline.local_command_preview import run_local_command_preview
+    from ivo.pipeline.transcribe import TranscriptionSegment
+
+    class TwoSegmentAsrAdapter:
+        def transcribe(
+            self,
+            audio_path: Path,
+            *,
+            source_language: str,
+        ) -> list[TranscriptionSegment]:
+            return [
+                TranscriptionSegment(
+                    id="seg-001",
+                    start_ms=0,
+                    end_ms=1_000,
+                    source_language=source_language,
+                    source_text="Line one.",
+                    speaker_id="speaker-1",
+                ),
+                TranscriptionSegment(
+                    id="seg-002",
+                    start_ms=1_000,
+                    end_ms=2_000,
+                    source_language=source_language,
+                    source_text="Line two.",
+                    speaker_id="speaker-1",
+                ),
+            ]
+
+    class FailSecondTtsAdapter:
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+        ) -> int:
+            if text == "第二句。":
+                raise RuntimeError("second segment failed")
+            _write_silent_wav(output_path, duration_ms=target_duration_ms)
+            return target_duration_ms
+
+    class RecordingTtsAdapter:
+        def __init__(self) -> None:
+            self.texts: list[str] = []
+
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+        ) -> int:
+            self.texts.append(text)
+            _write_silent_wav(output_path, duration_ms=target_duration_ms)
+            return target_duration_ms
+
+    try:
+        ffmpeg = require_ffmpeg()
+    except FFmpegNotFoundError:
+        pytest.skip("FFmpeg is not visible in this shell; set IVO_FFMPEG_PATH or restart terminal.")
+
+    source_video = tmp_path / "source.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=64x64:duration=2:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=550:duration=2",
+            "-shortest",
+            str(source_video),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    project = DubbingProject.create(
+        tmp_path / "failed-second-tts.ivoproj",
+        name="Failed Second TTS",
+        source_language="en",
+        target_language="zh",
+    )
+
+    with pytest.raises(RuntimeError, match="second segment failed"):
+        run_local_command_preview(
+            project,
+            source_video=source_video,
+            profiles=_mock_profiles(tmp_path),
+            asr_adapter=TwoSegmentAsrAdapter(),
+            tts_adapter=FailSecondTtsAdapter(),
+            translation_overrides={"seg-001": "第一句。", "seg-002": "第二句。"},
+            ffmpeg_path=ffmpeg,
+            watermark_text=None,
+        )
+
+    assert project.timeline.get_segment("seg-001").status == "rendered"
+    assert project.jobs.get("translation").status == "completed"  # type: ignore[union-attr]
+    assert project.jobs.get("tts").status == "failed"  # type: ignore[union-attr]
+
+    recording_tts = RecordingTtsAdapter()
+    result = run_local_command_preview(
+        project,
+        source_video=source_video,
+        profiles=_mock_profiles(tmp_path),
+        asr_adapter=TwoSegmentAsrAdapter(),
+        tts_adapter=recording_tts,
+        translation_overrides={"seg-001": "第一句。", "seg-002": "第二句。"},
+        ffmpeg_path=ffmpeg,
+        watermark_text=None,
+    )
+
+    assert recording_tts.texts == ["第二句。"]
+    assert result.final_video.is_file()
+    assert project.timeline.get_segment("seg-001").status == "rendered"
+    assert project.timeline.get_segment("seg-002").status == "rendered"
 
 
 def test_local_command_preview_can_use_custom_asr_adapter(tmp_path) -> None:
@@ -533,3 +937,16 @@ def _mock_profiles(tmp_path: Path):
             output_json_path=str(tmp_path / "tts.json"),
         ),
     )
+
+
+def _write_silent_wav(output_path: Path, *, duration_ms: int) -> None:
+    import wave
+
+    sample_rate = 16_000
+    sample_count = int(sample_rate * (duration_ms / 1000))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(output_path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(b"\x00\x00" * sample_count)

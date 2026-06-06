@@ -7,7 +7,7 @@ def test_export_dialog_browses_output_path(monkeypatch, qtbot, tmp_path) -> None
     output = tmp_path / "final.mp4"
     monkeypatch.setattr(
         "ivo.ui.export_dialog.QFileDialog.getSaveFileName",
-        lambda *args, **kwargs: (str(output), "MP4 video (*.mp4)"),
+        lambda *args, **kwargs: (str(output), "MP4 视频 (*.mp4)"),
     )
 
     dialog = ExportDialog()
@@ -40,7 +40,7 @@ def test_main_window_runs_final_export_from_dialog(monkeypatch, qtbot, tmp_path)
     qtbot.addWidget(dialog)
     dialog.confirmation_checkbox.setChecked(True)
     dialog.watermark_checkbox.setChecked(True)
-    dialog.watermark_text.setText("AI Dubbed")
+    dialog.watermark_text.setText("AI 配音")
     dialog.output_path_edit.setText(str(tmp_path / "final.mp4"))
 
     output = window.run_final_export(dialog)
@@ -54,7 +54,7 @@ def test_main_window_runs_final_export_from_dialog(monkeypatch, qtbot, tmp_path)
     assert request.segment_audio[0].path == generated_audio
     assert request.segment_audio[0].start_ms == 250
     assert request.metadata["ai_dubbing"] == "true"
-    assert request.watermark_text == "AI Dubbed"
+    assert request.watermark_text == "AI 配音"
     assert window.progress_label.text() == "\u6700\u7ec8\u5bfc\u51fa\u5df2\u5b8c\u6210"
 
 

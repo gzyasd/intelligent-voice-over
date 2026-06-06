@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from collections.abc import Callable
+from inspect import Parameter, signature
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from ivo.adapters.base import AdapterContext, AdapterError, AdapterResult, MockStageAdapter
 
-CommandRunner = Callable[[list[str]], None]
+CommandRunner = Callable[..., None]
 
 
 class LocalCommandProfile(BaseModel):
@@ -43,33 +45,61 @@ class LocalCommandAdapter:
     def run(self, context: AdapterContext) -> AdapterResult:
         values = context.template_values()
         values.update(self.profile.extra)
+        values.setdefault("python_executable", sys.executable)
         values["output_json_path"] = self._render_string(self.profile.output_json_path, values)
         command = [self._render_string(part, values) for part in self.profile.command]
         output_path = Path(str(values["output_json_path"]))
+        working_dir = str(values["working_dir"]) if values.get("working_dir") else None
 
         try:
             if self.runner is None:
-                subprocess.run(command, check=True)
+                subprocess.run(command, check=True, capture_output=True, text=True, cwd=working_dir)
             else:
-                self.runner(command)
+                _run_with_optional_cwd(self.runner, command, working_dir)
             if not output_path.is_file():
-                return self._error(f"output JSON not found: {output_path}")
+                return self._error(
+                    f"output JSON not found: {output_path}",
+                    command=command,
+                    output_path=output_path,
+                )
             payload = json.loads(output_path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
-                return self._error("output JSON must be an object")
+                return self._error(
+                    "output JSON must be an object",
+                    command=command,
+                    output_path=output_path,
+                )
             return AdapterResult(
                 stage=self.stage,
                 provider=self.provider,
                 ok=True,
                 payload=payload,
             )
-        except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
-            return self._error(str(exc))
+        except subprocess.CalledProcessError as exc:
+            return self._error(
+                "local command failed",
+                command=command,
+                output_path=output_path,
+                returncode=exc.returncode,
+                stderr=exc.stderr,
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            return self._error(str(exc), command=command, output_path=output_path)
 
     def _render_string(self, template: str, variables: dict[str, Any]) -> str:
         return self._environment.from_string(template).render(**variables)
 
-    def _error(self, message: str) -> AdapterResult:
+    def _error(
+        self,
+        message: str,
+        *,
+        command: list[str] | None = None,
+        output_path: Path | None = None,
+        returncode: int | None = None,
+        stderr: str | bytes | None = None,
+    ) -> AdapterResult:
+        stderr_summary = _summarize_stderr(stderr)
+        output_json_path = str(output_path) if output_path is not None else None
         return AdapterResult(
             stage=self.stage,
             provider=self.provider,
@@ -77,9 +107,70 @@ class LocalCommandAdapter:
             error=AdapterError(
                 provider=self.provider,
                 stage=self.stage,
-                message=message,
+                message=self._format_error_message(
+                    message,
+                    command=command,
+                    output_path=output_path,
+                    returncode=returncode,
+                    stderr_summary=stderr_summary,
+                ),
                 retryable=False,
+                command=command,
+                exit_code=returncode,
+                stderr_summary=stderr_summary or None,
+                output_json_path=output_json_path,
             ),
         )
+
+    def _format_error_message(
+        self,
+        message: str,
+        *,
+        command: list[str] | None,
+        output_path: Path | None,
+        returncode: int | None,
+        stderr_summary: str,
+    ) -> str:
+        lines = [
+            message,
+            f"stage: {self.stage}",
+            f"provider: {self.provider}",
+        ]
+        if returncode is not None:
+            lines.append(f"exit code: {returncode}")
+        if command is not None:
+            lines.append(f"command: {' '.join(command)}")
+        if output_path is not None:
+            lines.append(f"output JSON: {output_path}")
+        if stderr_summary:
+            lines.append(f"stderr: {stderr_summary}")
+        return "\n".join(lines)
+
+
+def _summarize_stderr(stderr: str | bytes | None) -> str:
+    if stderr is None:
+        return ""
+    if isinstance(stderr, bytes):
+        text = stderr.decode("utf-8", errors="replace")
+    else:
+        text = stderr
+    return " ".join(text.split())[:500]
+
+
+def _run_with_optional_cwd(
+    runner: CommandRunner,
+    command: list[str],
+    cwd: str | None,
+) -> None:
+    parameters = signature(runner).parameters
+    accepts_kwargs = any(
+        parameter.kind == Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    if accepts_kwargs or "cwd" in parameters:
+        runner(command, cwd=cwd)
+        return
+    runner(command)
+
 
 __all__ = ["LocalCommandAdapter", "LocalCommandProfile", "MockStageAdapter"]

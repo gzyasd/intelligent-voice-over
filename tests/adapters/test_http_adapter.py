@@ -98,6 +98,47 @@ def test_http_adapter_returns_provider_error_for_non_success_status(tmp_path) ->
     assert "busy" in result.error.message
 
 
+def test_http_adapter_extracts_json_provider_error_message(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter
+
+    adapter = HttpStageAdapter(
+        ApiAdapterProfile(
+            id="quota-provider",
+            stage="tts",
+            method="POST",
+            url="https://api.example.test/tts",
+            headers={},
+            request_template={"text": "{{ segment_text }}"},
+            response_mapping={"audio_base64": "$.audio"},
+        ),
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    500,
+                    json={"error": {"message": "quota exhausted"}},
+                )
+            )
+        ),
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="Hello",
+            source_language="en",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error is not None
+    assert result.error.http_status == 500
+    assert result.error.message == "quota exhausted"
+    assert result.error.retryable is True
+
+
 def test_http_adapter_returns_timeout_error(tmp_path) -> None:
     from ivo.adapters.base import AdapterContext
     from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter

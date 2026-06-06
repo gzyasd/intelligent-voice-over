@@ -89,7 +89,7 @@ def test_main_window_regenerates_timeline_segment_from_local_tts_profile(
     assert reloaded.target_text == "\u55e8\uff0c\u4f60\u597d\u3002"
     assert reloaded.status == "rendered"
     assert reloaded.quality_flags == ["duration_ok"]
-    assert window.timeline_editor.table.item(0, window.timeline_editor.COLUMN_STATUS).text() == "rendered"
+    assert window.timeline_editor.table.item(0, window.timeline_editor.COLUMN_STATUS).text() == "已生成"
     assert "\u7247\u6bb5\u5df2\u91cd\u751f\u6210" in window.progress_label.text()
 
 
@@ -153,8 +153,50 @@ def test_main_window_builds_background_worker_for_segment_regeneration(
     assert captured["segment_id"] == "seg-001"
     assert worker.result.segment_id == "seg-001"
     assert window.timeline_editor.regenerate_buttons[0].isEnabled() is True
-    assert window.timeline_editor.table.item(0, window.timeline_editor.COLUMN_STATUS).text() == "rendered"
+    assert window.timeline_editor.table.item(0, window.timeline_editor.COLUMN_STATUS).text() == "已生成"
     assert "\u7247\u6bb5\u5df2\u91cd\u751f\u6210" in window.progress_label.text()
+
+
+def test_editing_rendered_segment_reopens_review_and_removes_audio(qtbot, tmp_path) -> None:
+    from ivo.core.timeline import DubbingSegment
+    from ivo.ui.timeline_editor import TimelineEditor
+
+    from ivo.core.project import DubbingProject
+
+    project = DubbingProject.create(
+        tmp_path / "review-reset.ivoproj",
+        name="Review Reset",
+        source_language="en",
+        target_language="zh",
+    )
+    project.timeline.add_segment(
+        DubbingSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_000,
+            speaker_id="speaker-1",
+            source_language="en",
+            source_text="Well, hi.",
+            target_language="zh",
+            target_text="你好。",
+            status="rendered",
+            quality_flags=["duration_ok"],
+        )
+    )
+    generated_audio = project.path / "work" / "generated_segments" / "seg-001.wav"
+    generated_audio.parent.mkdir(parents=True, exist_ok=True)
+    generated_audio.write_bytes(b"old speech")
+
+    editor = TimelineEditor()
+    qtbot.addWidget(editor)
+    editor.set_project(project)
+    editor.table.item(0, editor.COLUMN_TARGET_TEXT).setText("嗨，你好。")
+
+    updated = editor.save_row(0)
+
+    assert updated.status == "needs_review"
+    assert project.timeline.get_segment("seg-001").status == "needs_review"
+    assert not generated_audio.exists()
 
 
 def _write_local_profiles(tmp_path):

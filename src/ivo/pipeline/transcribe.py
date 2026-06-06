@@ -4,12 +4,15 @@ from pathlib import Path
 from typing import Protocol
 
 import httpx
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ivo.adapters.base import AdapterContext
 from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter
 from ivo.adapters.local import CommandRunner, LocalCommandAdapter, LocalCommandProfile
 from ivo.core.timeline import SourceLanguage
+
+
+_AMBIGUOUS_SPEAKER_OVERLAP_RATIO_PERCENT = 80
 
 
 class TranscriptionSegment(BaseModel):
@@ -19,6 +22,7 @@ class TranscriptionSegment(BaseModel):
     source_language: SourceLanguage
     source_text: str
     speaker_id: str = "unknown"
+    quality_flags: list[str] = Field(default_factory=list)
 
     @field_validator("start_ms", "end_ms")
     @classmethod
@@ -106,6 +110,7 @@ class LocalCommandAsrAdapter:
                     source_language=source_language,
                     source_text=str(raw_segment.get("source_text", raw_segment.get("text", ""))),
                     speaker_id=str(raw_segment.get("speaker_id", "unknown")),
+                    quality_flags=_read_quality_flags(raw_segment),
                 )
             )
         return segments
@@ -261,6 +266,7 @@ class HttpAsrAdapter:
                     source_language=source_language,
                     source_text=str(raw_segment.get("source_text", raw_segment.get("text", ""))),
                     speaker_id=str(raw_segment.get("speaker_id", "unknown")),
+                    quality_flags=_read_quality_flags(raw_segment),
                 )
             )
         return segments
@@ -288,11 +294,53 @@ def assign_speakers(
 ) -> list[TranscriptionSegment]:
     assigned: list[TranscriptionSegment] = []
     for segment in segments:
-        midpoint = segment.start_ms + ((segment.end_ms - segment.start_ms) // 2)
         speaker_id = segment.speaker_id
+        overlaps_by_speaker: dict[str, int] = {}
         for diarization in diarization_segments:
-            if diarization.start_ms <= midpoint < diarization.end_ms:
-                speaker_id = diarization.speaker_id
-                break
-        assigned.append(segment.model_copy(update={"speaker_id": speaker_id}))
+            overlap_ms = _overlap_ms(segment, diarization)
+            if overlap_ms > 0:
+                overlaps_by_speaker[diarization.speaker_id] = (
+                    overlaps_by_speaker.get(diarization.speaker_id, 0) + overlap_ms
+                )
+        quality_flags = list(segment.quality_flags)
+        ranked_overlaps = sorted(overlaps_by_speaker.items(), key=lambda item: item[1], reverse=True)
+        best_overlap_ms = ranked_overlaps[0][1] if ranked_overlaps else 0
+        if best_overlap_ms > 0:
+            speaker_id = ranked_overlaps[0][0]
+            if _has_ambiguous_speaker_overlap(ranked_overlaps) and "speaker_ambiguous" not in quality_flags:
+                quality_flags.append("speaker_ambiguous")
+        elif "speaker_unmatched" not in quality_flags:
+            quality_flags.append("speaker_unmatched")
+        assigned.append(segment.model_copy(update={"speaker_id": speaker_id, "quality_flags": quality_flags}))
     return assigned
+
+
+def merge_speakers(
+    segments: list[TranscriptionSegment],
+    diarization_segments: list[DiarizationSegment],
+) -> list[TranscriptionSegment]:
+    return assign_speakers(segments, diarization_segments)
+
+
+def _has_ambiguous_speaker_overlap(ranked_overlaps: list[tuple[str, int]]) -> bool:
+    if len(ranked_overlaps) < 2:
+        return False
+    best_overlap_ms = ranked_overlaps[0][1]
+    second_overlap_ms = ranked_overlaps[1][1]
+    return (
+        second_overlap_ms > 0
+        and second_overlap_ms * 100 >= best_overlap_ms * _AMBIGUOUS_SPEAKER_OVERLAP_RATIO_PERCENT
+    )
+
+
+def _overlap_ms(segment: TranscriptionSegment, diarization: DiarizationSegment) -> int:
+    start_ms = max(segment.start_ms, diarization.start_ms)
+    end_ms = min(segment.end_ms, diarization.end_ms)
+    return max(0, end_ms - start_ms)
+
+
+def _read_quality_flags(raw_segment: dict[object, object]) -> list[str]:
+    raw_flags = raw_segment.get("quality_flags", [])
+    if not isinstance(raw_flags, list):
+        return []
+    return [str(flag) for flag in raw_flags]

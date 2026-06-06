@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -18,7 +19,9 @@ from ivo.compliance.confirmation import ExportConfirmation
 from ivo.adapters.http import ApiAdapterProfile
 from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
+from ivo.core.settings import ProfileSelectionSettings, TranslationSettings
 from ivo.core.timeline import SourceLanguage
+from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
 from ivo.pipeline.local_command_preview import (
     LocalCommandPipelineProfiles,
@@ -36,25 +39,33 @@ from ivo.pipeline.synthesize import (
 )
 from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
+from ivo.profile_defaults import default_local_command_profiles_path
+from ivo.profile_runtime import prepare_local_command_profiles
 from ivo.ui.export_dialog import ExportDialog
 from ivo.ui.model_settings import ModelSettings
 from ivo.ui.project_wizard import ProjectWizard
+from ivo.ui.run_log import RunLogPanel
 from ivo.ui.timeline_editor import TimelineEditor
 from ivo.ui.workers import PipelineWorker
 
 
 class MainWindow(QMainWindow):
+    START_DUBBING_TEXT = "开始生成配音（完整流程）"
+    NEXT_STEP_TEXT = f"项目已创建。下一步：点击“{START_DUBBING_TEXT}”。"
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("\u667a\u80fd\u89c6\u9891\u914d\u97f3")
 
         self.create_project_button = QPushButton("\u65b0\u5efa\u9879\u76ee")
         self.open_project_button = QPushButton("\u6253\u5f00\u9879\u76ee")
-        self.local_preview_button = QPushButton("\u672c\u5730\u547d\u4ee4\u9884\u89c8")
+        self.local_preview_button = QPushButton(self.START_DUBBING_TEXT)
+        self.evaluation_report_button = QPushButton("\u751f\u6210\u8bc4\u4f30\u62a5\u544a")
         self.export_button = QPushButton("\u6700\u7ec8\u5bfc\u51fa")
         self.progress_label = QLabel("\u5c1a\u672a\u5f00\u59cb")
         self.timeline_editor = TimelineEditor()
         self.model_settings = ModelSettings()
+        self.run_log_panel = RunLogPanel()
         self.current_project: DubbingProject | None = None
         self.source_video_path: Path | None = None
         self.local_preview_worker: PipelineWorker | None = None
@@ -64,18 +75,21 @@ class MainWindow(QMainWindow):
         self.create_project_button.clicked.connect(self.open_project_wizard)
         self.open_project_button.clicked.connect(self.open_existing_project)
         self.local_preview_button.clicked.connect(lambda: self.start_local_preview_background())
+        self.evaluation_report_button.clicked.connect(self.write_evaluation_report)
         self.export_button.clicked.connect(self.open_export_dialog)
         self.timeline_editor.regenerate_requested.connect(self.start_segment_regeneration_background)
 
         tabs = QTabWidget()
         tabs.addTab(self.timeline_editor, "\u65f6\u95f4\u7ebf")
-        tabs.addTab(self.model_settings, "\u6a21\u578b\u8bbe\u7f6e")
+        tabs.addTab(_scrollable(self.model_settings), "\u6a21\u578b\u8bbe\u7f6e")
+        tabs.addTab(self.run_log_panel, "\u8fd0\u884c\u65e5\u5fd7")
 
         root = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(self.create_project_button)
         layout.addWidget(self.open_project_button)
         layout.addWidget(self.local_preview_button)
+        layout.addWidget(self.evaluation_report_button)
         layout.addWidget(self.export_button)
         layout.addWidget(self.progress_label)
         layout.addWidget(tabs)
@@ -101,18 +115,26 @@ class MainWindow(QMainWindow):
         )
         self.current_project = project
         self.source_video_path = source_video
-        self.progress_label.setText("\u9879\u76ee\u5df2\u521b\u5efa")
+        self.progress_label.setText(self.NEXT_STEP_TEXT)
         self.timeline_editor.set_project(project)
         return project
 
     def create_project_from_wizard(self, wizard: ProjectWizard) -> DubbingProject:
         values = wizard.values()
-        return self.create_project_from_inputs(
+        project = self.create_project_from_inputs(
             project_name=values.project_name,
             source_video=values.source_video,
             output_dir=values.output_dir,
             source_language=values.source_language,
         )
+        project.settings.update_translation(
+            TranslationSettings(
+                series_type=values.series_type,
+                translation_style_notes=values.translation_style_notes,
+                glossary=_load_glossary(values.glossary_path),
+            )
+        )
+        return project
 
     def open_project_wizard(self) -> DubbingProject | None:
         wizard = ProjectWizard(self)
@@ -150,7 +172,7 @@ class MainWindow(QMainWindow):
         self.current_project = project
         self.source_video_path = project.source_video_path
         self.timeline_editor.set_project(project)
-        self.progress_label.setText("\u9879\u76ee\u5df2\u6253\u5f00")
+        self.progress_label.setText(f"项目已打开。下一步：点击“{self.START_DUBBING_TEXT}”。")
         return project
 
     def run_mock_preview(self) -> MockPipelineResult:
@@ -169,13 +191,16 @@ class MainWindow(QMainWindow):
         return result
 
     def run_local_preview(self) -> LocalCommandPreviewResult:
-        self.progress_label.setText("\u6b63\u5728\u751f\u6210\u672c\u5730\u547d\u4ee4\u9884\u89c8")
+        self.progress_label.setText("正在生成配音，请稍候")
+        self.run_log_panel.append_stage_message("配音生成", "已开始")
         result = self._execute_local_preview()
-        self._refresh_after_local_preview()
+        self.run_log_panel.append_stage_message("配音生成", f"输出：{result.final_video}")
+        self._refresh_after_local_preview(result.final_video)
         return result
 
     def create_local_preview_worker(self) -> PipelineWorker:
-        self.progress_label.setText("\u6b63\u5728\u751f\u6210\u672c\u5730\u547d\u4ee4\u9884\u89c8")
+        self.progress_label.setText("正在生成配音，请稍候")
+        self.run_log_panel.append_stage_message("配音生成", "已开始")
         self.local_preview_button.setEnabled(False)
         worker = PipelineWorker(self._execute_local_preview)
         worker.succeeded.connect(self.handle_local_preview_succeeded)
@@ -189,13 +214,31 @@ class MainWindow(QMainWindow):
         return worker
 
     def handle_local_preview_succeeded(self) -> None:
-        self._refresh_after_local_preview()
+        final_video: Path | None = None
+        if self.local_preview_worker is not None and self.local_preview_worker.result is not None:
+            result = self.local_preview_worker.result
+            final_video = getattr(result, "final_video", None)
+            if final_video is not None:
+                self.run_log_panel.append_stage_message("配音生成", f"输出：{final_video}")
+        self._refresh_after_local_preview(final_video)
         self.local_preview_button.setEnabled(True)
 
     def handle_local_preview_failed(self, message: str) -> None:
-        self.progress_label.setText(f"\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25: {message}")
+        self.progress_label.setText(f"生成配音失败：{message}")
+        self.run_log_panel.append_stage_message("配音生成", f"失败：{message}")
         self.local_preview_button.setEnabled(True)
-        QMessageBox.warning(self, "\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25", message)
+        QMessageBox.warning(self, "生成配音失败", message)
+
+    def write_evaluation_report(self) -> Path:
+        if self.current_project is None:
+            raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
+
+        report = build_project_evaluation_report(self.current_project)
+        output_path = self.current_project.path / "renders" / "evaluation-report.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(render_evaluation_markdown(report), encoding="utf-8")
+        self.progress_label.setText(f"\u8bc4\u4f30\u62a5\u544a\u5df2\u751f\u6210: {output_path}")
+        return output_path
 
     def run_final_export(self, dialog: ExportDialog) -> Path:
         request, confirmation = self._build_export_request(dialog)
@@ -233,7 +276,7 @@ class MainWindow(QMainWindow):
         if self.source_video_path is None:
             raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u89c6\u9891")
         if not dialog.output_path_edit.text().strip():
-            raise ValueError("Export output path is required.")
+            raise ValueError("请先填写导出路径。")
 
         watermark_options = dialog.watermark_options()
         request = ExportRequest(
@@ -251,6 +294,10 @@ class MainWindow(QMainWindow):
 
     def open_export_dialog(self) -> PipelineWorker | None:
         dialog = ExportDialog(self)
+        if self.current_project is not None and not dialog.output_path_edit.text().strip():
+            dialog.output_path_edit.setText(
+                str(self.current_project.path / "renders" / "final.mp4")
+            )
         if dialog.exec() != ExportDialog.DialogCode.Accepted:
             return None
         if not dialog.can_export():
@@ -325,6 +372,7 @@ class MainWindow(QMainWindow):
         if self.source_video_path is None:
             raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u89c6\u9891")
 
+        self._save_model_profile_settings()
         return run_local_command_preview(
             self.current_project,
             source_video=self.source_video_path,
@@ -336,10 +384,27 @@ class MainWindow(QMainWindow):
             tts_adapter=self._build_http_tts_adapter(),
         )
 
-    def _refresh_after_local_preview(self) -> None:
+    def _save_model_profile_settings(self) -> None:
+        if self.current_project is None:
+            return
+        self.current_project.settings.update_profiles(
+            ProfileSelectionSettings(
+                local_command_profiles_path=self.model_settings.local_command_profiles_path_edit.text().strip(),
+                separation_profile_path=self.model_settings.separation_profile_path_edit.text().strip(),
+                asr_profile_path=self.model_settings.asr_profile_path_edit.text().strip(),
+                diarization_profile_path=self.model_settings.diarization_profile_path_edit.text().strip(),
+                translation_profile_path=self.model_settings.translation_profile_path_edit.text().strip(),
+                tts_profile_path=self.model_settings.tts_profile_path_edit.text().strip(),
+            )
+        )
+
+    def _refresh_after_local_preview(self, final_video: Path | None = None) -> None:
         if self.current_project is not None:
             self.timeline_editor.set_project(self.current_project)
-        self.progress_label.setText("\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5df2\u5b8c\u6210")
+        if final_video is not None:
+            self.progress_label.setText(f"配音生成已完成：{final_video}")
+        else:
+            self.progress_label.setText("配音生成已完成")
 
     def _execute_segment_regeneration(self, segment_id: str) -> SynthesisResult:
         if self.current_project is None:
@@ -367,15 +432,21 @@ class MainWindow(QMainWindow):
 
     def _load_local_command_profiles(self) -> LocalCommandPipelineProfiles:
         raw_path = self.model_settings.local_command_profiles_path_edit.text().strip()
-        if not raw_path:
+        profiles_path = Path(raw_path) if raw_path else default_local_command_profiles_path()
+        if profiles_path is None:
             raise ValueError("\u8bf7\u5148\u9009\u62e9\u672c\u5730\u547d\u4ee4 profiles JSON")
-
-        profiles_path = Path(raw_path)
         if not profiles_path.is_file():
             raise FileNotFoundError(profiles_path)
 
-        return LocalCommandPipelineProfiles.model_validate(
+        profiles = LocalCommandPipelineProfiles.model_validate(
             json.loads(profiles_path.read_text(encoding="utf-8"))
+        )
+        raw_model_root = self.model_settings.local_model_path_edit.text().strip()
+        model_root = Path(raw_model_root) if raw_model_root else Path("models")
+        return prepare_local_command_profiles(
+            profiles,
+            profiles_path=profiles_path,
+            models_dir=model_root,
         )
 
     def _build_translation_adapter(self) -> HttpTranslationAdapter | None:
@@ -486,6 +557,22 @@ def _parse_key_value_text(raw_text: str) -> dict[str, object]:
     for item in raw_items:
         key, separator, value = item.partition("=")
         if not separator or not key or not value:
-            raise ValueError(f"Expected KEY=VALUE, got: {item}")
+            raise ValueError(f"变量格式需要 KEY=VALUE，当前为：{item}")
         parsed[key] = value
     return parsed
+
+
+def _scrollable(widget: QWidget) -> QScrollArea:
+    scroll_area = QScrollArea()
+    scroll_area.setWidgetResizable(True)
+    scroll_area.setWidget(widget)
+    return scroll_area
+
+
+def _load_glossary(path: Path | None) -> dict[str, str]:
+    if path is None:
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("术语表 JSON 必须是一个对象。")
+    return {str(source): str(target) for source, target in raw.items()}

@@ -44,7 +44,7 @@ def test_main_window_opens_existing_project_from_directory(monkeypatch, qtbot, t
     assert window.current_project.path == project.path
     assert window.source_video_path == source
     assert window.timeline_editor.table.rowCount() == 1
-    assert window.progress_label.text() == "项目已打开"
+    assert window.progress_label.text() == "项目已打开。下一步：点击“开始生成配音（完整流程）”。"
 
 
 def test_main_window_warns_when_open_project_fails(monkeypatch, qtbot, tmp_path) -> None:

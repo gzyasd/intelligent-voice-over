@@ -17,6 +17,12 @@ cd F:\GZYproject\Intelligent-Voice-Over
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --target-text "seg-001=嗯，你好。" --no-watermark
 ```
 
+真实模型耗时较长，建议每次使用固定的 `--project-name`。如果某个阶段失败，修复环境或 profile 后可增加 `--resume-existing` 继续同一个项目；local preview 会优先复用已完成且文件产物存在的 import、audio_extract、separation 阶段：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --resume-existing --no-watermark
+```
+
 输出位置：
 
 ```text
@@ -26,6 +32,8 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 ## 切换到真实本地模型
 
 从 dry-run 切到真实模型时，核心动作是复制 `examples/local_command_profiles.real_dry_run.json`，然后逐步删除各阶段命令里的 `--dry-run`。
+
+本地命令 profile 建议使用 `{{ python_executable }}` 作为 Python 入口。它会渲染为当前运行 `ivo` 的解释器路径，避免 Windows 上子进程误用系统 Python 而找不到 `.venv` 中的 `demucs`、`faster-whisper` 或 TTS 依赖。
 
 ### ASR：faster-whisper
 
@@ -41,7 +49,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 
 ```json
 [
-  "python",
+  "{{ python_executable }}",
   "examples/local_commands/faster_whisper_asr.py",
   "--audio",
   "{{ audio_path }}",
@@ -105,7 +113,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
     "id": "mock-diarization",
     "stage": "diarization",
     "command": [
-      "python",
+      "{{ python_executable }}",
       "examples/local_commands/mock_diarization.py",
       "--audio",
       "{{ audio_path }}",
@@ -161,7 +169,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 
 ```json
 [
-  "python",
+  "{{ python_executable }}",
   "examples/local_commands/f5_tts_command.py",
   "--text",
   "{{ segment_text }}",
@@ -182,6 +190,29 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 ]
 ```
 
+Windows profile 中直接内嵌 JSON 容易遇到引号转义问题，也可以把外部推理命令写入文件，然后传 `--engine-command-json-file`：
+
+```json
+[
+  "{{ python_executable }}",
+  "examples/local_commands/f5_tts_command.py",
+  "--text",
+  "{{ segment_text }}",
+  "--speaker",
+  "{{ speaker_id }}",
+  "--audio-out",
+  "{{ output_audio_path }}",
+  "--duration-ms",
+  "{{ target_duration_ms }}",
+  "--json-out",
+  "{{ output_json_path }}",
+  "--engine-command-json-file",
+  "examples/engine_commands/f5_tts_engine_command.example.json"
+]
+```
+
+可复制 `examples/engine_commands/f5_tts_engine_command.example.json` 或 `examples/engine_commands/cosyvoice_engine_command.example.json`，把其中的 `path/to/...` 改成你本机真实推理脚本。
+
 输出 JSON 合约：
 
 ```json
@@ -190,6 +221,34 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
   "duration_ms": 1000
 }
 ```
+
+## GPU 与性能 profile
+
+`examples/local_command_profiles.real_gpu_quality.json` 面向最终质量验证：Demucs 使用 `htdemucs_ft` + CUDA，ASR 使用 `faster-whisper-large-v3` + CUDA/float16，TTS 使用 CosyVoice 本地 wrapper。适合 1-3 分钟到更长样片，但需要确认显存、CUDA、PyTorch 与模型许可证。
+
+`examples/local_command_profiles.real_gpu_fast_preview.json` 面向快速预览：人声分离仍用 CPU small 以降低显存占用，ASR 使用 `small` + CUDA/float16，TTS 使用 dry-run 占位。它不代表最终音色质量，适合先检查导入、分离、ASR、翻译、时间线和导出是否能跑通。
+
+`examples/local_command_profiles.real_separation_asr_tts_f5_gpu_small.json` 面向 Windows/RTX 的真实 F5 快速预览：Demucs 使用 `htdemucs` + CUDA，ASR 使用 `faster-whisper small` + CUDA/float16，TTS 使用 F5-TTS + CUDA。该 profile 已在 RTX 5090、`torch 2.11.0+cu128`、`torchaudio 2.11.0+cu128` 环境中通过授权日语真实样片 20 秒和 1 分钟验收；1 分钟样片耗时约 122 秒，所有阶段完成。
+
+Windows 上新版 `torchaudio` 可能因缺少可用的 `torchcodec` Windows wheel 而无法读写音频。项目的 Demucs adapter 和 F5 adapter 会在真实命令路径中使用 `soundfile` 读写 WAV，从而绕过这条不稳定链路。
+
+CUDA 版 PyTorch 可按需安装：
+
+```powershell
+uv pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv run python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+注意：`uv sync` 可能会把环境恢复到项目锁定的 CPU 稳定组合；每次跑 GPU profile 前都应确认 `torch.cuda.is_available()`。
+
+运行前建议：
+
+```powershell
+uv run ivo check-local-readiness .\examples\local_command_profiles.real_gpu_quality.json --models-dir .\models
+uv run ivo check-local-readiness .\examples\local_command_profiles.real_gpu_fast_preview.json --models-dir .\models
+```
+
+如果 readiness 提示未检测到 NVIDIA 工具，优先改用 `examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json` 或 `examples/local_command_profiles.real_separation_asr_tts_cosyvoice_cpu_small.json`。
 
 ## 混合线上人声分离 API
 

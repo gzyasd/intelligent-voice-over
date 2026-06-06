@@ -3,7 +3,7 @@
     "id": "mock-separate",
     "stage": "separation",
     "command": [
-      "python",
+      "{{ python_executable }}",
       "examples/local_commands/mock_separate.py",
       "--audio",
       "{{ audio_path }}",
@@ -20,7 +20,7 @@
     "id": "mock-asr",
     "stage": "asr",
     "command": [
-      "python",
+      "{{ python_executable }}",
       "examples/local_commands/mock_asr.py",
       "--audio",
       "{{ audio_path }}",
@@ -35,7 +35,7 @@
     "id": "mock-diarization",
     "stage": "diarization",
     "command": [
-      "python",
+      "{{ python_executable }}",
       "examples/local_commands/mock_diarization.py",
       "--audio",
       "{{ audio_path }}",
@@ -48,7 +48,7 @@
     "id": "mock-tts",
     "stage": "tts",
     "command": [
-      "python",
+      "{{ python_executable }}",
       "examples/local_commands/mock_tts.py",
       "--text",
       "{{ segment_text }}",

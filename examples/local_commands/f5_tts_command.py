@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import runpy
 import subprocess
+import sys
 import wave
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,7 @@ def main() -> int:
     parser.add_argument("--style-prompt", default="")
     parser.add_argument("--duration-ms", type=int, default=1000)
     parser.add_argument("--engine-command-json")
+    parser.add_argument("--engine-command-json-file")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -28,12 +31,14 @@ def main() -> int:
         write_contract(Path(args.json_out), audio_path, args.duration_ms)
         return 0
 
-    if args.engine_command_json:
-        command = render_engine_command(args.engine_command_json, args)
-        try:
-            subprocess.run(command, check=True)
-        except (OSError, subprocess.CalledProcessError) as exc:
-            raise SystemExit(f"TTS engine command failed: {command}") from exc
+    engine_command_json = load_engine_command_json(args)
+    if engine_command_json:
+        command = render_engine_command(engine_command_json, args)
+        if not run_f5_tts_cli_in_process(command):
+            try:
+                subprocess.run(command, check=True)
+            except (OSError, subprocess.CalledProcessError) as exc:
+                raise SystemExit(f"TTS engine command failed: {command}") from exc
         if not audio_path.is_file():
             raise SystemExit(f"TTS engine did not create audio output: {audio_path}")
         write_contract(Path(args.json_out), audio_path, args.duration_ms)
@@ -53,6 +58,14 @@ def main() -> int:
     )
 
 
+def load_engine_command_json(args: argparse.Namespace) -> str | None:
+    if args.engine_command_json and args.engine_command_json_file:
+        raise SystemExit("Use only one of --engine-command-json or --engine-command-json-file")
+    if args.engine_command_json_file:
+        return Path(args.engine_command_json_file).read_text(encoding="utf-8")
+    return args.engine_command_json
+
+
 def render_engine_command(raw_json: str, args: argparse.Namespace) -> list[str]:
     raw_command = json.loads(raw_json)
     if not isinstance(raw_command, list) or not raw_command:
@@ -62,6 +75,8 @@ def render_engine_command(raw_json: str, args: argparse.Namespace) -> list[str]:
         "text": args.text,
         "speaker": args.speaker,
         "audio_out": args.audio_out,
+        "audio_out_dir": str(Path(args.audio_out).parent),
+        "audio_out_name": Path(args.audio_out).name,
         "json_out": args.json_out,
         "reference_audio": args.reference_audio or "",
         "reference_text": args.reference_text,
@@ -69,6 +84,57 @@ def render_engine_command(raw_json: str, args: argparse.Namespace) -> list[str]:
         "duration_ms": args.duration_ms,
     }
     return [str(item).format(**values) for item in raw_command]
+
+
+def run_f5_tts_cli_in_process(command: list[str]) -> bool:
+    executable = Path(command[0]).name.lower()
+    if executable not in {"f5-tts_infer-cli", "f5-tts_infer-cli.exe"}:
+        return False
+
+    import torchaudio
+
+    original_argv = sys.argv[:]
+    original_load = torchaudio.load
+    try:
+        sys.argv = ["f5-tts_infer-cli", *command[1:]]
+        torchaudio.load = load_audio_with_soundfile
+        runpy.run_module("f5_tts.infer.infer_cli", run_name="__main__")
+    except SystemExit as exc:
+        if exc.code not in (None, 0):
+            raise
+    finally:
+        torchaudio.load = original_load
+        sys.argv = original_argv
+    return True
+
+
+def load_audio_with_soundfile(
+    uri: str | Path,
+    frame_offset: int = 0,
+    num_frames: int = -1,
+    normalize: bool = True,
+    channels_first: bool = True,
+    format: str | None = None,
+    buffer_size: int = 4096,
+    backend: str | None = None,
+) -> tuple[Any, int]:
+    del normalize, format, buffer_size, backend
+
+    import soundfile as sf
+    import torch
+
+    frames = -1 if num_frames is None or num_frames < 0 else num_frames
+    data, sample_rate = sf.read(
+        str(uri),
+        start=frame_offset,
+        frames=frames,
+        dtype="float32",
+        always_2d=True,
+    )
+    tensor = torch.from_numpy(data)
+    if channels_first:
+        tensor = tensor.transpose(0, 1).contiguous()
+    return tensor, int(sample_rate)
 
 
 def write_silent_wav(output_path: Path, *, duration_ms: int) -> None:

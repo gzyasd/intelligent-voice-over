@@ -26,6 +26,79 @@ def test_build_translation_prompt_preserves_emotion_fillers_and_timing() -> None
     assert "Well, I mean... hi." in prompt
 
 
+def test_translation_prompt_includes_glossary_terms_style_and_length_controls() -> None:
+    from ivo.pipeline.translate import build_translation_prompt
+
+    prompt = build_translation_prompt(
+        source_language="ja",
+        target_language="zh",
+        source_text="先輩、お願いします",
+        duration_ms=1_800,
+        speaker_id="speaker-1",
+        glossary={"先輩": "前辈"},
+        style_notes="日剧口吻，自然，不要书面腔。",
+        preserve_fillers=True,
+        max_length_ratio=1.15,
+    )
+
+    assert "先輩 -> 前辈" in prompt
+    assert "日剧口吻" in prompt
+    assert "1800ms" in prompt
+    assert "1.15" in prompt
+    assert "语气词" in prompt
+
+
+def test_translate_segments_uses_project_translation_settings(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.settings import TranslationSettings
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import TranslationResult, translate_segments
+
+    class CapturingAdapter:
+        prompts: list[str]
+
+        def __init__(self) -> None:
+            self.prompts = []
+
+        def translate(self, segment: TranscriptionSegment, *, prompt: str) -> TranslationResult:
+            self.prompts.append(prompt)
+            return TranslationResult(segment_id=segment.id, target_text="前辈，拜托了。")
+
+    project = DubbingProject.create(
+        tmp_path / "translate-settings.ivoproj",
+        name="Translate Settings",
+        source_language="ja",
+        target_language="zh",
+    )
+    project.settings.update_translation(
+        TranslationSettings(
+            translation_style_notes="日剧口吻，自然，不要书面腔。",
+            glossary={"先輩": "前辈"},
+            preserve_fillers=True,
+            max_length_ratio=1.15,
+        )
+    )
+    adapter = CapturingAdapter()
+
+    translate_segments(
+        project,
+        [
+            TranscriptionSegment(
+                id="seg-001",
+                start_ms=0,
+                end_ms=1_800,
+                source_language="ja",
+                source_text="先輩、お願いします",
+                speaker_id="speaker-1",
+            )
+        ],
+        adapter,
+    )
+
+    assert "先輩 -> 前辈" in adapter.prompts[0]
+    assert "日剧口吻" in adapter.prompts[0]
+
+
 def test_translate_segments_writes_needs_review_timeline_entries(tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.pipeline.transcribe import TranscriptionSegment
@@ -45,6 +118,7 @@ def test_translate_segments_writes_needs_review_timeline_entries(tmp_path) -> No
             source_language="ko",
             source_text="안녕.",
             speaker_id="speaker-1",
+            quality_flags=["speaker_unmatched"],
         )
     ]
 
@@ -66,7 +140,91 @@ def test_translate_segments_writes_needs_review_timeline_entries(tmp_path) -> No
     assert created[0].target_text == "你好。"
     assert created[0].emotion == "warm"
     assert created[0].style_prompt == "warm"
+    assert created[0].quality_flags == ["speaker_unmatched"]
     assert project.timeline.get_segment("seg-001") == created[0]
+
+
+def test_translate_segments_persists_every_source_segment(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import MockTranslationAdapter, TranslationResult, translate_segments
+
+    project = DubbingProject.create(
+        tmp_path / "translate-many.ivoproj",
+        name="Translate Many",
+        source_language="en",
+        target_language="zh",
+    )
+
+    created = translate_segments(
+        project,
+        [
+            TranscriptionSegment(
+                id="seg-001",
+                start_ms=0,
+                end_ms=1_000,
+                source_language="en",
+                source_text="Line one.",
+                speaker_id="speaker-1",
+            ),
+            TranscriptionSegment(
+                id="seg-002",
+                start_ms=1_000,
+                end_ms=2_000,
+                source_language="en",
+                source_text="Line two.",
+                speaker_id="speaker-2",
+            ),
+        ],
+        MockTranslationAdapter(
+            {
+                "seg-001": TranslationResult(segment_id="seg-001", target_text="第一句。"),
+                "seg-002": TranslationResult(segment_id="seg-002", target_text="第二句。"),
+            }
+        ),
+    )
+
+    assert [segment.id for segment in created] == ["seg-001", "seg-002"]
+    assert [segment.id for segment in project.timeline.list_segments()] == ["seg-001", "seg-002"]
+
+
+def test_translate_segments_updates_existing_segments_on_resume(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import MockTranslationAdapter, TranslationResult, translate_segments
+
+    project = DubbingProject.create(
+        tmp_path / "translate-resume.ivoproj",
+        name="Translate Resume",
+        source_language="en",
+        target_language="zh",
+    )
+    source_segment = TranscriptionSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        source_language="en",
+        source_text="Line one.",
+        speaker_id="speaker-1",
+    )
+    translate_segments(
+        project,
+        [source_segment],
+        MockTranslationAdapter(
+            {"seg-001": TranslationResult(segment_id="seg-001", target_text="旧译文。")}
+        ),
+    )
+
+    created = translate_segments(
+        project,
+        [source_segment],
+        MockTranslationAdapter(
+            {"seg-001": TranslationResult(segment_id="seg-001", target_text="新译文。")}
+        ),
+    )
+
+    assert created[0].target_text == "新译文。"
+    assert project.timeline.get_segment("seg-001").target_text == "新译文。"
 
 
 def test_http_translation_adapter_uses_profile_and_prompt(tmp_path) -> None:
@@ -247,3 +405,126 @@ def test_http_translation_adapter_allows_missing_optional_style_prompt(tmp_path)
 
     assert result.emotion == "warm"
     assert result.style_prompt is None
+
+
+def test_http_translation_adapter_parses_openai_compatible_content_json(tmp_path) -> None:
+    from ivo.adapters.http import ApiAdapterProfile
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import HttpTranslationAdapter
+
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.read().decode("utf-8")
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"target_text":"嗯，你好。","emotion":"warm",'
+                                '"style_prompt":"温和、自然，带轻微笑意"}'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    adapter = HttpTranslationAdapter(
+        ApiAdapterProfile(
+            id="qwen-openai-compatible",
+            stage="translation",
+            method="POST",
+            url="http://127.0.0.1:8000/v1/chat/completions",
+            headers={"Authorization": "Bearer {{ api_key }}"},
+            request_template={
+                "model": "{{ model }}",
+                "messages": [
+                    {"role": "system", "content": "translate naturally"},
+                    {
+                        "role": "user",
+                        "content": (
+                            "source_language={{ source_language }}; "
+                            "target_language={{ target_language }}; "
+                            "speaker_id={{ speaker_id }}; duration_ms={{ duration_ms }}; "
+                            "text={{ segment_text }}"
+                        ),
+                    },
+                ],
+            },
+            response_mapping={"content_json": "$.choices[0].message.content"},
+        ),
+        project_path=tmp_path,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        extra={"api_key": "local-token", "model": "Qwen3-8B"},
+    )
+
+    result = adapter.translate(
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=100,
+            end_ms=1_600,
+            source_language="ja",
+            source_text="えっと、こんにちは。",
+            speaker_id="speaker-a",
+        ),
+        prompt="translate",
+    )
+
+    assert result.target_text == "嗯，你好。"
+    assert result.emotion == "warm"
+    assert result.style_prompt == "温和、自然，带轻微笑意"
+    assert "duration_ms=1500" in captured["body"]
+
+
+def test_http_translation_adapter_parses_fenced_content_json(tmp_path) -> None:
+    from ivo.adapters.http import ApiAdapterProfile
+    from ivo.pipeline.transcribe import TranscriptionSegment
+    from ivo.pipeline.translate import HttpTranslationAdapter
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '```json\n{"target_text":"别说了，别说那种话。",'
+                                '"emotion":"sorrowful","style_prompt":"温柔而略带忧伤"}\n```'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    adapter = HttpTranslationAdapter(
+        ApiAdapterProfile(
+            id="lm-studio-qwen36-35b",
+            stage="translation",
+            method="POST",
+            url="http://127.0.0.1:1995/v1/chat/completions",
+            request_template={"model": "qwen-local"},
+            response_mapping={"content_json": "$.choices[0].message.content"},
+        ),
+        project_path=tmp_path,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = adapter.translate(
+        TranscriptionSegment(
+            id="seg-001",
+            start_ms=0,
+            end_ms=1_800,
+            source_language="ja",
+            source_text="やめて、そんなこと言わないで。",
+        ),
+        prompt="translate",
+    )
+
+    assert result.target_text == "别说了，别说那种话。"
+    assert result.emotion == "sorrowful"
+    assert result.style_prompt == "温柔而略带忧伤"

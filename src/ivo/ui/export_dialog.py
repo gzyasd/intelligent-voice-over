@@ -31,7 +31,7 @@ class ExportDialog(QDialog):
             "\u5bfc\u51fa\u6587\u4ef6\u5c06\u5199\u5165 AI \u914d\u97f3\u5143\u6570\u636e\u3002"
         )
         self.watermark_checkbox = QCheckBox("\u6dfb\u52a0\u53ef\u89c1\u89d2\u6807")
-        self.watermark_text = QLineEdit("AI Dubbed")
+        self.watermark_text = QLineEdit("AI 配音")
 
         self.output_path_browse_button.clicked.connect(self.browse_output_path)
 
@@ -65,7 +65,7 @@ class ExportDialog(QDialog):
             self,
             "\u9009\u62e9\u5bfc\u51fa\u89c6\u9891\u8def\u5f84",
             "",
-            "MP4 video (*.mp4);;All files (*)",
+            "MP4 视频 (*.mp4);;所有文件 (*)",
         )
         if path:
             self.output_path_edit.setText(path)

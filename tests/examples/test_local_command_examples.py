@@ -117,3 +117,213 @@ def test_mock_local_command_profile_includes_diarization() -> None:
 
     assert profile.diarization is not None
     assert profile.diarization.stage == "diarization"
+
+
+def test_real_asr_profile_uses_large_v3_without_dry_run() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(Path("examples/local_command_profiles.real_asr.json").read_text(encoding="utf-8"))
+    )
+
+    assert profile.asr.id == "faster-whisper-large-v3"
+    assert "--dry-run" not in profile.asr.command
+    assert "Systran/faster-whisper-large-v3" in profile.asr.command
+    assert profile.separation.id == "demucs-dry-run"
+    assert "--dry-run" in profile.separation.command
+    assert profile.tts.id == "f5-tts-dry-run"
+
+
+def test_real_separation_asr_profile_uses_demucs_and_faster_whisper() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_separation_asr.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.separation.id == "demucs-htdemucs"
+    assert "--dry-run" not in profile.separation.command
+    assert "--two-stems" in profile.separation.command
+    assert "htdemucs" in profile.separation.command
+    assert profile.asr.id == "faster-whisper-large-v3"
+    assert "--dry-run" not in profile.asr.command
+    assert profile.tts.id == "f5-tts-dry-run"
+
+
+def test_real_separation_asr_cpu_small_profile_is_fast_real_probe() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_separation_asr_cpu_small.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.separation.id == "demucs-htdemucs-cpu"
+    assert "--device" in profile.separation.command
+    assert "cpu" in profile.separation.command
+    assert "--dry-run" not in profile.separation.command
+    assert profile.asr.id == "faster-whisper-small-cpu"
+    assert "small" in profile.asr.command
+    assert "int8" in profile.asr.command
+    assert "--dry-run" not in profile.asr.command
+    assert profile.tts.id == "f5-tts-dry-run"
+
+
+def test_real_separation_asr_tts_f5_cpu_small_profile_uses_real_tts() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.separation.id == "demucs-htdemucs-cpu"
+    assert profile.asr.id == "faster-whisper-small-cpu"
+    assert profile.tts.id == "f5-tts-local"
+    assert "--engine-command-json-file" in profile.tts.command
+    assert "examples/engine_commands/f5_tts_engine_command.example.json" in profile.tts.command
+    assert "--reference-text" in profile.tts.command
+    assert "{{ reference_text }}" in profile.tts.command
+    assert "--dry-run" not in profile.tts.command
+
+
+def test_real_diarization_profile_uses_pyannote_command() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_diarization.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.diarization is not None
+    assert profile.diarization.id == "pyannote-community-1"
+    assert "--dry-run" not in profile.diarization.command
+    assert "--hf-token-env" in profile.diarization.command
+    assert "pyannote/speaker-diarization-community-1" in profile.diarization.command
+
+
+def test_real_full_gpu_f5_diarization_profile_uses_local_pyannote_and_gpu_f5() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_full_gpu_f5_diarization.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.separation.id == "demucs-htdemucs-ft-gpu"
+    assert profile.asr.id == "faster-whisper-large-v3-gpu"
+    assert profile.diarization is not None
+    assert profile.diarization.id == "pyannote-community-1-local"
+    assert profile.diarization.extra["pyannote_python_executable"] == (
+        ".venv-pyannote/Scripts/python.exe"
+    )
+    assert "{{ pyannote_python_executable }}" in profile.diarization.command
+    assert "models/diarization/pyannote-community-1" in profile.diarization.command
+    assert "--device" in profile.diarization.command
+    assert "cuda" in profile.diarization.command
+    assert "--hf-token-env" not in profile.diarization.command
+    assert profile.tts.id == "f5-tts-local-gpu"
+    assert "examples/engine_commands/f5_tts_engine_command.cuda.example.json" in profile.tts.command
+
+
+def test_real_translation_qwen_profile_keeps_model_stages_dry_run() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_translation_qwen.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.separation.id == "demucs-dry-run"
+    assert profile.asr.id == "faster-whisper-dry-run"
+    assert profile.tts.id == "f5-tts-dry-run"
+    assert "--dry-run" in profile.separation.command
+    assert "--dry-run" in profile.asr.command
+    assert "--dry-run" in profile.tts.command
+
+
+def test_real_tts_cosyvoice_profile_uses_cosyvoice_command() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_tts_cosyvoice.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.tts.id == "cosyvoice3-local"
+    assert "examples/local_commands/cosyvoice_tts.py" in profile.tts.command
+    assert "--model-dir" in profile.tts.command
+    assert "models/tts/Fun-CosyVoice3-0.5B" in profile.tts.command
+    assert "--reference-text" in profile.tts.command
+    assert "{{ reference_text }}" in profile.tts.command
+    assert "--engine-command-json-file" in profile.tts.command
+    assert "examples/engine_commands/cosyvoice_engine_command.example.json" in profile.tts.command
+    assert "--dry-run" not in profile.tts.command
+
+
+def test_real_separation_asr_tts_cosyvoice_cpu_small_profile_uses_real_tts() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path(
+                "examples/local_command_profiles.real_separation_asr_tts_cosyvoice_cpu_small.json"
+            ).read_text(encoding="utf-8")
+        )
+    )
+
+    assert profile.separation.id == "demucs-htdemucs-cpu"
+    assert profile.asr.id == "faster-whisper-small-cpu"
+    assert profile.tts.id == "cosyvoice3-local"
+    assert "--reference-text" in profile.tts.command
+    assert "{{ reference_text }}" in profile.tts.command
+    assert "--engine-command-json-file" in profile.tts.command
+    assert "examples/engine_commands/cosyvoice_engine_command.example.json" in profile.tts.command
+    assert "--dry-run" not in profile.tts.command
+
+
+def test_real_gpu_quality_profile_uses_gpu_models() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_gpu_quality.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert "cuda" in profile.separation.command
+    assert "cuda" in profile.asr.command
+    assert "float16" in profile.asr.command
+    assert profile.tts.id in {"f5-tts-local", "cosyvoice3-local"}
+
+
+def test_real_gpu_fast_preview_profile_uses_fast_gpu_asr() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_gpu_fast_preview.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert "cuda" in profile.asr.command
+    assert any(model in profile.asr.command for model in ("small", "distil-large-v3", "turbo"))
+    assert profile.tts.id in {"f5-tts-dry-run", "f5-tts-local", "cosyvoice3-local"}
+
+
+def test_real_tts_f5_profile_uses_f5_command_without_dry_run() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(Path("examples/local_command_profiles.real_tts_f5.json").read_text(encoding="utf-8"))
+    )
+
+    assert profile.tts.id == "f5-tts-local"
+    assert "examples/local_commands/f5_tts_command.py" in profile.tts.command
+    assert "--engine-command-json-file" in profile.tts.command
+    assert "examples/engine_commands/f5_tts_engine_command.example.json" in profile.tts.command
+    assert "--reference-text" in profile.tts.command
+    assert "{{ reference_text }}" in profile.tts.command
+    assert "--dry-run" not in profile.tts.command

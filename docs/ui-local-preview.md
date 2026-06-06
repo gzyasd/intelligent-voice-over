@@ -12,6 +12,10 @@
 F:\GZYproject\Intelligent-Voice-Over\examples\local_command_profiles.real_dry_run.json
 ```
 
+在同一页可以填写“本地模型安装脚本输出”，例如 `scripts/setup-local-models.ps1`，然后点击“生成本地模型安装脚本”。UI 会根据“本地模型路径”生成与 `uv run ivo model write-setup-script` 相同的 PowerShell 脚本，方便后续安装 Python 包、创建模型目录和下载 Hugging Face 模型。
+
+选择本地命令 profiles 后，可以先点击“校验本地命令 profile”，静态检查关键阶段和输出 JSON 占位，避免完整预览运行到一半才发现 profile 写错。
+
 4. 如果人声分离阶段使用线上 API，在“人声分离 HTTP profile JSON”填写或浏览选择：
 
 ```text
@@ -83,6 +87,44 @@ api_key=YOUR_API_KEY
 - 本地命令脚本运行失败；
 - HTTP 人声分离、ASR、说话人分离、翻译或 TTS API 超时，或返回非成功状态；
 - FFmpeg 不可用或导出失败。
+
+本地命令失败时，错误文本会尽量包含阶段、provider、渲染后的命令、退出码、stderr 摘要和期望的输出 JSON 路径。这样可以直接定位是模型路径、Python 包、token、输出文件还是脚本参数问题。
+
+## Profile 选择和 readiness 面板
+
+推荐从较小的真实链路开始：
+
+```text
+examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json
+```
+
+如果要测试 CosyVoice 路线，可以选择：
+
+```text
+examples/local_command_profiles.real_separation_asr_tts_cosyvoice_cpu_small.json
+```
+
+在“模型设置”页填写本地命令 profiles JSON 后，可以先点击 `Check local model readiness`。UI 会把结果写入列表，并在 readiness 表格中显示：
+
+- `stage`：阶段，例如 `asr`、`tts`、`diarization`。
+- `provider`：依赖或 profile 名称，例如 `CosyVoice`、`pyannote.audio`。
+- `status`：`ok`、`missing` 或 `skipped`。
+- `message`：缺少的包、模型目录、环境变量或 engine command 文件。
+
+常见处理方式：
+
+- `tts/CosyVoice: package missing`：先执行 `uv sync --extra local-tts-cosyvoice`，再按 CosyVoice 官方仓库说明安装本体。
+- `diarization/pyannote.audio: env HF_TOKEN missing`：在本机设置 `HF_TOKEN`，并确认 Hugging Face 模型条款已接受。不要把 token 写入仓库。
+- `model dir missing`：按 `docs/local-model-setup.md` 下载对应模型，或确认该模型目录对当前 profile 是否必需。
+- `engine command file missing`：检查 profile 中 `--engine-command-json-file` 指向的 JSON 文件是否存在。
+
+线上 API override 可以逐阶段填写，例如只把翻译换成 OpenAI-compatible 服务：
+
+```text
+examples/http_translation_openai_compatible.example.json
+```
+
+该路径会随项目设置保存到 `settings.json`，但 API key 这类变量只从 UI 文本框读取，不会写入项目设置。
 
 ## 当前限制
 

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+
 
 def test_local_command_adapter_renders_command_and_reads_json_output(tmp_path) -> None:
     from ivo.adapters.base import AdapterContext
@@ -44,6 +47,85 @@ def test_local_command_adapter_renders_command_and_reads_json_output(tmp_path) -
     assert commands == [["python", "translate.py", "--text", "Hello", "--out", str(output)]]
 
 
+def test_local_command_adapter_exposes_current_python_executable(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
+
+    output = tmp_path / "result.json"
+    commands: list[list[str]] = []
+
+    def runner(command: list[str]) -> None:
+        commands.append(command)
+        output.write_text("{}", encoding="utf-8")
+
+    adapter = LocalCommandAdapter(
+        LocalCommandProfile(
+            id="local-asr",
+            stage="asr",
+            command=["{{ python_executable }}", "asr.py", "--out", "{{ output_json_path }}"],
+            output_json_path=str(output),
+        ),
+        runner=runner,
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="",
+            source_language="ja",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is True
+    assert commands == [[sys.executable, "asr.py", "--out", str(output)]]
+
+
+def test_local_command_adapter_honors_configured_python_and_working_dir(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
+
+    output = tmp_path / "result.json"
+    working_dir = tmp_path / "runtime"
+    working_dir.mkdir()
+    commands: list[list[str]] = []
+    cwd_values: list[str | None] = []
+
+    def runner(command: list[str], cwd: str | None = None) -> None:
+        commands.append(command)
+        cwd_values.append(cwd)
+        output.write_text("{}", encoding="utf-8")
+
+    adapter = LocalCommandAdapter(
+        LocalCommandProfile(
+            id="local-asr",
+            stage="asr",
+            command=["{{ python_executable }}", "examples/local_commands/asr.py"],
+            output_json_path=str(output),
+            extra={
+                "python_executable": "F:/runtime/.venv/Scripts/python.exe",
+                "working_dir": str(working_dir),
+            },
+        ),
+        runner=runner,
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="",
+            source_language="ja",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is True
+    assert commands == [["F:/runtime/.venv/Scripts/python.exe", "examples/local_commands/asr.py"]]
+    assert cwd_values == [str(working_dir)]
+
+
 def test_local_command_adapter_returns_error_when_output_missing(tmp_path) -> None:
     from ivo.adapters.base import AdapterContext
     from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
@@ -72,3 +154,64 @@ def test_local_command_adapter_returns_error_when_output_missing(tmp_path) -> No
     assert result.error is not None
     assert result.error.provider == "broken-local"
     assert "output JSON not found" in result.error.message
+
+
+def test_local_command_adapter_error_includes_command_context(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
+
+    output = tmp_path / "asr.json"
+
+    def runner(command: list[str]) -> None:
+        raise subprocess.CalledProcessError(
+            returncode=7,
+            cmd=command,
+            stderr="model path not found\nfull traceback omitted",
+        )
+
+    adapter = LocalCommandAdapter(
+        LocalCommandProfile(
+            id="broken-asr",
+            stage="asr",
+            command=[
+                "python",
+                "asr.py",
+                "--audio",
+                "{{ segment_text }}",
+                "--out",
+                "{{ output_json_path }}",
+            ],
+            output_json_path=str(output),
+        ),
+        runner=runner,
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="voice.wav",
+            source_language="en",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error is not None
+    assert "stage: asr" in result.error.message
+    assert "provider: broken-asr" in result.error.message
+    assert "exit code: 7" in result.error.message
+    assert "command: python asr.py --audio voice.wav" in result.error.message
+    assert f"output JSON: {output}" in result.error.message
+    assert "stderr: model path not found" in result.error.message
+    assert result.error.command == [
+        "python",
+        "asr.py",
+        "--audio",
+        "voice.wav",
+        "--out",
+        str(output),
+    ]
+    assert result.error.exit_code == 7
+    assert result.error.stderr_summary == "model path not found full traceback omitted"
+    assert result.error.output_json_path == str(output)

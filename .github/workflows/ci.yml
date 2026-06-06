@@ -45,3 +45,6 @@ jobs:
 
       - name: Test
         run: uv run pytest
+
+      - name: Build package dry-run
+        run: uv run python scripts/build_windows_package.py --dry-run --output-dir dist

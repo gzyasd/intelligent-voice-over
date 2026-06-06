@@ -1,0 +1,75 @@
+{
+  "separation": {
+    "id": "demucs-htdemucs-cpu",
+    "stage": "separation",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/demucs_separate.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--vocals-out",
+      "{{ vocals_path }}",
+      "--background-out",
+      "{{ background_path }}",
+      "--json-out",
+      "{{ output_json_path }}",
+      "--model",
+      "htdemucs",
+      "--device",
+      "cpu",
+      "--two-stems",
+      "vocals"
+    ],
+    "output_json_path": "{{ project_path }}/demucs-htdemucs-cpu.json"
+  },
+  "asr": {
+    "id": "faster-whisper-small-cpu",
+    "stage": "asr",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/faster_whisper_asr.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--language",
+      "{{ source_language }}",
+      "--model",
+      "small",
+      "--device",
+      "cpu",
+      "--compute-type",
+      "int8",
+      "--out",
+      "{{ output_json_path }}"
+    ],
+    "output_json_path": "{{ project_path }}/faster-whisper-small-cpu.json"
+  },
+  "tts": {
+    "id": "cosyvoice3-local",
+    "stage": "tts",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/cosyvoice_tts.py",
+      "--text",
+      "{{ segment_text }}",
+      "--speaker",
+      "{{ speaker_id }}",
+      "--audio-out",
+      "{{ output_audio_path }}",
+      "--duration-ms",
+      "{{ target_duration_ms }}",
+      "--style-prompt",
+      "{{ style_prompt }}",
+      "--reference-audio",
+      "{{ reference_audio_path }}",
+      "--reference-text",
+      "{{ reference_text }}",
+      "--json-out",
+      "{{ output_json_path }}",
+      "--model-dir",
+      "models/tts/Fun-CosyVoice3-0.5B",
+      "--engine-command-json-file",
+      "examples/engine_commands/cosyvoice_engine_command.example.json"
+    ],
+    "output_json_path": "{{ project_path }}/cosyvoice3-local.json"
+  }
+}
