@@ -1,6 +1,41 @@
 from __future__ import annotations
 
 
+def test_export_dialog_has_action_buttons_and_enables_export(qtbot, tmp_path) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from ivo.ui.export_dialog import ExportDialog
+
+    dialog = ExportDialog()
+    qtbot.addWidget(dialog)
+
+    assert dialog.start_export_button.text() == "开始导出"
+    assert dialog.cancel_button.text() == "取消"
+    assert dialog.start_export_button.isEnabled() is False
+
+    dialog.output_path_edit.setText(str(tmp_path / "final.mp4"))
+    assert dialog.start_export_button.isEnabled() is False
+
+    dialog.confirmation_checkbox.setChecked(True)
+    assert dialog.start_export_button.isEnabled() is True
+
+    dialog.start_export_button.click()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+
+
+def test_export_dialog_cancel_button_rejects(qtbot) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from ivo.ui.export_dialog import ExportDialog
+
+    dialog = ExportDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.cancel_button.click()
+
+    assert dialog.result() == QDialog.DialogCode.Rejected
+
+
 def test_main_window_opens_export_dialog_and_starts_background_export(
     monkeypatch,
     qtbot,
@@ -97,9 +132,10 @@ def test_main_window_prefills_final_export_path_in_project_renders(
     assert captured["output_path"] == project.path / "renders" / "final.mp4"
 
 
-def test_main_window_warns_when_export_dialog_is_incomplete(monkeypatch, qtbot) -> None:
+def test_main_window_warns_when_export_dialog_is_incomplete(monkeypatch, qtbot, tmp_path) -> None:
     from PySide6.QtWidgets import QDialog
 
+    from ivo.core.project import DubbingProject
     from ivo.ui.export_dialog import ExportDialog
     from ivo.ui.main_window import MainWindow
 
@@ -117,6 +153,17 @@ def test_main_window_warns_when_export_dialog_is_incomplete(monkeypatch, qtbot) 
 
     window = MainWindow()
     qtbot.addWidget(window)
+    source_video = tmp_path / "episode.mp4"
+    source_video.write_bytes(b"video")
+    project = DubbingProject.create(
+        tmp_path / "Episode 01.ivoproj",
+        name="Episode 01",
+        source_language="en",
+        target_language="zh",
+        source_video=source_video,
+    )
+    window.current_project = project
+    window.source_video_path = source_video
 
     output = window.open_export_dialog()
 

@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -32,8 +33,15 @@ class ExportDialog(QDialog):
         )
         self.watermark_checkbox = QCheckBox("\u6dfb\u52a0\u53ef\u89c1\u89d2\u6807")
         self.watermark_text = QLineEdit("AI 配音")
+        self.cancel_button = QPushButton("取消")
+        self.start_export_button = QPushButton("开始导出")
+        self.start_export_button.setEnabled(False)
 
         self.output_path_browse_button.clicked.connect(self.browse_output_path)
+        self.output_path_edit.textChanged.connect(self.refresh_export_button)
+        self.confirmation_checkbox.stateChanged.connect(self.refresh_export_button)
+        self.cancel_button.clicked.connect(self.reject)
+        self.start_export_button.clicked.connect(self.accept)
 
         layout = QVBoxLayout()
         layout.addWidget(QLabel("\u5bfc\u51fa\u8def\u5f84"))
@@ -43,6 +51,11 @@ class ExportDialog(QDialog):
         layout.addWidget(self.metadata_notice)
         layout.addWidget(self.watermark_checkbox)
         layout.addWidget(self.watermark_text)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        actions.addWidget(self.cancel_button)
+        actions.addWidget(self.start_export_button)
+        layout.addLayout(actions)
         self.setLayout(layout)
 
     def can_export(self) -> bool:
@@ -69,3 +82,6 @@ class ExportDialog(QDialog):
         )
         if path:
             self.output_path_edit.setText(path)
+
+    def refresh_export_button(self) -> None:
+        self.start_export_button.setEnabled(self.can_export())

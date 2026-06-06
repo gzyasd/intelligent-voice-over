@@ -4,9 +4,8 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -99,12 +98,12 @@ class MainWindow(QMainWindow):
         self.final_export_worker: PipelineWorker | None = None
         self.create_project_button.clicked.connect(self.open_project_wizard)
         self.open_project_button.clicked.connect(self.open_existing_project)
-        self.local_preview_button.clicked.connect(lambda: self.start_local_preview_background())
+        self.local_preview_button.clicked.connect(self.request_local_preview)
         self.evaluation_report_button.clicked.connect(self.open_evaluation_report)
         self.export_button.clicked.connect(self.open_export_dialog)
         self.timeline_editor.regenerate_requested.connect(self.start_segment_regeneration_background)
         self.project_overview.create_requested.connect(self.open_project_wizard)
-        self.project_overview.start_requested.connect(lambda: self.start_local_preview_background())
+        self.project_overview.start_requested.connect(self.request_local_preview)
         self.project_overview.progress_requested.connect(self.show_generation_progress)
         self.project_overview.open_folder_requested.connect(lambda path: self.open_path_in_shell(path))
         self.project_overview.open_video_requested.connect(lambda path: self.open_path_in_shell(path))
@@ -217,6 +216,7 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(self.NEXT_STEP_TEXT)
         self.project_overview.set_project(project)
         self.timeline_editor.set_project(project)
+        self.app_shell.set_current_page("current")
         return project
 
     def create_project_from_wizard(self, wizard: ProjectWizard) -> DubbingProject:
@@ -310,6 +310,7 @@ class MainWindow(QMainWindow):
         return result
 
     def create_local_preview_worker(self) -> PipelineWorker:
+        self.show_generation_progress()
         self.progress_label.setText("正在生成配音，请稍候")
         self.run_log_panel.append_stage_message("配音生成", "已开始")
         self.local_preview_button.setEnabled(False)
@@ -327,6 +328,19 @@ class MainWindow(QMainWindow):
         worker = self.create_local_preview_worker()
         worker.start()
         return worker
+
+    def request_local_preview(self) -> PipelineWorker | None:
+        if self.current_project is None:
+            message = "请先新建或打开项目，然后再开始生成配音。"
+            self.progress_label.setText(message)
+            QMessageBox.warning(self, "无法开始生成", message)
+            return None
+        if self.source_video_path is None:
+            message = "当前项目缺少源视频，请重新选择或创建项目。"
+            self.progress_label.setText(message)
+            QMessageBox.warning(self, "无法开始生成", message)
+            return None
+        return self.start_local_preview_background()
 
     def handle_local_preview_succeeded(self) -> None:
         final_video: Path | None = None
@@ -435,6 +449,17 @@ class MainWindow(QMainWindow):
         return request, dialog.confirmation()
 
     def open_export_dialog(self) -> PipelineWorker | None:
+        if self.current_project is None:
+            message = "请先新建或打开项目，然后再导出最终视频。"
+            self.progress_label.setText(message)
+            QMessageBox.warning(self, "无法导出", message)
+            return None
+        if self.source_video_path is None:
+            message = "当前项目缺少源视频，请重新选择或创建项目。"
+            self.progress_label.setText(message)
+            QMessageBox.warning(self, "无法导出", message)
+            return None
+
         dialog = ExportDialog(self)
         if self.current_project is not None and not dialog.output_path_edit.text().strip():
             dialog.output_path_edit.setText(

@@ -20,6 +20,7 @@ def test_main_window_creates_project_from_inputs(qtbot, tmp_path) -> None:
     assert window.current_project == project
     assert window.source_video_path == source
     assert window.progress_label.text() == "项目已创建。下一步：点击“开始生成配音（完整流程）”。"
+    assert window.app_shell.current_page_id() == "current"
 
 
 def test_main_window_runs_mock_preview_and_refreshes_timeline(qtbot, tmp_path) -> None:

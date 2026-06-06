@@ -135,11 +135,13 @@ def test_model_settings_saves_and_loads_http_adapter_profile(qtbot, tmp_path) ->
     settings.response_mapping_edit.setText("target_text=$.text")
     settings.optional_response_keys_edit.setText("style_prompt,duration_ms")
     settings.file_upload_fields_edit.setText("audio=audio_path")
-    settings.save_adapter_profile(store_path)
+    settings.http_adapter_path_edit.setText(str(store_path))
+    settings.save_adapter_profile_button.click()
 
     reloaded = ModelSettings()
     qtbot.addWidget(reloaded)
-    reloaded.load_adapter_profiles(store_path)
+    reloaded.http_adapter_path_edit.setText(str(store_path))
+    reloaded.load_adapter_profiles_button.click()
 
     assert reloaded.adapter_list.count() == 1
     assert reloaded.adapter_list.item(0).text() == "translator translation"
@@ -162,6 +164,9 @@ def test_model_settings_guides_local_model_directory_in_chinese(qtbot) -> None:
     )
     assert settings.check_local_readiness_button.text() == "检查本地模型是否就绪"
     assert settings.validate_http_profiles_button.text() == "校验在线 API 配置"
+    assert settings.http_adapter_path_browse_button.text() == "选择 adapter 配置文件"
+    assert settings.save_adapter_profile_button.text() == "保存 adapter 配置"
+    assert settings.load_adapter_profiles_button.text() == "加载 adapter 列表"
     assert settings.readiness_results_table.horizontalHeaderItem(0).text() == "阶段"
     assert settings.readiness_results_table.horizontalHeaderItem(1).text() == "服务"
     assert settings.advanced_group.title() == "高级配置（本地命令 / 在线 API）"
@@ -186,6 +191,17 @@ def test_model_settings_guides_local_model_directory_in_chinese(qtbot) -> None:
         "例如：api_key=lm-studio,temperature=0.2"
     )
     assert settings.file_upload_fields_edit.placeholderText() == "例如：audio=audio_path"
+
+
+def test_model_settings_warns_when_saving_adapter_without_path(qtbot) -> None:
+    from ivo.ui.model_settings import ModelSettings
+
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+
+    settings.save_adapter_profile_button.click()
+
+    assert settings.model_diagnostics_list.item(0).text() == "adapter 保存失败：请先选择配置文件"
 
 
 def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tmp_path) -> None:
@@ -236,6 +252,23 @@ def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tm
     assert settings.diarization_profile_path_edit.text() == str(diarization_profile)
     assert settings.translation_profile_path_edit.text() == str(translation_profile)
     assert settings.tts_profile_path_edit.text() == str(tts_profile)
+
+
+def test_model_settings_browse_http_adapter_store(monkeypatch, qtbot, tmp_path) -> None:
+    from ivo.ui.model_settings import ModelSettings
+
+    store_path = tmp_path / "http-adapters.json"
+    monkeypatch.setattr(
+        "ivo.ui.model_settings.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: (str(store_path), "JSON files (*.json)"),
+    )
+
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+
+    settings.http_adapter_path_browse_button.click()
+
+    assert settings.http_adapter_path_edit.text() == str(store_path)
 
 
 def test_model_settings_loads_local_command_profile_summary(qtbot, tmp_path) -> None:

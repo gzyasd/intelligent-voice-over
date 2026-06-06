@@ -94,7 +94,8 @@ class ModelSettings(QWidget):
         self.tts_vars_edit = QLineEdit()
         self.tts_vars_edit.setPlaceholderText("例如：api_key=your-token,voice=speaker_001")
         self.http_adapter_path_edit = QLineEdit()
-        self.http_adapter_path_edit.setPlaceholderText("例如：examples/http_translation_profile.example.json")
+        self.http_adapter_path_edit.setPlaceholderText("例如：examples/http_adapter_profiles.json")
+        self.http_adapter_path_browse_button = QPushButton("选择 adapter 配置文件")
         self.profile_id_edit = QLineEdit()
         self.profile_id_edit.setPlaceholderText("例如：lm-studio-qwen-translation")
         self.stage_edit = QLineEdit("translation")
@@ -107,6 +108,8 @@ class ModelSettings(QWidget):
         self.optional_response_keys_edit.setPlaceholderText("例如：style_prompt,duration_ms")
         self.file_upload_fields_edit = QLineEdit()
         self.file_upload_fields_edit.setPlaceholderText("例如：audio=audio_path")
+        self.save_adapter_profile_button = QPushButton("保存 adapter 配置")
+        self.load_adapter_profiles_button = QPushButton("加载 adapter 列表")
         self.adapter_list = QListWidget()
 
         self.model_root_browse_button.clicked.connect(self.browse_model_root)
@@ -123,6 +126,9 @@ class ModelSettings(QWidget):
         self.tts_profile_browse_button.clicked.connect(self.browse_tts_profile)
         self.refresh_model_diagnostics_button.clicked.connect(self.refresh_model_diagnostics)
         self.write_model_setup_script_button.clicked.connect(self.write_model_setup_script)
+        self.http_adapter_path_browse_button.clicked.connect(self.browse_http_adapter_store)
+        self.save_adapter_profile_button.clicked.connect(self.save_adapter_profile_from_ui)
+        self.load_adapter_profiles_button.clicked.connect(self.load_adapter_profiles_from_ui)
 
         model_form = QFormLayout()
         model_form.addRow("本地模型目录", self.local_model_path_edit)
@@ -183,6 +189,7 @@ class ModelSettings(QWidget):
         advanced_layout.addWidget(self.tts_vars_edit)
         advanced_layout.addWidget(QLabel("HTTP adapter 配置文件"))
         advanced_layout.addWidget(self.http_adapter_path_edit)
+        advanced_layout.addWidget(self.http_adapter_path_browse_button)
         advanced_layout.addWidget(QLabel("配置 ID"))
         advanced_layout.addWidget(self.profile_id_edit)
         advanced_layout.addWidget(QLabel("阶段"))
@@ -195,6 +202,8 @@ class ModelSettings(QWidget):
         advanced_layout.addWidget(self.optional_response_keys_edit)
         advanced_layout.addWidget(QLabel("文件上传字段"))
         advanced_layout.addWidget(self.file_upload_fields_edit)
+        advanced_layout.addWidget(self.save_adapter_profile_button)
+        advanced_layout.addWidget(self.load_adapter_profiles_button)
         advanced_layout.addWidget(QLabel("已配置 adapter"))
         advanced_layout.addWidget(self.adapter_list)
         self.advanced_group.setLayout(advanced_layout)
@@ -230,6 +239,37 @@ class ModelSettings(QWidget):
         self.adapter_list.clear()
         for profile in AdapterProfileStore(store_path).load():
             self.adapter_list.addItem(f"{profile.id} {profile.stage}")
+
+    def save_adapter_profile_from_ui(self) -> Path | None:
+        raw_path = self.http_adapter_path_edit.text().strip()
+        if not raw_path:
+            self.model_diagnostics_list.addItem("adapter 保存失败：请先选择配置文件")
+            return None
+        store_path = Path(raw_path)
+        try:
+            self.save_adapter_profile(store_path)
+        except (OSError, ValueError) as exc:
+            self.model_diagnostics_list.addItem(f"adapter 保存失败：{exc}")
+            return None
+        self.model_diagnostics_list.addItem(f"adapter 已保存：{store_path}")
+        return store_path
+
+    def load_adapter_profiles_from_ui(self) -> Path | None:
+        raw_path = self.http_adapter_path_edit.text().strip()
+        if not raw_path:
+            self.adapter_list.clear()
+            self.adapter_list.addItem("请先选择 adapter 配置文件")
+            return None
+        store_path = Path(raw_path)
+        try:
+            self.load_adapter_profiles(store_path)
+        except (OSError, ValueError) as exc:
+            self.adapter_list.clear()
+            self.adapter_list.addItem(f"adapter 加载失败：{exc}")
+            return None
+        if self.adapter_list.count() == 0:
+            self.adapter_list.addItem("当前文件还没有 adapter 配置")
+        return store_path
 
     def load_local_command_profile_summary(self, profiles_path: Path) -> None:
         self.local_profile_summary_list.clear()
@@ -491,6 +531,16 @@ class ModelSettings(QWidget):
         )
         if path:
             self.tts_profile_path_edit.setText(path)
+
+    def browse_http_adapter_store(self) -> None:
+        path, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "选择 HTTP adapter 配置文件",
+            self.http_adapter_path_edit.text().strip() or "",
+            "JSON 文件 (*.json);;所有文件 (*)",
+        )
+        if path:
+            self.http_adapter_path_edit.setText(path)
 
     def _parse_response_mapping(self) -> dict[str, str]:
         mapping: dict[str, str] = {}

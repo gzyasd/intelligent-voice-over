@@ -147,6 +147,8 @@ def test_main_window_builds_background_worker_for_local_preview(monkeypatch, qtb
 
     worker = window.create_local_preview_worker()
     assert window.local_preview_button.isEnabled() is False
+    assert window.app_shell.current_page_id() == "current"
+    assert window.project_workspace_tabs.currentWidget() is window.generation_progress
 
     worker.run()
     window.handle_local_preview_succeeded()
@@ -210,13 +212,25 @@ def test_main_window_routes_local_preview_progress_to_generation_panel(
     assert window.generation_progress.stage_status("tts") == "progress"
 
 
-def test_main_window_local_preview_button_starts_background_worker(monkeypatch, qtbot) -> None:
+def test_main_window_local_preview_button_starts_background_worker(
+    monkeypatch,
+    qtbot,
+    tmp_path,
+) -> None:
     from ivo.ui.main_window import MainWindow
 
     started: list[bool] = []
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
 
     window = MainWindow()
     qtbot.addWidget(window)
+    window.create_project_from_inputs(
+        project_name="Episode 01",
+        source_video=source,
+        output_dir=tmp_path,
+        source_language="en",
+    )
 
     def fake_start_local_preview_background():
         started.append(True)

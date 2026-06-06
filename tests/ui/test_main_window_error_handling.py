@@ -94,3 +94,39 @@ def test_main_window_warns_when_evaluation_has_no_project(monkeypatch, qtbot) ->
 
     assert result is None
     assert warnings == [("生成评估报告失败", "请先创建或打开项目")]
+
+
+def test_main_window_warns_when_start_generation_has_no_project(monkeypatch, qtbot) -> None:
+    from ivo.ui.main_window import MainWindow
+
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "ivo.ui.main_window.QMessageBox.warning",
+        lambda parent, title, message: warnings.append((title, message)),
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    result = window.request_local_preview()
+
+    assert result is None
+    assert warnings == [("无法开始生成", "请先新建或打开项目，然后再开始生成配音。")]
+    assert window.progress_label.text() == "请先新建或打开项目，然后再开始生成配音。"
+
+
+def test_main_window_warns_when_export_has_no_project(monkeypatch, qtbot) -> None:
+    from ivo.ui.main_window import MainWindow
+
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "ivo.ui.main_window.QMessageBox.warning",
+        lambda parent, title, message: warnings.append((title, message)),
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    result = window.open_export_dialog()
+
+    assert result is None
+    assert warnings == [("无法导出", "请先新建或打开项目，然后再导出最终视频。")]
+    assert window.progress_label.text() == "请先新建或打开项目，然后再导出最终视频。"
