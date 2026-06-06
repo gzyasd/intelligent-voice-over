@@ -147,6 +147,41 @@ def test_timeline_editor_shows_review_summary(qtbot) -> None:
     assert "质量标记：1" in editor.review_summary_label.text()
 
 
+def test_timeline_editor_hides_technical_columns_by_default(qtbot) -> None:
+    from ivo.ui.timeline_editor import TimelineEditor
+
+    editor = TimelineEditor()
+    qtbot.addWidget(editor)
+
+    assert editor.table.isColumnHidden(editor.COLUMN_ID) is True
+    assert editor.table.isColumnHidden(editor.COLUMN_STYLE_PROMPT) is True
+    assert editor.table.isColumnHidden(editor.COLUMN_QUALITY_FLAGS) is True
+
+
+def test_timeline_editor_updates_readable_detail_panel_on_selection(qtbot) -> None:
+    from ivo.ui.timeline_editor import TimelineEditor
+
+    editor = TimelineEditor()
+    qtbot.addWidget(editor)
+    editor.set_segments(
+        [
+            _segment(
+                "seg-001",
+                source_text="Original line.",
+                target_text="中文台词。",
+                emotion="tense",
+            )
+        ]
+    )
+
+    editor.table.selectRow(0)
+
+    assert "Original line." in editor.detail_source_label.text()
+    assert "中文台词。" in editor.detail_target_label.text()
+    assert "speaker-1" in editor.detail_speaker_label.text()
+    assert "tense" in editor.detail_emotion_label.text()
+
+
 def test_timeline_editor_displays_speaker_profile_name_without_changing_id(qtbot, tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.core.speakers import SpeakerProfile
@@ -190,6 +225,9 @@ def _segment(
     *,
     status: str = "needs_review",
     quality_flags: list[str] | None = None,
+    source_text: str = "Hello.",
+    target_text: str = "你好。",
+    emotion: str | None = None,
 ):
     from ivo.core.timeline import DubbingSegment
 
@@ -199,9 +237,10 @@ def _segment(
         end_ms=1_000,
         speaker_id="speaker-1",
         source_language="en",
-        source_text="Hello.",
+        source_text=source_text,
         target_language="zh",
-        target_text="你好。",
+        target_text=target_text,
+        emotion=emotion,
         status=status,
         quality_flags=quality_flags or [],
     )

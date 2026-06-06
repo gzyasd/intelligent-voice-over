@@ -10,6 +10,7 @@ from ivo.local_readiness import check_profiles_readiness
 
 
 class PipelineWorker(QThread):
+    progress = Signal(object)
     succeeded = Signal()
     failed = Signal(str)
 

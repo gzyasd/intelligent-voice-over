@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from ivo.core.model_presets import builtin_model_presets
 from ivo.ui.advanced_model_settings import AdvancedModelSettings
+from ivo.ui.empty_states import EmptyStatePanel
 from ivo.ui.theme import CARD_STYLE, PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
 
 
@@ -27,6 +28,12 @@ class ModelCenter(QWidget):
         self.check_models_button = QPushButton("一键检查模型")
         self.toggle_advanced_button = QPushButton("显示开发者设置")
         self.preset_combo = QComboBox()
+        self.model_hint_panel = EmptyStatePanel(
+            title="模型目录尚未检查",
+            description="请选择模型目录后点击一键检查。缺少模型时，这里会告诉你应该放到哪个文件夹。",
+            action_text="一键检查模型",
+        )
+        self.model_hint_panel.setVisible(False)
         self._summary_parts: list[str] = []
 
         layout = QVBoxLayout()
@@ -52,6 +59,7 @@ class ModelCenter(QWidget):
         layout.addWidget(self.model_dir_edit)
         layout.addWidget(self.model_dir_button)
         layout.addWidget(self.check_models_button)
+        layout.addWidget(self.model_hint_panel)
         layout.addWidget(self.toggle_advanced_button)
         self._summary_parts.extend(["选择模型目录", "一键检查模型"])
 
@@ -74,6 +82,15 @@ class ModelCenter(QWidget):
         show = self.advanced_container.isHidden()
         self.advanced_container.setVisible(show)
         self.toggle_advanced_button.setText("隐藏开发者设置" if show else "显示开发者设置")
+
+    def show_missing_model_hint(self, stage: str, model_name: str, expected_path: str) -> None:
+        self.model_hint_panel.title_label.setText(f"没有找到 {model_name} 模型")
+        self.model_hint_panel.description_label.setText(
+            f"{stage} 阶段需要 {model_name}。请把模型放到 {expected_path}，"
+            "或在模型中心选择已经下载好的模型目录。"
+        )
+        self.model_hint_panel.action_button.setText("重新检查模型")
+        self.model_hint_panel.setVisible(True)
 
 
 def _preset_card(title: str, description: str) -> QFrame:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ivo.core.project_library import ProjectLibraryItem
+from ivo.ui.empty_states import EmptyStatePanel
 from ivo.ui.theme import CARD_STYLE, PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
 
 
@@ -11,6 +12,9 @@ class ProjectLibraryPage(QWidget):
         super().__init__(parent)
         self.open_project_buttons: list[QPushButton] = []
         self.open_folder_buttons: list[QPushButton] = []
+        self.empty_state: EmptyStatePanel | None = None
+        self.open_existing_project_button = QPushButton("打开已有项目")
+        self.open_existing_project_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
         self._summary_parts: list[str] = []
 
         self.content_layout = QVBoxLayout()
@@ -25,12 +29,26 @@ class ProjectLibraryPage(QWidget):
         self._clear_project_widgets()
         self.open_project_buttons = []
         self.open_folder_buttons = []
+        self.empty_state = None
         self._summary_parts = []
         if not projects:
-            empty = QLabel("还没有项目。点击“新建配音项目”开始。")
-            empty.setObjectName("SecondaryText")
-            self.content_layout.addWidget(empty)
-            self._summary_parts.append(empty.text())
+            self.empty_state = EmptyStatePanel(
+                title="还没有项目",
+                description="新建一个配音项目，或打开之前保存的 .ivoproj 项目文件夹。",
+                action_text="新建配音项目",
+            )
+            self.open_existing_project_button = QPushButton("打开已有项目")
+            self.open_existing_project_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+            self.content_layout.addWidget(self.empty_state)
+            self.content_layout.addWidget(self.open_existing_project_button)
+            self._summary_parts.extend(
+                [
+                    self.empty_state.title_label.text(),
+                    self.empty_state.description_label.text(),
+                    self.empty_state.action_button.text(),
+                    self.open_existing_project_button.text(),
+                ]
+            )
             self.content_layout.addStretch()
             return
         for item in projects:

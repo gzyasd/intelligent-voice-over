@@ -13,6 +13,7 @@ from ivo.core.project import DubbingProject
 from ivo.core.timeline import DubbingSegment
 from ivo.pipeline.import_video import extract_normalized_audio, import_source_video
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
+from ivo.pipeline.progress import PipelineProgressEvent, PipelineStage, STAGE_LABELS, stage_percent
 from ivo.pipeline.separate_audio import (
     LocalCommandSeparationAdapter,
     SeparationAdapter,
@@ -67,18 +68,21 @@ def run_local_command_preview(
     tts_adapter: TtsAdapter | None = None,
     ffmpeg_path: str | None = None,
     watermark_text: str | None = "AI Dubbed",
+    progress_callback: Callable[[PipelineProgressEvent], None] | None = None,
 ) -> LocalCommandPreviewResult:
     imported_video = _run_stage(
         project,
         "import",
         lambda: import_source_video(project, source_video),
         resume_from=lambda: _resume_file(project.path / "assets" / f"source_video{source_video.suffix}"),
+        progress_callback=progress_callback,
     )
     extracted_audio = _run_stage(
         project,
         "audio_extract",
         lambda: extract_normalized_audio(project, imported_video, ffmpeg_path=ffmpeg_path),
         resume_from=lambda: _resume_file(project.path / "assets" / "extracted_audio.wav"),
+        progress_callback=progress_callback,
     )
     separation = _run_stage(
         project,
@@ -89,6 +93,7 @@ def run_local_command_preview(
             separation_adapter or LocalCommandSeparationAdapter(profiles.separation),
         ),
         resume_from=lambda: _resume_separation(project),
+        progress_callback=progress_callback,
     )
     active_asr_adapter = asr_adapter or LocalCommandAsrAdapter(profiles.asr)
     source_segments = _run_stage(
@@ -100,6 +105,7 @@ def run_local_command_preview(
             source_language=project.source_language,
         ),
         resume_from=lambda: _resume_source_segments(project),
+        progress_callback=progress_callback,
     )
     active_diarization_adapter = diarization_adapter
     if active_diarization_adapter is None and profiles.diarization is not None:
@@ -112,6 +118,7 @@ def run_local_command_preview(
                 source_segments,
                 diarize_audio(active_diarization_adapter, separation.vocals_path),
             ),
+            progress_callback=progress_callback,
         )
     adapter = translation_adapter or _build_override_translation_adapter(
         source_segments,
@@ -122,6 +129,7 @@ def run_local_command_preview(
         "translation",
         lambda: translate_segments(project, source_segments, adapter),
         resume_from=lambda: _resume_translated_segments(project),
+        progress_callback=progress_callback,
     )
 
     generated_segments: list[Path] = []
@@ -136,7 +144,9 @@ def run_local_command_preview(
             active_tts_adapter,
             generated_segments,
             segment_audio,
+            progress_callback=progress_callback,
         ),
+        progress_callback=progress_callback,
     )
 
     metadata = build_ai_dubbing_metadata(
@@ -159,6 +169,7 @@ def run_local_command_preview(
             ffmpeg_path=ffmpeg_path,
         ),
         resume_from=lambda: _resume_file(project.path / "renders" / "local-preview.mp4"),
+        progress_callback=progress_callback,
     )
     return LocalCommandPreviewResult(
         final_video=final_video,
@@ -169,24 +180,29 @@ def run_local_command_preview(
 
 def _run_stage(
     project: DubbingProject,
-    stage: str,
+    stage: PipelineStage,
     action: Callable[[], T],
     *,
     resume_from: Callable[[], T | None] | None = None,
+    progress_callback: Callable[[PipelineProgressEvent], None] | None = None,
 ) -> T:
     record = project.jobs.get(stage)
     if record is not None and record.status == "completed" and resume_from is not None:
         resumed = resume_from()
         if resumed is not None:
+            _emit_progress(progress_callback, stage, "completed", output_path=_output_path(resumed))
             return resumed
 
+    _emit_progress(progress_callback, stage, "started")
     project.jobs.mark_running(stage, "running")
     try:
         result = action()
     except Exception as exc:
         project.jobs.mark_failed(stage, str(exc))
+        _emit_progress(progress_callback, stage, "failed", message=str(exc))
         raise
     project.jobs.mark_completed(stage, "completed")
+    _emit_progress(progress_callback, stage, "completed", output_path=_output_path(result))
     return result
 
 
@@ -234,17 +250,21 @@ def _synthesize_segments(
     active_tts_adapter: TtsAdapter,
     generated_segments: list[Path],
     segment_audio: list[SegmentAudio],
+    progress_callback: Callable[[PipelineProgressEvent], None] | None = None,
 ) -> None:
-    for segment in dubbed_segments:
+    total_items = len(dubbed_segments)
+    for index, segment in enumerate(dubbed_segments, start=1):
         resumed_audio = _resume_segment_audio(project, segment)
         if resumed_audio is not None:
             generated_segments.append(resumed_audio)
             segment_audio.append(SegmentAudio(path=resumed_audio, start_ms=segment.start_ms))
+            _emit_tts_progress(progress_callback, index, total_items, segment.id, resumed_audio)
             continue
         project.timeline.update_segment(segment.id, status="approved")
         synthesis = synthesize_segment(project, segment, active_tts_adapter)
         generated_segments.append(synthesis.audio_path)
         segment_audio.append(SegmentAudio(path=synthesis.audio_path, start_ms=segment.start_ms))
+        _emit_tts_progress(progress_callback, index, total_items, segment.id, synthesis.audio_path)
 
 
 def _resume_segment_audio(project: DubbingProject, segment: DubbingSegment) -> Path | None:
@@ -267,3 +287,60 @@ def _build_override_translation_adapter(
         for segment in source_segments
     }
     return MockTranslationAdapter(translations)
+
+
+def _emit_progress(
+    callback: Callable[[PipelineProgressEvent], None] | None,
+    stage: PipelineStage,
+    status: str,
+    *,
+    message: str = "",
+    current_item: int | None = None,
+    total_items: int | None = None,
+    output_path: Path | None = None,
+) -> None:
+    if callback is None:
+        return
+    callback(
+        PipelineProgressEvent(
+            stage=stage,
+            stage_label=STAGE_LABELS[stage],
+            status=status,  # type: ignore[arg-type]
+            message=message,
+            overall_percent=stage_percent(stage, status=status),  # type: ignore[arg-type]
+            current_item=current_item,
+            total_items=total_items,
+            output_path=output_path,
+        )
+    )
+
+
+def _emit_tts_progress(
+    callback: Callable[[PipelineProgressEvent], None] | None,
+    current_item: int,
+    total_items: int,
+    segment_id: str,
+    output_path: Path,
+) -> None:
+    if callback is None or total_items == 0:
+        return
+    callback(
+        PipelineProgressEvent(
+            stage="tts",
+            stage_label=STAGE_LABELS["tts"],
+            status="progress",
+            message=f"正在生成第 {current_item} / {total_items} 句：{segment_id}",
+            overall_percent=min(
+                99,
+                stage_percent("tts", status="started")
+                + round(current_item / total_items * 10),
+            ),
+            current_item=current_item,
+            total_items=total_items,
+            output_path=output_path,
+        )
+    )
+
+
+def _output_path(result: object) -> Path | None:
+    return result if isinstance(result, Path) else None

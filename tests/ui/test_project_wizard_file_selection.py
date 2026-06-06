@@ -115,3 +115,39 @@ def test_main_window_creates_project_from_wizard_inputs(qtbot, tmp_path) -> None
     assert project.settings.load().translation.translation_style_notes == "日剧口吻"
     assert window.source_video_path == source_video
     assert window.progress_label.text() == "项目已创建。下一步：点击“开始生成配音（完整流程）”。"
+
+
+def test_project_wizard_uses_four_step_flow(qtbot) -> None:
+    from ivo.ui.project_wizard import ProjectWizard
+
+    wizard = ProjectWizard()
+    qtbot.addWidget(wizard)
+
+    assert wizard.step_titles() == ["选择视频", "内容与语言", "生成方案", "确认创建"]
+    assert wizard.current_step_title() == "选择视频"
+
+    wizard.next_step_button.click()
+
+    assert wizard.current_step_title() == "内容与语言"
+
+    wizard.back_step_button.click()
+
+    assert wizard.current_step_title() == "选择视频"
+
+
+def test_project_wizard_can_request_start_immediately(qtbot, tmp_path) -> None:
+    from ivo.ui.project_wizard import ProjectWizard
+
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    wizard = ProjectWizard()
+    qtbot.addWidget(wizard)
+    wizard.project_name_edit.setText("Episode 01")
+    wizard.video_path_edit.setText(str(source))
+    wizard.output_dir_edit.setText(str(output_dir))
+
+    wizard.create_and_start_button.click()
+
+    assert wizard.values().start_immediately is True

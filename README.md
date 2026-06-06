@@ -189,3 +189,7 @@ uv run ivo model list .\models.json
 - `docs/evaluation/real-video-evaluation.md`
 - `docs/ui-local-preview.md`
 - `docs/windows-packaging.md`
+
+## 桌面客户端使用流程
+
+新版桌面端采用“首页 / 项目库 / 当前项目 / 模型中心 / 设置”的左侧导航。普通用户的推荐路径是：先在“模型中心”选择 `models/` 或其他模型目录并一键检查，再通过 4 步向导新建项目；生成时在“当前项目 -> 生成进度”查看阶段和当前句子进度；完成后在“时间线”审片，默认不显示 JSON、profile、片段 ID 等技术细节。以往项目可在“项目库”继续打开、查看文件夹或继续生成。

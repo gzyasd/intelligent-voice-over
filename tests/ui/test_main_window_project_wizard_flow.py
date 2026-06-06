@@ -37,6 +37,44 @@ def test_main_window_opens_wizard_and_creates_project(monkeypatch, qtbot, tmp_pa
     assert window.progress_label.text() == "项目已创建。下一步：点击“开始生成配音（完整流程）”。"
 
 
+def test_main_window_starts_generation_when_wizard_requests_it(
+    monkeypatch,
+    qtbot,
+    tmp_path,
+) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from ivo.ui.project_wizard import ProjectWizard
+    from ivo.ui.main_window import MainWindow
+
+    source_video = tmp_path / "episode.mp4"
+    source_video.write_bytes(b"video")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    class AcceptedWizard(ProjectWizard):
+        def __init__(self, parent=None) -> None:
+            super().__init__(parent)
+            self.project_name_edit.setText("Episode 01")
+            self.video_path_edit.setText(str(source_video))
+            self.output_dir_edit.setText(str(output_dir))
+            self._start_immediately = True
+
+        def exec(self) -> int:
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr("ivo.ui.main_window.ProjectWizard", AcceptedWizard)
+    started: list[bool] = []
+    window = MainWindow()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "start_local_preview_background", lambda: started.append(True))
+
+    project = window.open_project_wizard()
+
+    assert project is not None
+    assert started == [True]
+
+
 def test_main_window_warns_when_wizard_input_is_invalid(monkeypatch, qtbot) -> None:
     from PySide6.QtWidgets import QDialog
 

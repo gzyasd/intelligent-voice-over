@@ -157,6 +157,59 @@ def test_main_window_builds_background_worker_for_local_preview(monkeypatch, qtb
     assert window.progress_label.text() == f"配音生成已完成：{worker.result.final_video}"
 
 
+def test_main_window_routes_local_preview_progress_to_generation_panel(
+    monkeypatch,
+    qtbot,
+    tmp_path,
+) -> None:
+    from ivo.pipeline.local_command_preview import LocalCommandPreviewResult
+    from ivo.pipeline.progress import PipelineProgressEvent
+    from ivo.ui.main_window import MainWindow
+
+    source = tmp_path / "episode.mp4"
+    source.write_bytes(b"video")
+    profiles_path = _write_local_profiles(tmp_path)
+
+    def fake_run_local_command_preview(project, **kwargs):
+        kwargs["progress_callback"](
+            PipelineProgressEvent(
+                stage="tts",
+                stage_label="生成配音",
+                status="progress",
+                message="正在生成第 1 / 3 句：seg-001",
+                overall_percent=72,
+                current_item=1,
+                total_items=3,
+            )
+        )
+        final_video = project.path / "renders" / "local-preview.mp4"
+        final_video.write_bytes(b"preview")
+        return LocalCommandPreviewResult(
+            final_video=final_video,
+            metadata={"ai_dubbing": "true"},
+            generated_segments=[],
+        )
+
+    monkeypatch.setattr("ivo.ui.main_window.run_local_command_preview", fake_run_local_command_preview)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.create_project_from_inputs(
+        project_name="Episode 01",
+        source_video=source,
+        output_dir=tmp_path,
+        source_language="en",
+    )
+    window.model_settings.local_command_profiles_path_edit.setText(str(profiles_path))
+
+    worker = window.create_local_preview_worker()
+    worker.run()
+
+    assert window.generation_progress.overall_progress.value() == 72
+    assert window.generation_progress.current_item_label.text() == "第 1 / 3 句"
+    assert window.generation_progress.stage_status("tts") == "progress"
+
+
 def test_main_window_local_preview_button_starts_background_worker(monkeypatch, qtbot) -> None:
     from ivo.ui.main_window import MainWindow
 

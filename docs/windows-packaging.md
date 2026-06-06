@@ -122,3 +122,13 @@ dist\IntelligentVoiceOver\release-manifest.json
 4. 审核时间线后执行“最终导出”。
 
 如果程序启动失败，优先检查包内 `ffmpeg` 目录是否完整、显卡驱动、本地模型依赖和被安全软件隔离的文件。
+
+## 本地调试时只刷新客户端目录
+
+为了避免自动生成压缩包，本地调试或交付前刷新目录时请使用：
+
+```powershell
+uv run python .\scripts\build_windows_package.py --output-dir .\dist --skip-archive
+```
+
+该命令只更新 `dist\IntelligentVoiceOver\` 目录，不会主动生成 `win64-portable.zip`。如果需要压缩包，请在确认目录内容后手动压缩整个 `IntelligentVoiceOver` 文件夹。不要只复制单个 `IntelligentVoiceOver.exe`，它依赖同目录下的 `_internal`、`ffmpeg`、运行环境和示例配置文件。

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
+from PySide6.QtCore import QSize
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -29,6 +31,7 @@ from ivo.pipeline.local_command_preview import (
     LocalCommandPreviewResult,
     run_local_command_preview,
 )
+from ivo.pipeline.progress import PipelineProgressEvent
 from ivo.pipeline.mock_pipeline import MockPipelineResult, run_mock_dubbing_pipeline
 from ivo.pipeline.separate_audio import HttpSeparationAdapter
 from ivo.pipeline.synthesize import (
@@ -45,7 +48,9 @@ from ivo.profile_runtime import prepare_local_command_profiles
 from ivo.core.project_library import scan_project_library
 from ivo.ui.app_shell import AppShell
 from ivo.ui.export_dialog import ExportDialog
+from ivo.ui.generation_progress import GenerationProgressPanel
 from ivo.ui.model_center import ModelCenter
+from ivo.ui.project_overview_page import ProjectOverviewPage
 from ivo.ui.project_library_page import ProjectLibraryPage
 from ivo.ui.project_wizard import ProjectWizard
 from ivo.ui.run_log import RunLogPanel
@@ -78,6 +83,8 @@ class MainWindow(QMainWindow):
         self.model_center = ModelCenter()
         self.model_settings = self.model_center.advanced_settings
         self.project_library_page = ProjectLibraryPage()
+        self.project_overview = ProjectOverviewPage()
+        self.generation_progress = GenerationProgressPanel()
         self.run_log_panel = RunLogPanel()
         self.current_project: DubbingProject | None = None
         self.source_video_path: Path | None = None
@@ -91,8 +98,11 @@ class MainWindow(QMainWindow):
         self.evaluation_report_button.clicked.connect(self.write_evaluation_report)
         self.export_button.clicked.connect(self.open_export_dialog)
         self.timeline_editor.regenerate_requested.connect(self.start_segment_regeneration_background)
+        self.project_overview.create_requested.connect(self.open_project_wizard)
+        self.project_overview.start_requested.connect(lambda: self.start_local_preview_background())
 
         self.project_workspace_tabs = QTabWidget()
+        self.project_workspace_tabs.addTab(self.generation_progress, "生成进度")
         self.project_workspace_tabs.addTab(self.timeline_editor, "\u65f6\u95f4\u7ebf")
         self.project_workspace_tabs.addTab(_scrollable(self.model_settings), "\u6a21\u578b\u8bbe\u7f6e")
         self.project_workspace_tabs.addTab(self.run_log_panel, "\u8fd0\u884c\u65e5\u5fd7")
@@ -108,6 +118,9 @@ class MainWindow(QMainWindow):
         self.app_shell.add_page("settings", "设置", self._placeholder_page("设置", "后续会集中管理默认模型目录、项目目录和 GPU 偏好。"))
         self.setCentralWidget(self.app_shell)
         self.resize(1120, 720)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(900, 640)
 
     def _build_home_page(self) -> QWidget:
         page = QWidget()
@@ -142,6 +155,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
+        layout.addWidget(self.project_overview)
         actions = QFrame()
         actions.setStyleSheet(CARD_STYLE)
         action_layout = QVBoxLayout()
@@ -188,6 +202,7 @@ class MainWindow(QMainWindow):
         self.current_project = project
         self.source_video_path = source_video
         self.progress_label.setText(self.NEXT_STEP_TEXT)
+        self.project_overview.set_project(project)
         self.timeline_editor.set_project(project)
         return project
 
@@ -219,7 +234,10 @@ class MainWindow(QMainWindow):
                 "\u8bf7\u586b\u5199\u9879\u76ee\u540d\u79f0\u3001\u6e90\u89c6\u9891\u548c\u8f93\u51fa\u76ee\u5f55\u3002",
             )
             return None
-        return self.create_project_from_wizard(wizard)
+        project = self.create_project_from_wizard(wizard)
+        if wizard.values().start_immediately:
+            self.start_local_preview_background()
+        return project
 
     def open_existing_project(self) -> DubbingProject | None:
         raw_path = QFileDialog.getExistingDirectory(
@@ -243,6 +261,7 @@ class MainWindow(QMainWindow):
 
         self.current_project = project
         self.source_video_path = project.source_video_path
+        self.project_overview.set_project(project)
         self.timeline_editor.set_project(project)
         self.progress_label.setText(f"项目已打开。下一步：点击“{self.START_DUBBING_TEXT}”。")
         return project
@@ -265,7 +284,8 @@ class MainWindow(QMainWindow):
     def run_local_preview(self) -> LocalCommandPreviewResult:
         self.progress_label.setText("正在生成配音，请稍候")
         self.run_log_panel.append_stage_message("配音生成", "已开始")
-        result = self._execute_local_preview()
+        self.generation_progress.reset()
+        result = self._execute_local_preview(progress_callback=self.handle_generation_progress)
         self.run_log_panel.append_stage_message("配音生成", f"输出：{result.final_video}")
         self._refresh_after_local_preview(result.final_video)
         return result
@@ -274,7 +294,11 @@ class MainWindow(QMainWindow):
         self.progress_label.setText("正在生成配音，请稍候")
         self.run_log_panel.append_stage_message("配音生成", "已开始")
         self.local_preview_button.setEnabled(False)
-        worker = PipelineWorker(self._execute_local_preview)
+        self.generation_progress.reset()
+        worker = PipelineWorker(
+            lambda: self._execute_local_preview(progress_callback=worker.progress.emit)
+        )
+        worker.progress.connect(self.handle_generation_progress)
         worker.succeeded.connect(self.handle_local_preview_succeeded)
         worker.failed.connect(self.handle_local_preview_failed)
         self.local_preview_worker = worker
@@ -298,8 +322,17 @@ class MainWindow(QMainWindow):
     def handle_local_preview_failed(self, message: str) -> None:
         self.progress_label.setText(f"生成配音失败：{message}")
         self.run_log_panel.append_stage_message("配音生成", f"失败：{message}")
+        if self.current_project is not None:
+            self.project_overview.set_project(self.current_project)
         self.local_preview_button.setEnabled(True)
         QMessageBox.warning(self, "生成配音失败", message)
+
+    def handle_generation_progress(self, event: PipelineProgressEvent) -> None:
+        self.generation_progress.handle_progress(event)
+        stage_label = getattr(event, "stage_label", "生成进度")
+        message = getattr(event, "message", "")
+        status = getattr(event, "status", "")
+        self.progress_label.setText(message or f"{stage_label}：{status}")
 
     def write_evaluation_report(self) -> Path:
         if self.current_project is None:
@@ -438,7 +471,10 @@ class MainWindow(QMainWindow):
                 segment_audio.append(SegmentAudio(path=audio_path, start_ms=segment.start_ms))
         return segment_audio
 
-    def _execute_local_preview(self) -> LocalCommandPreviewResult:
+    def _execute_local_preview(
+        self,
+        progress_callback: Callable[[PipelineProgressEvent], None] | None = None,
+    ) -> LocalCommandPreviewResult:
         if self.current_project is None:
             raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
         if self.source_video_path is None:
@@ -454,6 +490,7 @@ class MainWindow(QMainWindow):
             diarization_adapter=self._build_http_diarization_adapter(),
             translation_adapter=self._build_translation_adapter(),
             tts_adapter=self._build_http_tts_adapter(),
+            progress_callback=progress_callback,
         )
 
     def _save_model_profile_settings(self) -> None:
@@ -472,6 +509,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_after_local_preview(self, final_video: Path | None = None) -> None:
         if self.current_project is not None:
+            self.project_overview.set_project(self.current_project)
             self.timeline_editor.set_project(self.current_project)
         if final_video is not None:
             self.progress_label.setText(f"配音生成已完成：{final_video}")

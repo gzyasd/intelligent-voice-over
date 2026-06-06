@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -80,19 +81,28 @@ class TimelineEditor(QWidget):
         self.clear_reference_buttons: list[QPushButton] = []
         self.rename_speaker_buttons: list[QPushButton] = []
         self._all_segments: list[DubbingSegment] = []
+        self._visible_segments: list[DubbingSegment] = []
         self._quality_filter = "all"
         self.quality_filter_combo = QComboBox()
         self.quality_filter_combo.addItems(list(QUALITY_FILTERS.values()))
         self.quality_filter_combo.currentIndexChanged.connect(self._handle_quality_filter_changed)
         self.review_summary_label = QLabel("总片段：0；已审核：0；已生成：0；质量标记：0")
         self.quality_summary_label = QLabel("质量摘要：暂无质量问题")
+        self.detail_source_label = QLabel("原文：请选择一句台词")
+        self.detail_target_label = QLabel("中文：请选择一句台词")
+        self.detail_speaker_label = QLabel("说话人：-")
+        self.detail_emotion_label = QLabel("情绪：-")
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.itemSelectionChanged.connect(self._refresh_detail_from_selection)
+        self._hide_technical_columns()
 
         layout = QVBoxLayout()
         layout.addWidget(self.quality_filter_combo)
         layout.addWidget(self.review_summary_label)
         layout.addWidget(self.quality_summary_label)
+        layout.addWidget(self._build_detail_panel())
         layout.addWidget(self.table)
         self.setLayout(layout)
 
@@ -103,6 +113,7 @@ class TimelineEditor(QWidget):
     def set_segments(self, segments: list[DubbingSegment]) -> None:
         self._all_segments = segments
         visible_segments = self._filtered_segments(segments)
+        self._visible_segments = visible_segments
         self.save_buttons = []
         self.regenerate_buttons = []
         self.set_reference_buttons = []
@@ -134,6 +145,49 @@ class TimelineEditor(QWidget):
                     item.setData(Qt.ItemDataRole.UserRole, segment.speaker_id)
                 self.table.setItem(row, column, item)
             self.table.setCellWidget(row, self.COLUMN_ACTION, self._build_action_widget(row, segment.id))
+        if visible_segments:
+            self._refresh_detail_for_segment(visible_segments[0])
+        else:
+            self._clear_detail_panel()
+
+    def _build_detail_panel(self) -> QFrame:
+        panel = QFrame()
+        panel.setFrameShape(QFrame.Shape.StyledPanel)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.addWidget(QLabel("当前句子"))
+        layout.addWidget(self.detail_source_label)
+        layout.addWidget(self.detail_target_label)
+        layout.addWidget(self.detail_speaker_label)
+        layout.addWidget(self.detail_emotion_label)
+        panel.setLayout(layout)
+        return panel
+
+    def _hide_technical_columns(self) -> None:
+        self.table.setColumnHidden(self.COLUMN_ID, True)
+        self.table.setColumnHidden(self.COLUMN_STYLE_PROMPT, True)
+        self.table.setColumnHidden(self.COLUMN_QUALITY_FLAGS, True)
+
+    def _refresh_detail_from_selection(self) -> None:
+        selected_rows = sorted({index.row() for index in self.table.selectedIndexes()})
+        if not selected_rows:
+            return
+        row = selected_rows[0]
+        if row < 0 or row >= len(self._visible_segments):
+            return
+        self._refresh_detail_for_segment(self._visible_segments[row])
+
+    def _refresh_detail_for_segment(self, segment: DubbingSegment) -> None:
+        self.detail_source_label.setText(f"原文：{segment.source_text}")
+        self.detail_target_label.setText(f"中文：{segment.target_text}")
+        self.detail_speaker_label.setText(f"说话人：{self._speaker_display_text(segment.speaker_id)}")
+        self.detail_emotion_label.setText(f"情绪：{segment.emotion or '未标注'}")
+
+    def _clear_detail_panel(self) -> None:
+        self.detail_source_label.setText("原文：请选择一句台词")
+        self.detail_target_label.setText("中文：请选择一句台词")
+        self.detail_speaker_label.setText("说话人：-")
+        self.detail_emotion_label.setText("情绪：-")
 
     def _build_action_widget(self, row: int, segment_id: str) -> QWidget:
         widget = QWidget()
