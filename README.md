@@ -91,10 +91,16 @@ uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" -
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --project-name "Episode 01" --source-language en --no-watermark
 ```
 
-真实模型 profile 建议增加 `--require-readiness --models-dir .\models`，在包、模型目录或 engine command 文件缺失时提前退出，不创建半成品项目：
+真实模型 profile 建议增加 `--require-readiness --models-dir .\models`，在包、模型目录或 engine command 文件缺失时提前退出，不创建半成品项目。快速真实预览优先使用已经验收过的 F5 GPU 小预览 profile：
 
 ```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_tts_cosyvoice.json --project-name "Episode 01" --source-language en --require-readiness --models-dir .\models --no-watermark
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_gpu_small.json --project-name "Episode 01" --source-language ja --require-readiness --models-dir .\models --resume-existing --no-watermark
+```
+
+正式质量优先流程使用完整 GPU + 说话人分离 + LM Studio 翻译 profile。运行前需要确认 `.venv-pyannote` 可用、LM Studio 已启动，并且 `http://127.0.0.1:1995/v1/models` 能看到 profile 中的模型 ID：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json --project-name "Full GPU Episode 01" --source-language ja --require-readiness --models-dir .\models --resume-existing --no-watermark
 ```
 
 如果真实本地模型运行中途失败，保留同一个输出目录和项目名，修复模型环境或 profile 后可用 `--resume-existing` 复用已有 `.ivoproj`、job 状态和已完成的文件阶段产物：
@@ -107,7 +113,7 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 
 ```powershell
 uv run ivo validate-local-profiles .\examples\local_command_profiles.real_dry_run.json --json
-uv run ivo check-local-readiness .\examples\local_command_profiles.real_tts_cosyvoice.json --models-dir .\models --json
+uv run ivo check-local-readiness .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --models-dir .\models --json
 ```
 
 批量处理一个目录里的多集视频，并为每个视频生成独立 `.ivoproj`：
