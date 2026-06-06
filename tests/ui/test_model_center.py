@@ -30,3 +30,17 @@ def test_model_center_exposes_advanced_settings_only_when_requested(qtbot) -> No
     center.toggle_advanced_button.click()
 
     assert center.advanced_settings_visible() is True
+
+
+def test_model_center_advanced_tab_keeps_source_file_tools_separate(qtbot) -> None:
+    from ivo.ui.model_center import ModelCenter
+
+    center = ModelCenter()
+    qtbot.addWidget(center)
+
+    center.toggle_advanced_button.click()
+
+    assert center.editor_tabs.tabText(2) == "高级源文件"
+    assert center.config_local_profiles_path_edit.text().endswith(".json")
+    assert center.config_translation_profile_path_edit.text().endswith(".json")
+    assert center.advanced_settings_visible() is True

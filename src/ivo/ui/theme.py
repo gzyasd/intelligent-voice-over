@@ -44,6 +44,14 @@ QPushButton {{
 }}
 """
 
+MODEL_CENTER_LIST_STYLE = f"""
+QFrame {{
+    background: {SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 12px;
+}}
+"""
+
 
 def apply_app_theme(app: QApplication) -> None:
     app.setStyleSheet(

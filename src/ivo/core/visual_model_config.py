@@ -24,6 +24,13 @@ class VisualStageConfig(BaseModel):
     service_type: str = "local"
     provider_name: str = ""
     enabled: bool = True
+    model_path: str = ""
+    device: str = "auto"
+    precision: str = "auto"
+    api_base_url: str = ""
+    api_model: str = ""
+    validation_status: str = "unchecked"
+    validation_message: str = "尚未检查"
 
 
 class VisualModelConfig(BaseModel):
@@ -34,6 +41,12 @@ class VisualModelConfig(BaseModel):
     translation_profile_path: str = ""
     builtin: bool = False
     recommended_models: list[str] = Field(default_factory=list)
+    quality_label: str = "自定义"
+    prefer_gpu: bool = True
+    content_types: list[str] = Field(default_factory=lambda: ["通用"])
+    tags: list[str] = Field(default_factory=list)
+    last_check_status: str = "unchecked"
+    last_check_summary: str = "尚未检查"
     stages: list[VisualStageConfig] = Field(default_factory=list)
 
 
@@ -131,21 +144,41 @@ def _from_preset(preset: ModelPreset) -> VisualModelConfig:
         translation_profile_path=preset.translation_profile_path,
         builtin=True,
         recommended_models=preset.recommended_models,
-        stages=_default_stages(translation_is_http=bool(preset.translation_profile_path)),
+        quality_label=_quality_label(preset.quality),
+        prefer_gpu=preset.requires_gpu or preset.quality in {"high", "fast"},
+        content_types=["美剧", "日剧", "韩剧", "通用"],
+        tags=_preset_tags(preset),
+        stages=_default_stages(
+            translation_is_http=bool(preset.translation_profile_path),
+            quality=preset.quality,
+        ),
     )
 
 
-def _default_stages(*, translation_is_http: bool = False) -> list[VisualStageConfig]:
+def _default_stages(
+    *,
+    translation_is_http: bool = False,
+    quality: str = "custom",
+) -> list[VisualStageConfig]:
     stages: list[VisualStageConfig] = []
     for stage, label in STAGE_LABELS.items():
         service_type = "http" if stage == "translation" and translation_is_http else "local"
+        provider_name = _default_provider_name(stage, service_type, quality)
         stages.append(
             VisualStageConfig(
                 stage=stage,
                 label=label,
                 service_type=service_type,
-                provider_name="在线 API" if service_type == "http" else "本地模型",
+                provider_name=provider_name,
                 enabled=stage != "diarization" or translation_is_http,
+                device="cuda" if quality in {"high", "fast"} else "auto",
+                precision="float16" if quality in {"high", "fast"} else "auto",
+                api_base_url="http://127.0.0.1:1995/v1"
+                if stage == "translation" and service_type == "http"
+                else "",
+                api_model="Qwen3.6-35B-A3B"
+                if stage == "translation" and service_type == "http"
+                else "",
             )
         )
     return stages
@@ -153,3 +186,39 @@ def _default_stages(*, translation_is_http: bool = False) -> list[VisualStageCon
 
 def _new_custom_id() -> str:
     return f"custom-{uuid4().hex[:12]}"
+
+
+def _quality_label(quality: str) -> str:
+    labels = {
+        "high": "高质量",
+        "fast": "快速预览",
+        "preview": "CPU 预览",
+        "custom": "自定义",
+    }
+    return labels.get(quality, "自定义")
+
+
+def _preset_tags(preset: ModelPreset) -> list[str]:
+    tags: list[str] = [_quality_label(preset.quality)]
+    if preset.requires_gpu:
+        tags.append("GPU")
+    if preset.requires_lm_studio:
+        tags.append("LM Studio")
+    if preset.translation_profile_path:
+        tags.append("在线 API")
+    tags.append("本地模型" if preset.local_profiles_path else "自定义")
+    return list(dict.fromkeys(tags))
+
+
+def _default_provider_name(stage: str, service_type: str, quality: str) -> str:
+    if service_type == "http":
+        return "LM Studio / Qwen3.6"
+    if stage == "separation":
+        return "Demucs"
+    if stage == "asr":
+        return "faster-whisper large-v3" if quality == "high" else "faster-whisper small"
+    if stage == "diarization":
+        return "pyannote"
+    if stage == "tts":
+        return "F5-TTS"
+    return "本地模型"
