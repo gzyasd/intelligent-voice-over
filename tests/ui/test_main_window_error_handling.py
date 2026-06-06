@@ -77,3 +77,20 @@ def test_readiness_worker_runs_local_profile_check(monkeypatch, tmp_path) -> Non
 
     assert worker.result == expected
     assert captured == {"profiles_path": profiles_path, "models_dir": models_dir}
+
+
+def test_main_window_warns_when_evaluation_has_no_project(monkeypatch, qtbot) -> None:
+    from ivo.ui.main_window import MainWindow
+
+    warnings: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "ivo.ui.main_window.QMessageBox.warning",
+        lambda parent, title, message: warnings.append((title, message)),
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    result = window.open_evaluation_report()
+
+    assert result is None
+    assert warnings == [("生成评估报告失败", "请先创建或打开项目")]

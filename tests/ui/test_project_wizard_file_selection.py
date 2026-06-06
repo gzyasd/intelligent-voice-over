@@ -135,6 +135,16 @@ def test_project_wizard_uses_four_step_flow(qtbot) -> None:
     assert wizard.current_step_title() == "选择视频"
 
 
+def test_project_wizard_glossary_button_hides_json_word(qtbot) -> None:
+    from ivo.ui.project_wizard import ProjectWizard
+
+    wizard = ProjectWizard()
+    qtbot.addWidget(wizard)
+
+    assert wizard.glossary_browse_button.text() == "浏览术语表"
+    assert "JSON" not in wizard.glossary_browse_button.text()
+
+
 def test_project_wizard_can_request_start_immediately(qtbot, tmp_path) -> None:
     from ivo.ui.project_wizard import ProjectWizard
 

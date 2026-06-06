@@ -5,6 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QSize
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -24,6 +26,7 @@ from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
 from ivo.core.settings import ProfileSelectionSettings, TranslationSettings
 from ivo.core.timeline import SourceLanguage
+from ivo.core.user_settings import UserSettings
 from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
 from ivo.pipeline.local_command_preview import (
@@ -54,6 +57,7 @@ from ivo.ui.project_overview_page import ProjectOverviewPage
 from ivo.ui.project_library_page import ProjectLibraryPage
 from ivo.ui.project_wizard import ProjectWizard
 from ivo.ui.run_log import RunLogPanel
+from ivo.ui.settings_page import SettingsPage
 from ivo.ui.theme import CARD_STYLE, PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
 from ivo.ui.timeline_editor import TimelineEditor
 from ivo.ui.workers import PipelineWorker
@@ -85,6 +89,7 @@ class MainWindow(QMainWindow):
         self.project_library_page = ProjectLibraryPage()
         self.project_overview = ProjectOverviewPage()
         self.generation_progress = GenerationProgressPanel()
+        self.settings_page = SettingsPage()
         self.run_log_panel = RunLogPanel()
         self.current_project: DubbingProject | None = None
         self.source_video_path: Path | None = None
@@ -95,11 +100,19 @@ class MainWindow(QMainWindow):
         self.create_project_button.clicked.connect(self.open_project_wizard)
         self.open_project_button.clicked.connect(self.open_existing_project)
         self.local_preview_button.clicked.connect(lambda: self.start_local_preview_background())
-        self.evaluation_report_button.clicked.connect(self.write_evaluation_report)
+        self.evaluation_report_button.clicked.connect(self.open_evaluation_report)
         self.export_button.clicked.connect(self.open_export_dialog)
         self.timeline_editor.regenerate_requested.connect(self.start_segment_regeneration_background)
         self.project_overview.create_requested.connect(self.open_project_wizard)
         self.project_overview.start_requested.connect(lambda: self.start_local_preview_background())
+        self.project_overview.progress_requested.connect(self.show_generation_progress)
+        self.project_overview.open_folder_requested.connect(lambda path: self.open_path_in_shell(path))
+        self.project_overview.open_video_requested.connect(lambda path: self.open_path_in_shell(path))
+        self.project_library_page.open_project_requested.connect(lambda path: self.open_project_path(path))
+        self.project_library_page.open_folder_requested.connect(lambda path: self.open_path_in_shell(path))
+        self.project_library_page.create_project_requested.connect(lambda: self.open_project_wizard())
+        self.project_library_page.open_existing_requested.connect(lambda: self.open_existing_project())
+        self.settings_page.saved.connect(self.handle_user_settings_saved)
 
         self.project_workspace_tabs = QTabWidget()
         self.project_workspace_tabs.addTab(self.generation_progress, "生成进度")
@@ -115,7 +128,7 @@ class MainWindow(QMainWindow):
         self.app_shell.add_page("projects", "项目库", self.project_library_page)
         self.app_shell.add_page("current", "当前项目", self._build_current_project_page())
         self.app_shell.add_page("model_center", "模型中心", _scrollable(self.model_center))
-        self.app_shell.add_page("settings", "设置", self._placeholder_page("设置", "后续会集中管理默认模型目录、项目目录和 GPU 偏好。"))
+        self.app_shell.add_page("settings", "设置", _scrollable(self.settings_page))
         self.setCentralWidget(self.app_shell)
         self.resize(1120, 720)
 
@@ -248,7 +261,9 @@ class MainWindow(QMainWindow):
         if not raw_path:
             return None
 
-        project_path = Path(raw_path)
+        return self.open_project_path(Path(raw_path))
+
+    def open_project_path(self, project_path: Path) -> DubbingProject | None:
         try:
             project = DubbingProject.load(project_path)
         except (OSError, ValueError, KeyError) as exc:
@@ -264,7 +279,11 @@ class MainWindow(QMainWindow):
         self.project_overview.set_project(project)
         self.timeline_editor.set_project(project)
         self.progress_label.setText(f"项目已打开。下一步：点击“{self.START_DUBBING_TEXT}”。")
+        self.app_shell.set_current_page("current")
         return project
+
+    def open_path_in_shell(self, path: Path) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def run_mock_preview(self) -> MockPipelineResult:
         if self.current_project is None:
@@ -334,6 +353,15 @@ class MainWindow(QMainWindow):
         status = getattr(event, "status", "")
         self.progress_label.setText(message or f"{stage_label}：{status}")
 
+    def handle_user_settings_saved(self, settings: UserSettings) -> None:
+        self.model_center.model_dir_edit.setText(str(settings.models_dir))
+        self.model_center.sync_model_dir_to_advanced()
+        self.progress_label.setText("设置已保存")
+
+    def show_generation_progress(self) -> None:
+        self.app_shell.set_current_page("current")
+        self.project_workspace_tabs.setCurrentWidget(self.generation_progress)
+
     def write_evaluation_report(self) -> Path:
         if self.current_project is None:
             raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
@@ -344,6 +372,15 @@ class MainWindow(QMainWindow):
         output_path.write_text(render_evaluation_markdown(report), encoding="utf-8")
         self.progress_label.setText(f"\u8bc4\u4f30\u62a5\u544a\u5df2\u751f\u6210: {output_path}")
         return output_path
+
+    def open_evaluation_report(self) -> Path | None:
+        try:
+            return self.write_evaluation_report()
+        except Exception as exc:
+            message = str(exc)
+            self.progress_label.setText(f"生成评估报告失败：{message}")
+            QMessageBox.warning(self, "生成评估报告失败", message)
+            return None
 
     def run_final_export(self, dialog: ExportDialog) -> Path:
         request, confirmation = self._build_export_request(dialog)

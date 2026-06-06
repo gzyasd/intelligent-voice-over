@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QLabel,
     QLineEdit,
@@ -10,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ivo.core.model_presets import builtin_model_presets
+from ivo.core.model_presets import builtin_model_presets, get_model_preset
 from ivo.ui.advanced_model_settings import AdvancedModelSettings
 from ivo.ui.empty_states import EmptyStatePanel
 from ivo.ui.theme import CARD_STYLE, PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
@@ -70,7 +71,12 @@ class ModelCenter(QWidget):
         layout.addWidget(self.advanced_container)
         layout.addStretch()
         self.setLayout(layout)
+        self.model_dir_button.clicked.connect(lambda: self.browse_model_dir())
+        self.check_models_button.clicked.connect(lambda: self.check_models())
+        self.model_hint_panel.action_button.clicked.connect(lambda: self.check_models())
+        self.preset_combo.currentIndexChanged.connect(lambda _index: self.apply_selected_preset())
         self.toggle_advanced_button.clicked.connect(self.toggle_advanced_settings)
+        self.apply_selected_preset()
 
     def visible_summary_text(self) -> str:
         return "\n".join(self._summary_parts)
@@ -82,6 +88,47 @@ class ModelCenter(QWidget):
         show = self.advanced_container.isHidden()
         self.advanced_container.setVisible(show)
         self.toggle_advanced_button.setText("隐藏开发者设置" if show else "显示开发者设置")
+
+    def browse_model_dir(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "选择模型目录",
+            self.model_dir_edit.text().strip() or "models",
+        )
+        if not path:
+            return
+        self.model_dir_edit.setText(path)
+        self.sync_model_dir_to_advanced()
+
+    def sync_model_dir_to_advanced(self) -> None:
+        self.advanced_settings.local_model_path_edit.setText(
+            self.model_dir_edit.text().strip() or "models"
+        )
+
+    def select_preset(self, preset_id: str) -> None:
+        for index in range(self.preset_combo.count()):
+            if self.preset_combo.itemData(index) == preset_id:
+                self.preset_combo.setCurrentIndex(index)
+                self.apply_selected_preset()
+                return
+        raise KeyError(preset_id)
+
+    def apply_selected_preset(self) -> None:
+        preset_id = self.preset_combo.currentData()
+        if not isinstance(preset_id, str):
+            return
+        preset = get_model_preset(preset_id)
+        self.advanced_settings.local_command_profiles_path_edit.setText(
+            preset.local_profiles_path
+        )
+        self.advanced_settings.translation_profile_path_edit.setText(
+            preset.translation_profile_path
+        )
+
+    def check_models(self) -> None:
+        self.sync_model_dir_to_advanced()
+        self.advanced_settings.refresh_model_diagnostics()
+        self.advanced_settings.check_local_readiness()
 
     def show_missing_model_hint(self, stage: str, model_name: str, expected_path: str) -> None:
         self.model_hint_panel.title_label.setText(f"没有找到 {model_name} 模型")

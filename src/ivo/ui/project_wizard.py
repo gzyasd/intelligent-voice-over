@@ -63,7 +63,7 @@ class ProjectWizard(QDialog):
         self.translation_style_notes_edit = QPlainTextEdit()
         self.translation_style_notes_edit.setPlaceholderText("例如：日剧口吻，自然，不要书面腔。")
         self.glossary_path_edit = QLineEdit()
-        self.glossary_browse_button = QPushButton("浏览术语表 JSON")
+        self.glossary_browse_button = QPushButton("浏览术语表")
         self.step_title_label = QLabel(self.STEP_TITLES[0])
         self.step_title_label.setStyleSheet("font-size: 18px; font-weight: 700;")
         self.step_stack = QStackedWidget()

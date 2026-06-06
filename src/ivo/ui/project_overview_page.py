@@ -19,12 +19,14 @@ LANGUAGE_LABELS = {
 class ProjectOverviewPage(QWidget):
     start_requested = Signal()
     create_requested = Signal()
+    progress_requested = Signal()
     open_folder_requested = Signal(Path)
     open_video_requested = Signal(Path)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._project: DubbingProject | None = None
+        self._primary_action_mode = "create"
 
         self.project_name_label = QLabel("还没有打开项目")
         self.project_name_label.setStyleSheet("font-size: 20px; font-weight: 700;")
@@ -75,6 +77,7 @@ class ProjectOverviewPage(QWidget):
             self.status_label.setText("未开始")
             self.profile_label.setText("模型方案：当前推荐配置")
             self.primary_action_button.setText("新建配音项目")
+            self._primary_action_mode = "create"
             self.open_folder_button.setEnabled(False)
             self.open_video_button.setEnabled(False)
             return
@@ -87,12 +90,19 @@ class ProjectOverviewPage(QWidget):
         status = _project_status(project)
         self.status_label.setText(status)
         self.primary_action_button.setText(_primary_action_text(status))
+        self._primary_action_mode = _primary_action_mode(status)
         self.open_folder_button.setEnabled(True)
         self.open_video_button.setEnabled((project.path / "renders" / "local-preview.mp4").is_file())
 
     def _emit_primary_action(self) -> None:
-        if self._project is None:
+        if self._primary_action_mode == "create":
             self.create_requested.emit()
+            return
+        if self._primary_action_mode == "open_video":
+            self._emit_open_video()
+            return
+        if self._primary_action_mode == "progress":
+            self.progress_requested.emit()
             return
         self.start_requested.emit()
 
@@ -129,3 +139,11 @@ def _primary_action_text(status: str) -> str:
     if status == "生成中":
         return "查看进度"
     return "开始生成"
+
+
+def _primary_action_mode(status: str) -> str:
+    if status == "已完成":
+        return "open_video"
+    if status == "生成中":
+        return "progress"
+    return "start"

@@ -83,3 +83,53 @@ def test_main_window_updates_project_overview_after_project_creation(
     window.project_overview.primary_action_button.click()
 
     assert started == [True]
+
+
+def test_main_window_project_overview_open_buttons_use_shell(
+    monkeypatch,
+    qtbot,
+    tmp_path,
+) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.ui.main_window import MainWindow
+
+    project = DubbingProject.create(
+        tmp_path / "complete.ivoproj",
+        name="Complete",
+        source_language="en",
+        target_language="zh",
+    )
+    final_video = project.path / "renders" / "local-preview.mp4"
+    final_video.write_bytes(b"video")
+    project.jobs.mark_completed("export", "completed")
+    opened = []
+    window = MainWindow()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "open_path_in_shell", opened.append)
+
+    window.open_project_path(project.path)
+    window.project_overview.open_folder_button.click()
+    window.project_overview.open_video_button.click()
+    window.project_overview.primary_action_button.click()
+
+    assert opened == [project.path, final_video, final_video]
+
+
+def test_project_overview_running_primary_action_shows_progress(qtbot, tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.ui.main_window import MainWindow
+
+    project = DubbingProject.create(
+        tmp_path / "running.ivoproj",
+        name="Running",
+        source_language="en",
+        target_language="zh",
+    )
+    project.jobs.mark_running("tts")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.open_project_path(project.path)
+
+    window.project_overview.primary_action_button.click()
+
+    assert window.project_workspace_tabs.currentWidget() is window.generation_progress

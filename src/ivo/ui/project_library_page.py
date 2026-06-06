@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ivo.core.project_library import ProjectLibraryItem
@@ -8,6 +11,11 @@ from ivo.ui.theme import CARD_STYLE, PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYL
 
 
 class ProjectLibraryPage(QWidget):
+    open_project_requested = Signal(Path)
+    open_folder_requested = Signal(Path)
+    create_project_requested = Signal()
+    open_existing_requested = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.open_project_buttons: list[QPushButton] = []
@@ -39,6 +47,8 @@ class ProjectLibraryPage(QWidget):
             )
             self.open_existing_project_button = QPushButton("打开已有项目")
             self.open_existing_project_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+            self.empty_state.action_button.clicked.connect(self.create_project_requested.emit)
+            self.open_existing_project_button.clicked.connect(self.open_existing_requested.emit)
             self.content_layout.addWidget(self.empty_state)
             self.content_layout.addWidget(self.open_existing_project_button)
             self._summary_parts.extend(
@@ -76,6 +86,12 @@ class ProjectLibraryPage(QWidget):
         open_project.setStyleSheet(PRIMARY_BUTTON_STYLE)
         open_folder = QPushButton("打开文件夹")
         open_folder.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        open_project.clicked.connect(
+            lambda _checked=False, path=item.path: self.open_project_requested.emit(path)
+        )
+        open_folder.clicked.connect(
+            lambda _checked=False, path=item.path: self.open_folder_requested.emit(path)
+        )
         layout.addWidget(name)
         layout.addWidget(status)
         layout.addWidget(path_label)
