@@ -51,6 +51,40 @@ def test_environment_diagnostics_uses_explicit_ffmpeg_path(monkeypatch, tmp_path
     assert diagnostics.ffmpeg_path == str(ffmpeg)
 
 
+def test_environment_diagnostics_prefers_bundled_ffmpeg(monkeypatch, tmp_path) -> None:
+    from ivo.environment import collect_environment_diagnostics
+
+    bundle_root = tmp_path / "_internal"
+    bundled_bin = bundle_root / "ffmpeg" / "bin"
+    bundled_bin.mkdir(parents=True)
+    bundled_ffmpeg = bundled_bin / "ffmpeg.exe"
+    bundled_ffmpeg.write_text("fake", encoding="utf-8")
+
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    monkeypatch.setattr("sys._MEIPASS", str(bundle_root), raising=False)
+
+    diagnostics = collect_environment_diagnostics()
+
+    assert diagnostics.ffmpeg_path == str(bundled_ffmpeg)
+
+
+def test_resolve_executable_finds_bundled_ffprobe(monkeypatch, tmp_path) -> None:
+    from ivo.environment import resolve_executable
+
+    bundle_root = tmp_path / "_internal"
+    bundled_bin = bundle_root / "ffmpeg" / "bin"
+    bundled_bin.mkdir(parents=True)
+    bundled_ffprobe = bundled_bin / "ffprobe.exe"
+    bundled_ffprobe.write_text("fake", encoding="utf-8")
+
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    monkeypatch.setattr("sys._MEIPASS", str(bundle_root), raising=False)
+
+    assert resolve_executable("ffprobe", env_var="IVO_FFPROBE_PATH") == str(bundled_ffprobe)
+
+
 def test_mock_preview_command_creates_project_and_preview(tmp_path) -> None:
     from ivo.cli import app
 

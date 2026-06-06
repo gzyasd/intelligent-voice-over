@@ -12,6 +12,7 @@ from ivo import __version__
 from ivo.adapters.http import ApiAdapterProfile
 from ivo.adapters.profiles import AdapterProfileStore
 from ivo.core.project import DubbingProject
+from ivo.environment import resolve_executable
 from ivo.core.timeline import SourceLanguage, TargetLanguage
 from ivo.environment import collect_environment_diagnostics, collect_optional_model_dependencies
 from ivo.evaluation import (
@@ -902,10 +903,13 @@ def _build_batch_report_item(
 
 
 def _probe_duration_seconds(source_video: Path) -> int | None:
+    ffprobe = resolve_executable("ffprobe", env_var="IVO_FFPROBE_PATH")
+    if ffprobe is None:
+        return None
     try:
         completed = subprocess.run(
             [
-                "ffprobe",
+                ffprobe,
                 "-v",
                 "error",
                 "-show_entries",

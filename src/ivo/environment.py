@@ -73,7 +73,57 @@ def resolve_executable(name: str, *, env_var: str | None = None) -> str | None:
         configured = getenv(env_var)
         if configured and Path(configured).is_file():
             return configured
+    configured_ffmpeg_dir = getenv("IVO_FFMPEG_DIR")
+    if configured_ffmpeg_dir and name.lower() in {"ffmpeg", "ffprobe", "ffplay"}:
+        configured_candidate = _find_in_ffmpeg_dir(name, Path(configured_ffmpeg_dir))
+        if configured_candidate is not None:
+            return str(configured_candidate)
+    bundled_candidate = _find_bundled_executable(name)
+    if bundled_candidate is not None:
+        return str(bundled_candidate)
     return shutil.which(name)
+
+
+def _find_bundled_executable(name: str) -> Path | None:
+    for root in _runtime_roots():
+        for executable_name in _executable_names(name):
+            for candidate in (
+                root / "ffmpeg" / "bin" / executable_name,
+                root / "ffmpeg" / executable_name,
+                root / executable_name,
+            ):
+                if candidate.is_file():
+                    return candidate
+    return None
+
+
+def _find_in_ffmpeg_dir(name: str, ffmpeg_dir: Path) -> Path | None:
+    for executable_name in _executable_names(name):
+        for candidate in (ffmpeg_dir / "bin" / executable_name, ffmpeg_dir / executable_name):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _runtime_roots() -> list[Path]:
+    roots: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        roots.append(Path(meipass))
+    if getattr(sys, "frozen", False):
+        executable_dir = Path(sys.executable).resolve().parent
+        roots.extend([executable_dir / "_internal", executable_dir])
+    return roots
+
+
+def _executable_names(name: str) -> list[str]:
+    path = Path(name)
+    if path.suffix:
+        return [path.name]
+    names = [path.name]
+    if sys.platform == "win32":
+        names.insert(0, f"{path.name}.exe")
+    return names
 
 
 def collect_optional_model_dependencies(

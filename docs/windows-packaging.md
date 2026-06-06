@@ -1,12 +1,12 @@
 # Windows 打包与安装说明
 
-本项目提供 `scripts/build_windows_package.py` 作为 Windows 桌面包构建入口。脚本会通过 `uv run pyinstaller` 调用 PyInstaller，把 PySide6 桌面入口、`src/` 源码、`examples/` 示例 profile 和 `docs/` 文档一起放入发布目录。
+本项目提供 `scripts/build_windows_package.py` 作为 Windows 桌面包构建入口。脚本会通过 `uv run pyinstaller` 调用 PyInstaller，把 PySide6 桌面入口、`src/` 源码、`examples/` 示例 profile、`docs/` 文档和 FFmpeg 一起放入发布目录。
 
 ## 构建前准备
 
 1. 在 Windows 终端进入项目目录。
 2. 确认 Python 版本为 3.10。
-3. 确认 FFmpeg 已安装并能在终端中运行：
+3. 确认打包机器上已安装 FFmpeg，并能在终端中运行。打包脚本会把当前 FFmpeg 目录内置到发布包中：
 
 ```powershell
 ffmpeg -version
@@ -19,6 +19,12 @@ winget install Gyan.FFmpeg
 ```
 
 安装后重新打开终端，再运行 `uv run ivo doctor` 检查。
+
+如果 FFmpeg 不在 PATH 中，可以显式指定目录。目录可以是 FFmpeg 根目录，也可以是包含 `ffmpeg.exe` 的目录：
+
+```powershell
+uv run python .\scripts\build_windows_package.py --ffmpeg-dir "C:\path\to\ffmpeg-8.1.1-full_build" --output-dir .\dist
+```
 
 如果只想验证打包程序、导入、预览和导出流程，可以先生成合成样片，避免使用任何未授权剧集片段：
 
@@ -36,7 +42,7 @@ uv run python .\scripts\create_sample_media.py --output-dir .\sample_media
 uv run python .\scripts\build_windows_package.py --dry-run --output-dir .\dist
 ```
 
-输出中应包含 `uv run pyinstaller`、`--collect-all PySide6`、`--add-data <项目路径>\examples;examples` 和 `--add-data <项目路径>\docs;docs`。
+输出中应包含 `uv run pyinstaller`、`--collect-all PySide6`、`--add-data <项目路径>\examples;examples`、`--add-data <项目路径>\docs;docs` 和 `--add-data <FFmpeg路径>;ffmpeg`。
 dry-run 还会输出将要写入的 `release-manifest.json` 预览，里面记录版本、入口程序、打包包含项和明确排除的模型权重、素材目录与密钥。
 
 ## 生成桌面程序
@@ -72,8 +78,9 @@ dist\IntelligentVoiceOver\release-manifest.json
 ## 安装与分发
 
 - 将 `dist\IntelligentVoiceOver\` 整个目录复制到目标机器。
-- 目标机器仍需要可用的 FFmpeg，因为导入、预览和最终导出都依赖 FFmpeg。
+- FFmpeg 已随发布包内置。程序运行时会优先使用包内 `ffmpeg\bin\ffmpeg.exe` 和 `ffmpeg\bin\ffprobe.exe`，然后才回退到本机环境变量或 PATH。
 - 本地模型权重不会被打包进程序。需要在目标机器上按 `docs/local-model-command-profiles.md` 配置模型目录、许可证确认和本地命令 profile。
+- 本地模型运行时、GPU 驱动、CUDA、LM Studio 或其他模型服务仍需用户在目标机器上自行安装和配置。
 - 自定义线上 API profile 可以直接随 `examples/` 或项目配置文件分发，但 API key 建议通过 UI 的 `KEY=VALUE` 输入框或 CLI 的 `--*-var` 参数填写，不要写死在公开 profile 文件中。
 - 发布包、示例目录和 GitHub Release 不能包含未授权影视素材、真实人声音频、分离后音轨、TTS 生成音频、模型权重或真实密钥。
 
@@ -82,8 +89,9 @@ dist\IntelligentVoiceOver\release-manifest.json
 创建 GitHub Release 草稿时，建议在说明中明确：
 
 - 本 release 只包含应用代码、示例 profile 和文档。
+- FFmpeg 已内置在 Windows 发布包中，用户通常不需要额外安装 FFmpeg。
 - 模型权重不会被打包，用户需要自行下载并确认第三方模型许可证。
-- FFmpeg、GPU 驱动和本地模型运行环境需要用户在目标机器上自行准备。
+- GPU 驱动、CUDA、LM Studio 和本地模型运行环境需要用户在目标机器上自行准备。
 - 请只处理自己拥有授权的视频和音频素材，不要上传或分发未授权剧集片段。
 - API key、Hugging Face token 和 ModelScope token 应通过本机环境变量、UI 变量输入或私有配置提供。
 
@@ -96,4 +104,4 @@ dist\IntelligentVoiceOver\release-manifest.json
 3. 用 mock profile 跑一次“本地命令预览”。
 4. 审核时间线后执行“最终导出”。
 
-如果程序启动失败，优先检查 FFmpeg、显卡驱动、本地模型依赖和被安全软件隔离的文件。
+如果程序启动失败，优先检查包内 `ffmpeg` 目录是否完整、显卡驱动、本地模型依赖和被安全软件隔离的文件。

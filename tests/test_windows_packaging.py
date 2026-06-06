@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 
-def test_windows_package_script_dry_run_outputs_pyinstaller_command() -> None:
+def test_windows_package_script_dry_run_outputs_pyinstaller_command(tmp_path) -> None:
+    ffmpeg_root = tmp_path / "ffmpeg-8.1.1-full_build"
+    ffmpeg_bin = ffmpeg_root / "bin"
+    ffmpeg_bin.mkdir(parents=True)
+    (ffmpeg_bin / "ffmpeg.exe").write_text("fake", encoding="utf-8")
+    (ffmpeg_bin / "ffprobe.exe").write_text("fake", encoding="utf-8")
+    env = {**os.environ, "IVO_FFMPEG_DIR": str(ffmpeg_root)}
+
     result = subprocess.run(
         [
             sys.executable,
@@ -18,6 +26,7 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command() -> None:
         check=True,
         capture_output=True,
         text=True,
+        env=env,
     )
 
     payload = json.loads(result.stdout)
@@ -41,8 +50,18 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command() -> None:
         for index, item in enumerate(command)
         if item == "--add-data"
     ]
-    assert any(value.endswith("examples;examples") and Path(value.split(";")[0]).is_absolute() for value in add_data_values)
-    assert any(value.endswith("docs;docs") and Path(value.split(";")[0]).is_absolute() for value in add_data_values)
+    assert any(
+        value.endswith("examples;examples") and Path(value.split(";")[0]).is_absolute()
+        for value in add_data_values
+    )
+    assert any(
+        value.endswith("docs;docs") and Path(value.split(";")[0]).is_absolute()
+        for value in add_data_values
+    )
+    assert any(
+        value.split(";")[1] == "ffmpeg" and Path(value.split(";")[0]).is_absolute()
+        for value in add_data_values
+    )
     assert Path(command[-1]).is_absolute()
     assert Path(command[-1]).name == "windows_desktop_entry.py"
     assert manifest["name"] == "IntelligentVoiceOver"
@@ -50,6 +69,7 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command() -> None:
     assert manifest["entrypoint"].endswith("IntelligentVoiceOver.exe")
     assert "examples" in manifest["included_data"]
     assert "docs" in manifest["included_data"]
+    assert "ffmpeg" in manifest["included_data"]
     assert "models" in manifest["excluded_paths"]
     assert "测试视频" in manifest["excluded_paths"]
     assert "sample_media" in manifest["excluded_paths"]
@@ -82,6 +102,7 @@ def test_windows_packaging_documentation_mentions_build_command() -> None:
     assert "scripts/package-windows.ps1" in document
     assert "uv run pyinstaller" in document
     assert "ffmpeg" in document.lower()
+    assert "FFmpeg 已随发布包内置" in document
     assert "IntelligentVoiceOver.exe" in document
     assert "release-manifest.json" in document
     assert "模型权重不会被打包" in document
