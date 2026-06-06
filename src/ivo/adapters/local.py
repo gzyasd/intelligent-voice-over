@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable
+from inspect import Parameter, signature
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from ivo.adapters.base import AdapterContext, AdapterError, AdapterResult, MockStageAdapter
 
-CommandRunner = Callable[[list[str]], None]
+CommandRunner = Callable[..., None]
 
 
 class LocalCommandProfile(BaseModel):
@@ -44,16 +45,17 @@ class LocalCommandAdapter:
     def run(self, context: AdapterContext) -> AdapterResult:
         values = context.template_values()
         values.update(self.profile.extra)
-        values["python_executable"] = sys.executable
+        values.setdefault("python_executable", sys.executable)
         values["output_json_path"] = self._render_string(self.profile.output_json_path, values)
         command = [self._render_string(part, values) for part in self.profile.command]
         output_path = Path(str(values["output_json_path"]))
+        working_dir = str(values["working_dir"]) if values.get("working_dir") else None
 
         try:
             if self.runner is None:
-                subprocess.run(command, check=True, capture_output=True, text=True)
+                subprocess.run(command, check=True, capture_output=True, text=True, cwd=working_dir)
             else:
-                self.runner(command)
+                _run_with_optional_cwd(self.runner, command, working_dir)
             if not output_path.is_file():
                 return self._error(
                     f"output JSON not found: {output_path}",
@@ -153,5 +155,22 @@ def _summarize_stderr(stderr: str | bytes | None) -> str:
     else:
         text = stderr
     return " ".join(text.split())[:500]
+
+
+def _run_with_optional_cwd(
+    runner: CommandRunner,
+    command: list[str],
+    cwd: str | None,
+) -> None:
+    parameters = signature(runner).parameters
+    accepts_kwargs = any(
+        parameter.kind == Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    if accepts_kwargs or "cwd" in parameters:
+        runner(command, cwd=cwd)
+        return
+    runner(command)
+
 
 __all__ = ["LocalCommandAdapter", "LocalCommandProfile", "MockStageAdapter"]

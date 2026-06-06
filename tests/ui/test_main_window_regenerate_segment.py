@@ -89,7 +89,7 @@ def test_main_window_regenerates_timeline_segment_from_local_tts_profile(
     assert reloaded.target_text == "\u55e8\uff0c\u4f60\u597d\u3002"
     assert reloaded.status == "rendered"
     assert reloaded.quality_flags == ["duration_ok"]
-    assert window.timeline_editor.table.item(0, window.timeline_editor.COLUMN_STATUS).text() == "rendered"
+    assert window.timeline_editor.table.item(0, window.timeline_editor.COLUMN_STATUS).text() == "已生成"
     assert "\u7247\u6bb5\u5df2\u91cd\u751f\u6210" in window.progress_label.text()
 
 
@@ -153,7 +153,7 @@ def test_main_window_builds_background_worker_for_segment_regeneration(
     assert captured["segment_id"] == "seg-001"
     assert worker.result.segment_id == "seg-001"
     assert window.timeline_editor.regenerate_buttons[0].isEnabled() is True
-    assert window.timeline_editor.table.item(0, window.timeline_editor.COLUMN_STATUS).text() == "rendered"
+    assert window.timeline_editor.table.item(0, window.timeline_editor.COLUMN_STATUS).text() == "已生成"
     assert "\u7247\u6bb5\u5df2\u91cd\u751f\u6210" in window.progress_label.text()
 
 

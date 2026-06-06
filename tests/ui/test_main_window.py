@@ -139,6 +139,46 @@ def test_model_settings_saves_and_loads_http_adapter_profile(qtbot, tmp_path) ->
     assert profile.file_upload_fields == {"audio": "audio_path"}
 
 
+def test_model_settings_guides_local_model_directory_in_chinese(qtbot) -> None:
+    from ivo.ui.model_settings import ModelSettings
+
+    settings = ModelSettings()
+    qtbot.addWidget(settings)
+
+    assert settings.local_model_path_edit.text() == "models"
+    assert settings.model_root_hint_label.text().startswith("默认模型目录")
+    assert "本地命令配置 JSON" in settings.local_command_help_label.text()
+    assert "examples/local_command_profiles.real_gpu_fast_preview.json" in (
+        settings.local_command_profiles_path_edit.placeholderText()
+    )
+    assert settings.check_local_readiness_button.text() == "检查本地模型是否就绪"
+    assert settings.validate_http_profiles_button.text() == "校验在线 API 配置"
+    assert settings.readiness_results_table.horizontalHeaderItem(0).text() == "阶段"
+    assert settings.readiness_results_table.horizontalHeaderItem(1).text() == "服务"
+    assert settings.advanced_group.title() == "高级配置（本地命令 / 在线 API）"
+    assert settings.advanced_group.isCheckable() is False
+    assert settings.validate_http_profiles_button.isEnabled() is True
+    assert settings.separation_profile_path_edit.placeholderText() == (
+        "例如：examples/http_separation_profile.example.json"
+    )
+    assert settings.asr_profile_path_edit.placeholderText() == (
+        "例如：examples/http_asr_profile.example.json"
+    )
+    assert settings.diarization_profile_path_edit.placeholderText() == (
+        "例如：examples/http_diarization_profile.example.json"
+    )
+    assert settings.translation_profile_path_edit.placeholderText() == (
+        "例如：examples/http_translation_lm_studio_qwen36_35b.example.json"
+    )
+    assert settings.tts_profile_path_edit.placeholderText() == (
+        "例如：examples/http_tts_profile.example.json"
+    )
+    assert settings.translation_vars_edit.placeholderText() == (
+        "例如：api_key=lm-studio,temperature=0.2"
+    )
+    assert settings.file_upload_fields_edit.placeholderText() == "例如：audio=audio_path"
+
+
 def test_model_settings_browse_buttons_fill_profile_paths(monkeypatch, qtbot, tmp_path) -> None:
     from ivo.ui.model_settings import ModelSettings
 
@@ -338,8 +378,8 @@ def test_model_settings_validates_local_command_profiles(qtbot, tmp_path) -> Non
         settings.local_profile_summary_list.item(index).text()
         for index in range(settings.local_profile_summary_list.count())
     ]
-    assert "validation: failed" in texts
-    assert "error: tts command should include {{ output_json_path }}" in texts
+    assert "校验：失败" in texts
+    assert "错误：tts command should include {{ output_json_path }}" in texts
 
 
 def test_model_settings_loads_model_diagnostics(monkeypatch, qtbot, tmp_path) -> None:
@@ -356,9 +396,9 @@ def test_model_settings_loads_model_diagnostics(monkeypatch, qtbot, tmp_path) ->
         settings.model_diagnostics_list.item(index).text()
         for index in range(settings.model_diagnostics_list.count())
     ]
-    assert any("asr / faster-whisper" in text and "model dir: found" in text for text in texts)
+    assert any("asr / faster-whisper" in text and "模型目录：已找到" in text for text in texts)
     assert any("tts / CosyVoice" in text for text in texts)
-    assert any("diarization / pyannote.audio" in text and "env: missing" in text for text in texts)
+    assert any("diarization / pyannote.audio" in text and "环境变量：未设置" in text for text in texts)
 
 
 def test_model_settings_refresh_button_loads_model_diagnostics(qtbot, tmp_path) -> None:
@@ -376,7 +416,7 @@ def test_model_settings_refresh_button_loads_model_diagnostics(qtbot, tmp_path) 
         settings.model_diagnostics_list.item(index).text()
         for index in range(settings.model_diagnostics_list.count())
     ]
-    assert any("tts / CosyVoice" in text and "model dir: found" in text for text in texts)
+    assert any("tts / CosyVoice" in text and "模型目录：已找到" in text for text in texts)
 
 
 def test_model_settings_checks_local_readiness_from_profiles(qtbot, tmp_path) -> None:
@@ -395,8 +435,8 @@ def test_model_settings_checks_local_readiness_from_profiles(qtbot, tmp_path) ->
         settings.model_diagnostics_list.item(index).text()
         for index in range(settings.model_diagnostics_list.count())
     ]
-    assert "readiness: ok" in texts
-    assert any("skipped dry-run: asr:faster-whisper-dry-run" in text for text in texts)
+    assert "就绪检查：通过" in texts
+    assert any("跳过 dry-run：asr:faster-whisper-dry-run" in text for text in texts)
 
 
 def test_model_settings_reports_local_readiness_gaps(qtbot, tmp_path) -> None:
@@ -415,8 +455,8 @@ def test_model_settings_reports_local_readiness_gaps(qtbot, tmp_path) -> None:
         settings.model_diagnostics_list.item(index).text()
         for index in range(settings.model_diagnostics_list.count())
     ]
-    assert "readiness: failed" in texts
-    assert any(text.startswith("missing: tts/CosyVoice:") for text in texts)
+    assert "就绪检查：失败" in texts
+    assert any(text.startswith("缺失：tts/CosyVoice:") for text in texts)
 
 
 def test_model_settings_writes_local_model_setup_script(qtbot, tmp_path) -> None:
@@ -439,4 +479,4 @@ def test_model_settings_writes_local_model_setup_script(qtbot, tmp_path) -> None
         settings.model_diagnostics_list.item(index).text()
         for index in range(settings.model_diagnostics_list.count())
     ]
-    assert any(str(output) in text for text in texts)
+    assert any(f"安装脚本已生成：{output}" in text for text in texts)

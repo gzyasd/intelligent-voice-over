@@ -300,6 +300,61 @@ def test_build_local_readiness_report_reports_missing_engine_command_file(
     assert f"tts/f5-real: engine command file missing: {missing_command_file}" in report.missing
 
 
+def test_build_local_readiness_report_resolves_profile_paths_from_base_dir(
+    tmp_path: Path,
+) -> None:
+    from ivo.adapters.local import LocalCommandProfile
+    from ivo.local_readiness import build_local_readiness_report
+    from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+
+    engine_file = tmp_path / "examples" / "engine_commands" / "f5.json"
+    engine_file.parent.mkdir(parents=True)
+    engine_file.write_text("[]", encoding="utf-8")
+    pyannote_python = tmp_path / ".venv-pyannote" / "Scripts" / "python.exe"
+    pyannote_python.parent.mkdir(parents=True)
+    pyannote_python.write_text("", encoding="utf-8")
+
+    report = build_local_readiness_report(
+        LocalCommandPipelineProfiles(
+            separation=LocalCommandProfile(
+                id="sep-dry-run",
+                stage="separation",
+                command=["python", "demucs_separate.py", "--dry-run"],
+                output_json_path="sep.json",
+            ),
+            asr=LocalCommandProfile(
+                id="asr-dry-run",
+                stage="asr",
+                command=["python", "faster_whisper_asr.py", "--dry-run"],
+                output_json_path="asr.json",
+            ),
+            diarization=LocalCommandProfile(
+                id="pyannote-local",
+                stage="diarization",
+                extra={"pyannote_python_executable": ".venv-pyannote/Scripts/python.exe"},
+                command=["{{ pyannote_python_executable }}", "examples/local_commands/dia.py"],
+                output_json_path="dia.json",
+            ),
+            tts=LocalCommandProfile(
+                id="f5-real",
+                stage="tts",
+                command=[
+                    "python",
+                    "examples/local_commands/f5.py",
+                    "--engine-command-json-file",
+                    "examples/engine_commands/f5.json",
+                ],
+                output_json_path="tts.json",
+            ),
+        ),
+        dependencies=[],
+        base_dir=tmp_path,
+    )
+
+    assert report.ok is True
+    assert report.missing == []
+
+
 def test_build_local_readiness_report_allows_local_pyannote_model_without_hf_token(
     tmp_path: Path,
 ) -> None:

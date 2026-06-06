@@ -18,7 +18,7 @@ def test_main_window_opens_wizard_and_creates_project(monkeypatch, qtbot, tmp_pa
             self.project_name_edit.setText("Episode 01")
             self.video_path_edit.setText(str(source_video))
             self.output_dir_edit.setText(str(output_dir))
-            self.source_language_combo.setCurrentText("ko")
+            self.set_source_language("ko")
 
         def exec(self) -> int:
             return QDialog.DialogCode.Accepted

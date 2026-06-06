@@ -27,6 +27,15 @@ VALID_STATUSES: set[str] = {
     "rendered",
 }
 
+STATUS_LABELS: dict[str, str] = {
+    "pending": "待处理",
+    "running": "处理中",
+    "needs_review": "待审核",
+    "approved": "已审核",
+    "failed": "失败",
+    "rendered": "已生成",
+}
+
 QUALITY_FILTERS: dict[str, str] = {
     "all": "全部",
     "failed": "失败",
@@ -110,7 +119,7 @@ class TimelineEditor(QWidget):
                 segment.target_text,
                 segment.emotion or "",
                 segment.style_prompt or "",
-                segment.status,
+                _status_label(segment.status),
                 ", ".join(_quality_flag_label(flag) for flag in segment.quality_flags),
             ]
             for column, value in enumerate(values):
@@ -163,12 +172,12 @@ class TimelineEditor(QWidget):
 
     def save_row(self, row: int) -> DubbingSegment:
         if self.project is None:
-            raise RuntimeError("Timeline editor has no project.")
+            raise RuntimeError("请先创建或打开项目。")
 
         segment_id = self._cell_text(row, self.COLUMN_ID)
-        status = self._cell_text(row, self.COLUMN_STATUS)
+        status = _status_value(self._cell_text(row, self.COLUMN_STATUS))
         if status not in VALID_STATUSES:
-            raise ValueError(f"invalid segment status: {status}")
+            raise ValueError(f"无效片段状态：{status}")
         current = self.project.timeline.get_segment(segment_id)
         speaker_id = self._speaker_id_for_row(row)
         target_text = self._cell_text(row, self.COLUMN_TARGET_TEXT)
@@ -193,7 +202,7 @@ class TimelineEditor(QWidget):
 
     def set_speaker_reference_segment(self, segment_id: str) -> SpeakerProfile:
         if self.project is None:
-            raise RuntimeError("Timeline editor has no project.")
+            raise RuntimeError("请先创建或打开项目。")
         segment = self.project.timeline.get_segment(segment_id)
         profile = self.project.speakers.set_reference_segment(
             segment.speaker_id,
@@ -205,7 +214,7 @@ class TimelineEditor(QWidget):
 
     def clear_speaker_reference_segment(self, segment_id: str) -> SpeakerProfile:
         if self.project is None:
-            raise RuntimeError("Timeline editor has no project.")
+            raise RuntimeError("请先创建或打开项目。")
         segment = self.project.timeline.get_segment(segment_id)
         profile = self.project.speakers.clear_reference_segment(segment.speaker_id, segment.id)
         self.set_project(self.project)
@@ -213,7 +222,7 @@ class TimelineEditor(QWidget):
 
     def rename_speaker_from_segment(self, segment_id: str) -> SpeakerProfile | None:
         if self.project is None:
-            raise RuntimeError("Timeline editor has no project.")
+            raise RuntimeError("请先创建或打开项目。")
         segment = self.project.timeline.get_segment(segment_id)
         display_name, accepted = QInputDialog.getText(
             self,
@@ -298,6 +307,7 @@ def _quality_flag_label(flag: str) -> str:
     labels = {
         "duration_too_short": "配音偏短",
         "duration_too_long": "配音偏长",
+        "duration_mismatch": "时长不匹配",
         "tts_retried": "已自动重试",
         "duration_ok": "时长正常",
         "silent_audio": "音频静音",
@@ -306,6 +316,19 @@ def _quality_flag_label(flag: str) -> str:
         "speaker_ambiguous": "说话人不确定",
     }
     return labels.get(flag, flag)
+
+
+def _status_label(status: str) -> str:
+    return STATUS_LABELS.get(status, status)
+
+
+def _status_value(label_or_status: str) -> str:
+    if label_or_status in VALID_STATUSES:
+        return label_or_status
+    for status, label in STATUS_LABELS.items():
+        if label == label_or_status:
+            return status
+    return label_or_status
 
 
 def _build_review_summary(segments: list[DubbingSegment]) -> str:
@@ -326,5 +349,5 @@ def _build_quality_summary(segments: list[DubbingSegment]) -> str:
             counts[flag] = counts.get(flag, 0) + 1
     if not counts:
         return "质量摘要：暂无质量问题"
-    joined = "; ".join(f"{flag}: {count}" for flag, count in counts.items())
+    joined = "; ".join(f"{_quality_flag_label(flag)}: {count}" for flag, count in counts.items())
     return f"质量摘要：{joined}"

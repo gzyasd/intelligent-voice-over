@@ -77,7 +77,7 @@ def test_timeline_editor_rejects_invalid_status(qtbot, tmp_path) -> None:
     editor.set_project(project)
     editor.table.item(0, editor.COLUMN_STATUS).setText("not-a-status")
 
-    with pytest.raises(ValueError, match="invalid segment status"):
+    with pytest.raises(ValueError, match="无效片段状态"):
         editor.save_row(0)
 
 
@@ -116,7 +116,7 @@ def test_timeline_editor_summarizes_quality_flags(qtbot, tmp_path) -> None:
     editor.set_project(project)
 
     assert editor.quality_summary_label.text() == (
-        "质量摘要：duration_mismatch: 2; speaker_unmatched: 1"
+        "质量摘要：时长不匹配: 2; 说话人未匹配: 1"
     )
 
 

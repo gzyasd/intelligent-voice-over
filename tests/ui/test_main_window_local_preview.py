@@ -69,7 +69,7 @@ def test_model_settings_panel_shows_structured_readiness_results(qtbot) -> None:
 
     summary = panel.readiness_summary_text()
     assert "CosyVoice" in summary
-    assert "missing" in summary
+    assert "缺失" in summary
     assert "cosyvoice package is missing" in summary
 
 

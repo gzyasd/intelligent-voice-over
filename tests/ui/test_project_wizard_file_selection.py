@@ -42,6 +42,26 @@ def test_project_wizard_defaults_output_dir_to_workspace_runs(qtbot) -> None:
     assert wizard.output_dir_edit.text() == str(default_runs_dir())
 
 
+def test_project_wizard_has_create_button_and_chinese_choices(qtbot, tmp_path) -> None:
+    from ivo.ui.project_wizard import ProjectWizard
+
+    wizard = ProjectWizard()
+    qtbot.addWidget(wizard)
+
+    assert wizard.create_project_button.text() == "创建项目"
+    assert wizard.cancel_button.text() == "取消"
+    assert wizard.create_project_button.isEnabled() is False
+    assert wizard.source_language_combo.itemText(1) == "日语"
+    assert wizard.processing_mode_combo.itemText(0) == "快速预览"
+    assert wizard.series_type_combo.itemText(0) == "美剧"
+
+    wizard.project_name_edit.setText("Episode 01")
+    wizard.video_path_edit.setText(str(tmp_path / "episode.mp4"))
+    wizard.output_dir_edit.setText(str(tmp_path))
+
+    assert wizard.create_project_button.isEnabled() is True
+
+
 def test_project_wizard_collects_translation_style_inputs(qtbot, tmp_path) -> None:
     from ivo.ui.project_wizard import ProjectWizard
 
@@ -53,12 +73,14 @@ def test_project_wizard_collects_translation_style_inputs(qtbot, tmp_path) -> No
     wizard.project_name_edit.setText("Episode 01")
     wizard.video_path_edit.setText(str(tmp_path / "episode.mp4"))
     wizard.output_dir_edit.setText(str(tmp_path))
-    wizard.series_type_combo.setCurrentText("japanese_drama")
+    wizard.set_source_language("ja")
+    wizard.set_series_type("japanese_drama")
     wizard.translation_style_notes_edit.setPlainText("日剧口吻，自然，不要书面腔。")
     wizard.glossary_path_edit.setText(str(glossary_path))
 
     values = wizard.values()
 
+    assert values.source_language == "ja"
     assert values.series_type == "japanese_drama"
     assert values.translation_style_notes == "日剧口吻，自然，不要书面腔。"
     assert values.glossary_path == glossary_path
@@ -78,8 +100,8 @@ def test_main_window_creates_project_from_wizard_inputs(qtbot, tmp_path) -> None
     wizard.project_name_edit.setText("Episode 01")
     wizard.video_path_edit.setText(str(source_video))
     wizard.output_dir_edit.setText(str(output_dir))
-    wizard.source_language_combo.setCurrentText("ja")
-    wizard.series_type_combo.setCurrentText("japanese_drama")
+    wizard.set_source_language("ja")
+    wizard.set_series_type("japanese_drama")
     wizard.translation_style_notes_edit.setPlainText("日剧口吻")
 
     window = MainWindow()

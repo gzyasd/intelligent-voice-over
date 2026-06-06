@@ -40,6 +40,7 @@ from ivo.pipeline.synthesize import (
 from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
 from ivo.profile_defaults import default_local_command_profiles_path
+from ivo.profile_runtime import prepare_local_command_profiles
 from ivo.ui.export_dialog import ExportDialog
 from ivo.ui.model_settings import ModelSettings
 from ivo.ui.project_wizard import ProjectWizard
@@ -188,15 +189,15 @@ class MainWindow(QMainWindow):
 
     def run_local_preview(self) -> LocalCommandPreviewResult:
         self.progress_label.setText("\u6b63\u5728\u751f\u6210\u672c\u5730\u547d\u4ee4\u9884\u89c8")
-        self.run_log_panel.append_stage_message("local-preview", "started")
+        self.run_log_panel.append_stage_message("本地预览", "已开始")
         result = self._execute_local_preview()
-        self.run_log_panel.append_stage_message("local-preview", f"output: {result.final_video}")
+        self.run_log_panel.append_stage_message("本地预览", f"输出：{result.final_video}")
         self._refresh_after_local_preview()
         return result
 
     def create_local_preview_worker(self) -> PipelineWorker:
         self.progress_label.setText("\u6b63\u5728\u751f\u6210\u672c\u5730\u547d\u4ee4\u9884\u89c8")
-        self.run_log_panel.append_stage_message("local-preview", "started")
+        self.run_log_panel.append_stage_message("本地预览", "已开始")
         self.local_preview_button.setEnabled(False)
         worker = PipelineWorker(self._execute_local_preview)
         worker.succeeded.connect(self.handle_local_preview_succeeded)
@@ -214,13 +215,13 @@ class MainWindow(QMainWindow):
             result = self.local_preview_worker.result
             final_video = getattr(result, "final_video", None)
             if final_video is not None:
-                self.run_log_panel.append_stage_message("local-preview", f"output: {final_video}")
+                self.run_log_panel.append_stage_message("本地预览", f"输出：{final_video}")
         self._refresh_after_local_preview()
         self.local_preview_button.setEnabled(True)
 
     def handle_local_preview_failed(self, message: str) -> None:
         self.progress_label.setText(f"\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25: {message}")
-        self.run_log_panel.append_stage_message("local-preview", f"failed: {message}")
+        self.run_log_panel.append_stage_message("本地预览", f"失败：{message}")
         self.local_preview_button.setEnabled(True)
         QMessageBox.warning(self, "\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25", message)
 
@@ -271,7 +272,7 @@ class MainWindow(QMainWindow):
         if self.source_video_path is None:
             raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u89c6\u9891")
         if not dialog.output_path_edit.text().strip():
-            raise ValueError("Export output path is required.")
+            raise ValueError("请先填写导出路径。")
 
         watermark_options = dialog.watermark_options()
         request = ExportRequest(
@@ -430,8 +431,15 @@ class MainWindow(QMainWindow):
         if not profiles_path.is_file():
             raise FileNotFoundError(profiles_path)
 
-        return LocalCommandPipelineProfiles.model_validate(
+        profiles = LocalCommandPipelineProfiles.model_validate(
             json.loads(profiles_path.read_text(encoding="utf-8"))
+        )
+        raw_model_root = self.model_settings.local_model_path_edit.text().strip()
+        model_root = Path(raw_model_root) if raw_model_root else Path("models")
+        return prepare_local_command_profiles(
+            profiles,
+            profiles_path=profiles_path,
+            models_dir=model_root,
         )
 
     def _build_translation_adapter(self) -> HttpTranslationAdapter | None:
@@ -542,7 +550,7 @@ def _parse_key_value_text(raw_text: str) -> dict[str, object]:
     for item in raw_items:
         key, separator, value = item.partition("=")
         if not separator or not key or not value:
-            raise ValueError(f"Expected KEY=VALUE, got: {item}")
+            raise ValueError(f"变量格式需要 KEY=VALUE，当前为：{item}")
         parsed[key] = value
     return parsed
 
@@ -559,5 +567,5 @@ def _load_glossary(path: Path | None) -> dict[str, str]:
         return {}
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        raise ValueError("Glossary JSON must be an object.")
+        raise ValueError("术语表 JSON 必须是一个对象。")
     return {str(source): str(target) for source, target in raw.items()}

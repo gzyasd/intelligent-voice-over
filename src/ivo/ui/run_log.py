@@ -24,16 +24,16 @@ class RunLogPanel(QWidget):
     def append_adapter_error(self, error: AdapterError) -> None:
         lines = [
             f"[{error.stage}] {error.message}",
-            f"provider: {error.provider}",
+            f"服务：{error.provider}",
         ]
         if error.exit_code is not None:
-            lines.append(f"exit code: {error.exit_code}")
+            lines.append(f"退出码：{error.exit_code}")
         if error.command:
-            lines.append(f"command: {' '.join(error.command)}")
+            lines.append(f"命令：{' '.join(error.command)}")
         if error.output_json_path:
-            lines.append(f"output JSON: {error.output_json_path}")
+            lines.append(f"输出 JSON：{error.output_json_path}")
         if error.stderr_summary:
-            lines.append(f"stderr: {error.stderr_summary}")
+            lines.append(f"错误输出：{error.stderr_summary}")
         self.log_text.appendPlainText("\n".join(lines))
 
     def plain_text(self) -> str:

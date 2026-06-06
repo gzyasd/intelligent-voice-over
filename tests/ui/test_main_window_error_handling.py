@@ -45,7 +45,8 @@ def test_run_log_panel_formats_adapter_error(qtbot) -> None:
     text = panel.plain_text()
     assert "tts" in text
     assert "broken-tts" in text
-    assert "exit code: 1" in text
+    assert "退出码：1" in text
+    assert "命令：python tts.py" in text
     assert "python tts.py" in text
     assert "model missing" in text
 

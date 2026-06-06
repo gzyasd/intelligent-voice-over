@@ -82,6 +82,50 @@ def test_local_command_adapter_exposes_current_python_executable(tmp_path) -> No
     assert commands == [[sys.executable, "asr.py", "--out", str(output)]]
 
 
+def test_local_command_adapter_honors_configured_python_and_working_dir(tmp_path) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
+
+    output = tmp_path / "result.json"
+    working_dir = tmp_path / "runtime"
+    working_dir.mkdir()
+    commands: list[list[str]] = []
+    cwd_values: list[str | None] = []
+
+    def runner(command: list[str], cwd: str | None = None) -> None:
+        commands.append(command)
+        cwd_values.append(cwd)
+        output.write_text("{}", encoding="utf-8")
+
+    adapter = LocalCommandAdapter(
+        LocalCommandProfile(
+            id="local-asr",
+            stage="asr",
+            command=["{{ python_executable }}", "examples/local_commands/asr.py"],
+            output_json_path=str(output),
+            extra={
+                "python_executable": "F:/runtime/.venv/Scripts/python.exe",
+                "working_dir": str(working_dir),
+            },
+        ),
+        runner=runner,
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="",
+            source_language="ja",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is True
+    assert commands == [["F:/runtime/.venv/Scripts/python.exe", "examples/local_commands/asr.py"]]
+    assert cwd_values == [str(working_dir)]
+
+
 def test_local_command_adapter_returns_error_when_output_missing(tmp_path) -> None:
     from ivo.adapters.base import AdapterContext
     from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile

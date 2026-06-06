@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
+    QHBoxLayout,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
@@ -42,19 +43,33 @@ class ProjectWizard(QDialog):
         self.output_dir_edit = QLineEdit(str(default_runs_dir()))
         self.output_dir_browse_button = QPushButton("浏览输出目录")
         self.source_language_combo = QComboBox()
-        self.source_language_combo.addItems(["en", "ja", "ko"])
+        self.source_language_combo.addItem("英语", "en")
+        self.source_language_combo.addItem("日语", "ja")
+        self.source_language_combo.addItem("韩语", "ko")
         self.processing_mode_combo = QComboBox()
-        self.processing_mode_combo.addItems(["fast_preview", "high_quality_export"])
+        self.processing_mode_combo.addItem("快速预览", "fast_preview")
+        self.processing_mode_combo.addItem("高质量导出", "high_quality_export")
         self.series_type_combo = QComboBox()
-        self.series_type_combo.addItems(["american_drama", "japanese_drama", "korean_drama", "other"])
+        self.series_type_combo.addItem("美剧", "american_drama")
+        self.series_type_combo.addItem("日剧", "japanese_drama")
+        self.series_type_combo.addItem("韩剧", "korean_drama")
+        self.series_type_combo.addItem("其他", "other")
         self.translation_style_notes_edit = QPlainTextEdit()
         self.translation_style_notes_edit.setPlaceholderText("例如：日剧口吻，自然，不要书面腔。")
         self.glossary_path_edit = QLineEdit()
         self.glossary_browse_button = QPushButton("浏览术语表 JSON")
+        self.create_project_button = QPushButton("创建项目")
+        self.cancel_button = QPushButton("取消")
+        self.create_project_button.setEnabled(False)
 
         self.video_browse_button.clicked.connect(self.browse_video_file)
         self.output_dir_browse_button.clicked.connect(self.browse_output_dir)
         self.glossary_browse_button.clicked.connect(self.browse_glossary_file)
+        self.create_project_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        self.project_name_edit.textChanged.connect(self._refresh_create_button)
+        self.video_path_edit.textChanged.connect(self._refresh_create_button)
+        self.output_dir_edit.textChanged.connect(self._refresh_create_button)
 
         form = QFormLayout()
         form.addRow("项目名称", self.project_name_edit)
@@ -71,6 +86,11 @@ class ProjectWizard(QDialog):
 
         layout = QVBoxLayout()
         layout.addLayout(form)
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_button)
+        button_layout.addWidget(self.create_project_button)
+        layout.addLayout(button_layout)
         self.setLayout(layout)
 
     def is_valid(self) -> bool:
@@ -85,7 +105,7 @@ class ProjectWizard(QDialog):
             self,
             "选择源视频",
             "",
-            "Video files (*.mp4 *.mkv *.mov *.avi);;All files (*)",
+            "视频文件 (*.mp4 *.mkv *.mov *.avi);;所有文件 (*)",
         )
         if path:
             self.video_path_edit.setText(path)
@@ -104,10 +124,19 @@ class ProjectWizard(QDialog):
             self,
             "选择术语表 JSON",
             "",
-            "JSON files (*.json);;All files (*)",
+            "JSON 文件 (*.json);;所有文件 (*)",
         )
         if path:
             self.glossary_path_edit.setText(path)
+
+    def set_source_language(self, source_language: SourceLanguage) -> None:
+        _set_combo_by_data(self.source_language_combo, source_language)
+
+    def set_processing_mode(self, processing_mode: str) -> None:
+        _set_combo_by_data(self.processing_mode_combo, processing_mode)
+
+    def set_series_type(self, series_type: SeriesType) -> None:
+        _set_combo_by_data(self.series_type_combo, series_type)
 
     def values(self) -> ProjectWizardValues:
         raw_glossary_path = self.glossary_path_edit.text().strip()
@@ -115,9 +144,20 @@ class ProjectWizard(QDialog):
             project_name=self.project_name_edit.text().strip(),
             source_video=Path(self.video_path_edit.text().strip()),
             output_dir=Path(self.output_dir_edit.text().strip()),
-            source_language=self.source_language_combo.currentText(),  # type: ignore[arg-type]
-            processing_mode=self.processing_mode_combo.currentText(),
-            series_type=self.series_type_combo.currentText(),  # type: ignore[arg-type]
+            source_language=self.source_language_combo.currentData(),
+            processing_mode=self.processing_mode_combo.currentData(),
+            series_type=self.series_type_combo.currentData(),
             translation_style_notes=self.translation_style_notes_edit.toPlainText().strip(),
             glossary_path=Path(raw_glossary_path) if raw_glossary_path else None,
         )
+
+    def _refresh_create_button(self) -> None:
+        self.create_project_button.setEnabled(self.is_valid())
+
+
+def _set_combo_by_data(combo: QComboBox, value: str) -> None:
+    for index in range(combo.count()):
+        if combo.itemData(index) == value:
+            combo.setCurrentIndex(index)
+            return
+    raise ValueError(f"Unknown combo value: {value}")

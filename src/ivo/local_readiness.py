@@ -31,6 +31,7 @@ def build_local_readiness_report(
     *,
     dependencies: list[OptionalDependencyStatus],
     nvidia_tool_available: bool | None = None,
+    base_dir: Path | None = None,
 ) -> LocalReadinessReport:
     dependency_by_stage = _index_dependencies(dependencies)
     has_nvidia_tool = (
@@ -73,8 +74,8 @@ def build_local_readiness_report(
                 )
             )
         profile_missing = [
-            *_missing_engine_command_file_messages(profile),
-            *_missing_external_python_messages(profile),
+            *_missing_engine_command_file_messages(profile, base_dir=base_dir),
+            *_missing_external_python_messages(profile, base_dir=base_dir),
         ]
         missing.extend(profile_missing)
         ui_results.extend(
@@ -226,7 +227,11 @@ def _profile_uses_external_python(profile: LocalCommandProfile) -> bool:
     )
 
 
-def _missing_external_python_messages(profile: LocalCommandProfile) -> list[str]:
+def _missing_external_python_messages(
+    profile: LocalCommandProfile,
+    *,
+    base_dir: Path | None,
+) -> list[str]:
     missing: list[str] = []
     for item in profile.command:
         if not item.startswith("{{ ") or not item.endswith(" }}"):
@@ -238,7 +243,7 @@ def _missing_external_python_messages(profile: LocalCommandProfile) -> list[str]
         if not configured:
             missing.append(f"{profile.stage}/{profile.id}: external python missing: {variable_name}")
             continue
-        configured_path = Path(str(configured))
+        configured_path = _resolve_runtime_path(Path(str(configured)), base_dir)
         if not configured_path.is_file():
             missing.append(
                 f"{profile.stage}/{profile.id}: external python not found: {configured_path}"
@@ -246,7 +251,11 @@ def _missing_external_python_messages(profile: LocalCommandProfile) -> list[str]
     return missing
 
 
-def _missing_engine_command_file_messages(profile: LocalCommandProfile) -> list[str]:
+def _missing_engine_command_file_messages(
+    profile: LocalCommandProfile,
+    *,
+    base_dir: Path | None,
+) -> list[str]:
     messages: list[str] = []
     for index, item in enumerate(profile.command):
         if item != "--engine-command-json-file":
@@ -254,9 +263,15 @@ def _missing_engine_command_file_messages(profile: LocalCommandProfile) -> list[
         if index + 1 >= len(profile.command):
             messages.append(f"{profile.stage}/{profile.id}: engine command file path missing")
             continue
-        engine_command_path = Path(profile.command[index + 1])
+        engine_command_path = _resolve_runtime_path(Path(profile.command[index + 1]), base_dir)
         if not engine_command_path.is_file():
             messages.append(
                 f"{profile.stage}/{profile.id}: engine command file missing: {engine_command_path}"
             )
     return messages
+
+
+def _resolve_runtime_path(path: Path, base_dir: Path | None) -> Path:
+    if path.is_absolute() or base_dir is None:
+        return path
+    return base_dir / path

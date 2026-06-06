@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from importlib import import_module
@@ -127,8 +128,11 @@ def _executable_names(name: str) -> list[str]:
 
 def collect_optional_model_dependencies(
     model_root: Path | str = Path("models"),
+    *,
+    python_executable: Path | str | None = None,
 ) -> list[OptionalDependencyStatus]:
     root = Path(model_root)
+    resolved_python = Path(python_executable) if python_executable is not None else None
     dependencies = [
         OptionalDependencySpec(
             name="faster-whisper",
@@ -240,7 +244,7 @@ def collect_optional_model_dependencies(
             name=dependency.name,
             stage=dependency.stage,
             import_name=dependency.import_name,
-            installed=_is_importable(dependency.import_name),
+            installed=_is_importable(dependency.import_name, python_executable=resolved_python),
             install_hint=dependency.install_hint,
             download_hint=dependency.download_hint,
             license_hint=dependency.license_hint,
@@ -259,7 +263,29 @@ def collect_optional_model_dependencies(
     ]
 
 
-def _is_importable(import_name: str) -> bool:
+def resolve_local_python(root: Path | str | None = None) -> Path | None:
+    configured = getenv("IVO_LOCAL_PYTHON")
+    if configured and Path(configured).is_file():
+        return Path(configured)
+    search_roots = [Path(root)] if root is not None else []
+    search_roots.append(Path.cwd())
+    for search_root in search_roots:
+        for candidate in _local_python_candidates(search_root):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _local_python_candidates(root: Path) -> list[Path]:
+    return [
+        root / ".venv" / "Scripts" / "python.exe",
+        root / ".venv" / "bin" / "python",
+    ]
+
+
+def _is_importable(import_name: str, *, python_executable: Path | None = None) -> bool:
+    if python_executable is not None and python_executable.is_file():
+        return _is_importable_in_python(import_name, python_executable)
     try:
         if import_name == "pyannote.audio":
             _patch_torchaudio_metadata_type()
@@ -267,6 +293,34 @@ def _is_importable(import_name: str) -> bool:
     except (ImportError, ModuleNotFoundError, AttributeError):
         return False
     return True
+
+
+def _is_importable_in_python(import_name: str, python_executable: Path) -> bool:
+    code = (
+        "from importlib import import_module\n"
+        "import sys\n"
+        "name = sys.argv[1]\n"
+        "if name == 'pyannote.audio':\n"
+        "    try:\n"
+        "        import torchaudio\n"
+        "        if not hasattr(torchaudio, 'AudioMetaData'):\n"
+        "            setattr(torchaudio, 'AudioMetaData', object)\n"
+        "        if not hasattr(torchaudio, 'list_audio_backends'):\n"
+        "            setattr(torchaudio, 'list_audio_backends', lambda: ['soundfile'])\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "import_module(name)\n"
+    )
+    try:
+        result = subprocess.run(
+            [str(python_executable), "-c", code, import_name],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def _patch_torchaudio_metadata_type() -> None:
