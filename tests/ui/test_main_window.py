@@ -15,6 +15,15 @@ def test_main_window_shows_project_controls(qtbot) -> None:
     assert window.progress_label.text() == "尚未开始"
 
 
+def test_main_window_can_be_resized_shorter_than_default_height(qtbot) -> None:
+    from ivo.ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.minimumSizeHint().height() <= 720
+
+
 def test_timeline_editor_renders_project_segments(qtbot, tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.core.timeline import DubbingSegment

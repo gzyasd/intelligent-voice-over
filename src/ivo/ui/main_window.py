@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -76,7 +77,7 @@ class MainWindow(QMainWindow):
 
         tabs = QTabWidget()
         tabs.addTab(self.timeline_editor, "\u65f6\u95f4\u7ebf")
-        tabs.addTab(self.model_settings, "\u6a21\u578b\u8bbe\u7f6e")
+        tabs.addTab(_scrollable(self.model_settings), "\u6a21\u578b\u8bbe\u7f6e")
         tabs.addTab(self.run_log_panel, "\u8fd0\u884c\u65e5\u5fd7")
 
         root = QWidget()
@@ -544,6 +545,13 @@ def _parse_key_value_text(raw_text: str) -> dict[str, object]:
             raise ValueError(f"Expected KEY=VALUE, got: {item}")
         parsed[key] = value
     return parsed
+
+
+def _scrollable(widget: QWidget) -> QScrollArea:
+    scroll_area = QScrollArea()
+    scroll_area.setWidgetResizable(True)
+    scroll_area.setWidget(widget)
+    return scroll_area
 
 
 def _load_glossary(path: Path | None) -> dict[str, str]:
