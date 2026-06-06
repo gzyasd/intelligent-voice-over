@@ -11,9 +11,9 @@ VERSION_FILE = Path("src") / "ivo" / "__init__.py"
 
 
 def build_command(output_dir: Path) -> list[str]:
+    root = Path.cwd()
     return [
         "uv",
-        "tool",
         "run",
         "pyinstaller",
         "--noconfirm",
@@ -22,7 +22,7 @@ def build_command(output_dir: Path) -> list[str]:
         APP_NAME,
         "--windowed",
         "--paths",
-        "src",
+        str(root / "src"),
         "--distpath",
         str(output_dir),
         "--workpath",
@@ -32,10 +32,10 @@ def build_command(output_dir: Path) -> list[str]:
         "--collect-all",
         "PySide6",
         "--add-data",
-        "examples;examples",
+        f"{root / 'examples'};examples",
         "--add-data",
-        "docs;docs",
-        "scripts/windows_desktop_entry.py",
+        f"{root / 'docs'};docs",
+        str(root / "scripts" / "windows_desktop_entry.py"),
     ]
 
 
@@ -54,6 +54,8 @@ def build_release_manifest(output_dir: Path) -> dict[str, object]:
             "测试视频",
             "sample_media",
             "scratch",
+            "runs",
+            ".ivo-work",
             "*.mp4",
             "*.wav",
             ".env",

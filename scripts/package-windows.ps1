@@ -11,8 +11,8 @@ $ErrorActionPreference = "Stop"
 # - .env
 # - API keys, HF_TOKEN, ModelScope token, and other secrets.
 #
-# The delegated builder invokes PyInstaller through:
-# uv tool run pyinstaller --name IntelligentVoiceOver --windowed ...
+# The delegated builder invokes PyInstaller through the project environment:
+# uv run pyinstaller --name IntelligentVoiceOver --windowed ...
 
 Write-Host "Running tests and quality checks before packaging..."
 uv sync

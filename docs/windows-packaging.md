@@ -1,6 +1,6 @@
 # Windows 打包与安装说明
 
-本项目提供 `scripts/build_windows_package.py` 作为 Windows 桌面包构建入口。脚本会通过 `uv tool run pyinstaller` 调用 PyInstaller，把 PySide6 桌面入口、`src/` 源码、`examples/` 示例 profile 和 `docs/` 文档一起放入发布目录。
+本项目提供 `scripts/build_windows_package.py` 作为 Windows 桌面包构建入口。脚本会通过 `uv run pyinstaller` 调用 PyInstaller，把 PySide6 桌面入口、`src/` 源码、`examples/` 示例 profile 和 `docs/` 文档一起放入发布目录。
 
 ## 构建前准备
 
@@ -36,7 +36,7 @@ uv run python .\scripts\create_sample_media.py --output-dir .\sample_media
 uv run python .\scripts\build_windows_package.py --dry-run --output-dir .\dist
 ```
 
-输出中应包含 `uv tool run pyinstaller`、`--collect-all PySide6`、`--add-data examples;examples` 和 `--add-data docs;docs`。
+输出中应包含 `uv run pyinstaller`、`--collect-all PySide6`、`--add-data <项目路径>\examples;examples` 和 `--add-data <项目路径>\docs;docs`。
 dry-run 还会输出将要写入的 `release-manifest.json` 预览，里面记录版本、入口程序、打包包含项和明确排除的模型权重、素材目录与密钥。
 
 ## 生成桌面程序

@@ -24,19 +24,27 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command() -> None:
     command = payload["command"]
     manifest = payload["manifest"]
 
-    assert command[:3] == ["uv", "tool", "run"]
+    assert command[:3] == ["uv", "run", "pyinstaller"]
     assert "pyinstaller" in command
     assert "--name" in command
     assert "IntelligentVoiceOver" in command
     assert "--windowed" in command
     assert "--paths" in command
-    assert "src" in command
+    paths_index = command.index("--paths")
+    assert Path(command[paths_index + 1]).is_absolute()
+    assert Path(command[paths_index + 1]).name == "src"
     assert "--collect-all" in command
     assert "PySide6" in command
     assert "--add-data" in command
-    assert "examples;examples" in command
-    assert "docs;docs" in command
-    assert command[-1] == "scripts/windows_desktop_entry.py"
+    add_data_values = [
+        command[index + 1]
+        for index, item in enumerate(command)
+        if item == "--add-data"
+    ]
+    assert any(value.endswith("examples;examples") and Path(value.split(";")[0]).is_absolute() for value in add_data_values)
+    assert any(value.endswith("docs;docs") and Path(value.split(";")[0]).is_absolute() for value in add_data_values)
+    assert Path(command[-1]).is_absolute()
+    assert Path(command[-1]).name == "windows_desktop_entry.py"
     assert manifest["name"] == "IntelligentVoiceOver"
     assert manifest["version"] == "0.1.0"
     assert manifest["entrypoint"].endswith("IntelligentVoiceOver.exe")
@@ -45,6 +53,8 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command() -> None:
     assert "models" in manifest["excluded_paths"]
     assert "测试视频" in manifest["excluded_paths"]
     assert "sample_media" in manifest["excluded_paths"]
+    assert "runs" in manifest["excluded_paths"]
+    assert ".ivo-work" in manifest["excluded_paths"]
     assert "*.mp4" in manifest["excluded_paths"]
     assert "*.wav" in manifest["excluded_paths"]
     assert ".env" in manifest["excluded_paths"]
@@ -70,7 +80,7 @@ def test_windows_packaging_documentation_mentions_build_command() -> None:
 
     assert "scripts/build_windows_package.py" in document
     assert "scripts/package-windows.ps1" in document
-    assert "uv tool run pyinstaller" in document
+    assert "uv run pyinstaller" in document
     assert "ffmpeg" in document.lower()
     assert "IntelligentVoiceOver.exe" in document
     assert "release-manifest.json" in document
