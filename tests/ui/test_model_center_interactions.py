@@ -50,6 +50,22 @@ def test_model_center_preset_card_click_selects_preset(qtbot) -> None:
     assert center.selected_preset_id() == "local_cpu_preview"
     assert center.selected_preset_label.text() == f"当前方案：{preset.display_name}"
     assert center.advanced_settings.local_command_profiles_path_edit.text() == preset.local_profiles_path
+    assert "需要模型" in center.selected_preset_detail_label.text()
+
+
+def test_model_center_apply_current_preset_emits_signal_and_status(qtbot) -> None:
+    from ivo.ui.model_center import ModelCenter
+
+    center = ModelCenter()
+    qtbot.addWidget(center)
+    emitted: list[str] = []
+    center.preset_applied.connect(emitted.append)
+
+    center.select_preset("local_quality_lmstudio_qwen_f5")
+    center.apply_preset_button.click()
+
+    assert emitted == ["local_quality_lmstudio_qwen_f5"]
+    assert center.status_label.text() == "已应用方案：本机高质量（LM Studio + F5-TTS）"
 
 
 def test_model_center_check_models_runs_diagnostics_and_readiness(monkeypatch, qtbot, tmp_path) -> None:
@@ -79,3 +95,35 @@ def test_model_center_developer_toggle_shows_feedback(qtbot) -> None:
     assert center.advanced_settings_visible() is True
     assert center.toggle_advanced_button.text() == "隐藏开发者设置"
     assert center.developer_settings_hint_label.text() == "开发者设置已展开，可在下方配置本地命令和在线 API。"
+
+
+def test_main_window_does_not_reparent_model_center_advanced_settings(qtbot) -> None:
+    from ivo.ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.model_center.toggle_advanced_button.click()
+
+    assert window.model_center.advanced_settings_visible() is True
+    assert window.model_settings.parent() is window.model_center.advanced_container
+    assert window.model_center.advanced_container.layout().itemAt(0).widget() is window.model_settings
+    assert window.model_settings.local_model_path_edit.text()
+
+
+def test_main_window_saves_applied_model_preset(qtbot, tmp_path) -> None:
+    from ivo.core.user_settings import UserSettingsStore
+    from ivo.ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.settings_page.store = UserSettingsStore(
+        tmp_path / ".ivo-work" / "user-settings.json",
+        runtime_root=tmp_path,
+    )
+
+    window.model_center.select_preset("local_fast_gpu")
+    window.model_center.apply_preset_button.click()
+
+    assert window.settings_page.store.load().preferred_preset_id == "local_fast_gpu"
+    assert window.progress_label.text() == "模型方案已保存：本机快速预览（GPU）"

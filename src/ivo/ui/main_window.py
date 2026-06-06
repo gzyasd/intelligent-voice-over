@@ -26,6 +26,7 @@ from ivo.core.project import DubbingProject
 from ivo.core.settings import ProfileSelectionSettings, TranslationSettings
 from ivo.core.timeline import SourceLanguage
 from ivo.core.user_settings import UserSettings
+from ivo.core.model_presets import get_model_preset
 from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
 from ivo.pipeline.local_command_preview import (
@@ -112,11 +113,13 @@ class MainWindow(QMainWindow):
         self.project_library_page.create_project_requested.connect(lambda: self.open_project_wizard())
         self.project_library_page.open_existing_requested.connect(lambda: self.open_existing_project())
         self.settings_page.saved.connect(self.handle_user_settings_saved)
+        self.model_center.preset_applied.connect(self.handle_model_preset_applied)
+        self.apply_user_settings(self.settings_page.store.load())
 
         self.project_workspace_tabs = QTabWidget()
         self.project_workspace_tabs.addTab(self.generation_progress, "生成进度")
         self.project_workspace_tabs.addTab(self.timeline_editor, "\u65f6\u95f4\u7ebf")
-        self.project_workspace_tabs.addTab(_scrollable(self.model_settings), "\u6a21\u578b\u8bbe\u7f6e")
+        self.project_workspace_tabs.addTab(self._build_model_settings_shortcut_page(), "\u6a21\u578b\u8bbe\u7f6e")
         self.project_workspace_tabs.addTab(self.run_log_panel, "\u8fd0\u884c\u65e5\u5fd7")
 
         self.app_shell = AppShell()
@@ -178,6 +181,33 @@ class MainWindow(QMainWindow):
         actions.setLayout(action_layout)
         layout.addWidget(actions)
         layout.addWidget(self.project_workspace_tabs, 1)
+        page.setLayout(layout)
+        return page
+
+    def _build_model_settings_shortcut_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+        card = QFrame()
+        card.setStyleSheet(CARD_STYLE)
+        card_layout = QVBoxLayout()
+        card_layout.setContentsMargins(16, 16, 16, 16)
+        card_layout.setSpacing(10)
+        title = QLabel("模型设置已集中到模型中心")
+        title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        detail = QLabel("请在左侧进入“模型中心”选择方案、检查模型目录，或展开开发者设置。")
+        detail.setWordWrap(True)
+        detail.setObjectName("SecondaryText")
+        open_model_center_button = QPushButton("打开模型中心")
+        open_model_center_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        open_model_center_button.clicked.connect(lambda: self.app_shell.set_current_page("model_center"))
+        card_layout.addWidget(title)
+        card_layout.addWidget(detail)
+        card_layout.addWidget(open_model_center_button)
+        card.setLayout(card_layout)
+        layout.addWidget(card)
+        layout.addStretch()
         page.setLayout(layout)
         return page
 
@@ -368,9 +398,31 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(message or f"{stage_label}：{status}")
 
     def handle_user_settings_saved(self, settings: UserSettings) -> None:
+        self.apply_user_settings(settings)
+        self.progress_label.setText("设置已保存")
+
+    def apply_user_settings(self, settings: UserSettings) -> None:
         self.model_center.model_dir_edit.setText(str(settings.models_dir))
         self.model_center.sync_model_dir_to_advanced()
-        self.progress_label.setText("设置已保存")
+        try:
+            self.model_center.select_preset(settings.preferred_preset_id)
+        except KeyError:
+            pass
+
+    def handle_model_preset_applied(self, preset_id: str) -> None:
+        current = self.settings_page.store.load()
+        raw_models_dir = self.model_center.model_dir_edit.text().strip()
+        updated = current.model_copy(
+            update={
+                "preferred_preset_id": preset_id,
+                "models_dir": Path(raw_models_dir) if raw_models_dir else current.models_dir,
+            }
+        )
+        saved = self.settings_page.store.save(updated)
+        self.model_center.model_dir_edit.setText(str(saved.models_dir))
+        self.model_center.sync_model_dir_to_advanced()
+        preset = get_model_preset(preset_id)
+        self.progress_label.setText(f"模型方案已保存：{preset.display_name}")
 
     def show_generation_progress(self) -> None:
         self.app_shell.set_current_page("current")

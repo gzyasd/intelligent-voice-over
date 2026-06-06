@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -12,13 +13,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ivo.core.model_presets import builtin_model_presets, get_model_preset
+from ivo.core.model_presets import ModelPreset, builtin_model_presets, get_model_preset
 from ivo.ui.advanced_model_settings import AdvancedModelSettings
 from ivo.ui.empty_states import EmptyStatePanel
 from ivo.ui.theme import CARD_STYLE, PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
 
 
 class ModelCenter(QWidget):
+    preset_applied = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.advanced_settings = AdvancedModelSettings()
@@ -35,6 +38,12 @@ class ModelCenter(QWidget):
         self.preset_button_group.setExclusive(True)
         self.selected_preset_label = QLabel("")
         self.selected_preset_label.setObjectName("SecondaryText")
+        self.selected_preset_detail_label = QLabel("")
+        self.selected_preset_detail_label.setWordWrap(True)
+        self.selected_preset_detail_label.setObjectName("SecondaryText")
+        self.apply_preset_button = QPushButton("应用当前方案")
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("SecondaryText")
         self.developer_settings_hint_label = QLabel("开发者设置默认隐藏。普通用户通常不需要修改。")
         self.developer_settings_hint_label.setObjectName("SecondaryText")
         self.model_hint_panel = EmptyStatePanel(
@@ -69,7 +78,11 @@ class ModelCenter(QWidget):
         self.model_dir_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
         self.check_models_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
         self.toggle_advanced_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self.apply_preset_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
         layout.addWidget(self.selected_preset_label)
+        layout.addWidget(self.selected_preset_detail_label)
+        layout.addWidget(self.apply_preset_button)
+        layout.addWidget(self.status_label)
         layout.addWidget(QLabel("模型目录"))
         layout.addWidget(self.model_dir_edit)
         layout.addWidget(self.model_dir_button)
@@ -90,6 +103,7 @@ class ModelCenter(QWidget):
         self.check_models_button.clicked.connect(lambda: self.check_models())
         self.model_hint_panel.action_button.clicked.connect(lambda: self.check_models())
         self.preset_combo.currentIndexChanged.connect(lambda _index: self.apply_selected_preset())
+        self.apply_preset_button.clicked.connect(self.apply_current_preset)
         self.toggle_advanced_button.clicked.connect(self.toggle_advanced_settings)
         self.apply_selected_preset()
 
@@ -148,6 +162,8 @@ class ModelCenter(QWidget):
             return
         preset = get_model_preset(preset_id)
         self.selected_preset_label.setText(f"当前方案：{preset.display_name}")
+        self.selected_preset_detail_label.setText(_preset_detail_text(preset))
+        self.status_label.setText("方案已选择，点击“应用当前方案”可保存为默认方案。")
         button = self.preset_buttons.get(preset_id)
         if button is not None:
             button.setChecked(True)
@@ -157,6 +173,14 @@ class ModelCenter(QWidget):
         self.advanced_settings.translation_profile_path_edit.setText(
             preset.translation_profile_path
         )
+
+    def apply_current_preset(self) -> str:
+        preset_id = self.selected_preset_id()
+        preset = get_model_preset(preset_id)
+        self.sync_model_dir_to_advanced()
+        self.status_label.setText(f"已应用方案：{preset.display_name}")
+        self.preset_applied.emit(preset_id)
+        return preset_id
 
     def check_models(self) -> None:
         self.sync_model_dir_to_advanced()
@@ -215,3 +239,20 @@ def _preset_button(title: str, description: str) -> QPushButton:
         """
     )
     return button
+
+
+def _preset_detail_text(preset: ModelPreset) -> str:
+    requirements: list[str] = []
+    if preset.requires_gpu:
+        requirements.append("需要 NVIDIA GPU")
+    if preset.requires_lm_studio:
+        requirements.append("需要 LM Studio")
+    if not requirements:
+        requirements.append("无需额外在线服务")
+    models = "、".join(preset.recommended_models) if preset.recommended_models else "按该方案默认配置"
+    return (
+        f"要求：{'；'.join(requirements)}。\n"
+        f"需要模型：{models}。\n"
+        f"本地流程配置：{preset.local_profiles_path}"
+        + (f"\n翻译配置：{preset.translation_profile_path}" if preset.translation_profile_path else "")
+    )
