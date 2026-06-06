@@ -76,18 +76,37 @@ class DubbingProject:
         self.metadata.generation_elapsed_seconds = None
         self._save_metadata()
 
-    def mark_generation_completed(self, *, now: float | None = None) -> None:
-        self._finish_generation("completed", now=now)
+    def mark_generation_completed(
+        self,
+        *,
+        now: float | None = None,
+        elapsed_seconds: int | None = None,
+    ) -> None:
+        self._finish_generation("completed", now=now, elapsed_seconds=elapsed_seconds)
 
-    def mark_generation_failed(self, *, now: float | None = None) -> None:
-        self._finish_generation("failed", now=now)
+    def mark_generation_failed(
+        self,
+        *,
+        now: float | None = None,
+        elapsed_seconds: int | None = None,
+    ) -> None:
+        self._finish_generation("failed", now=now, elapsed_seconds=elapsed_seconds)
 
-    def _finish_generation(self, status: str, *, now: float | None = None) -> None:
+    def _finish_generation(
+        self,
+        status: str,
+        *,
+        now: float | None = None,
+        elapsed_seconds: int | None = None,
+    ) -> None:
         timestamp = time.time() if now is None else now
         started_at = self.metadata.generation_started_at or timestamp
         self.metadata.generation_status = status
         self.metadata.generation_completed_at = timestamp
-        self.metadata.generation_elapsed_seconds = max(0, round(timestamp - started_at))
+        elapsed = elapsed_seconds
+        if elapsed is None:
+            elapsed = round(timestamp - started_at)
+        self.metadata.generation_elapsed_seconds = max(0, elapsed)
         self._save_metadata()
 
     def _save_metadata(self) -> None:

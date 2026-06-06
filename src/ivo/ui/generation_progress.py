@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from ivo.pipeline.progress import PipelineProgressEvent, PipelineStage, STAGE_LABELS, STAGE_ORDER
-from ivo.ui.theme import CARD_STYLE, DANGER, SUCCESS, TEXT_SECONDARY, WARNING
+from ivo.ui.theme import CARD_STYLE, DANGER, PRIMARY, SUCCESS, TEXT_SECONDARY, WARNING
 
 STATUS_TEXT = {
     "started": "进行中",
@@ -115,14 +115,17 @@ class GenerationProgressPanel(QWidget):
     def set_idle_controls(self) -> None:
         self.pause_button.setEnabled(False)
         self.resume_button.setEnabled(False)
+        self.overall_progress.setStyleSheet(_progress_style(TEXT_SECONDARY))
 
     def set_running_controls(self) -> None:
         self.pause_button.setEnabled(True)
         self.resume_button.setEnabled(False)
+        self.overall_progress.setStyleSheet(_progress_style(PRIMARY))
 
     def set_paused_controls(self) -> None:
         self.pause_button.setEnabled(False)
         self.resume_button.setEnabled(True)
+        self.overall_progress.setStyleSheet(_progress_style(WARNING))
 
     def set_finished_controls(self) -> None:
         self.set_idle_controls()
@@ -164,3 +167,19 @@ def _format_elapsed(seconds: int) -> str:
     if hours:
         return f"{hours:02d}:{minutes:02d}:{rest:02d}"
     return f"{minutes:02d}:{rest:02d}"
+
+
+def _progress_style(chunk_color: str) -> str:
+    return f"""
+    QProgressBar {{
+        border: 1px solid #D2D2D7;
+        border-radius: 8px;
+        background: #F5F5F7;
+        text-align: center;
+        min-height: 16px;
+    }}
+    QProgressBar::chunk {{
+        background: {chunk_color};
+        border-radius: 8px;
+    }}
+    """

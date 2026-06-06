@@ -13,6 +13,7 @@ from jinja2.sandbox import SandboxedEnvironment
 from pydantic import BaseModel, Field
 
 from ivo.adapters.base import AdapterContext, AdapterError, AdapterResult, MockStageAdapter
+from ivo.subprocess_utils import hidden_subprocess_kwargs
 
 CommandRunner = Callable[..., None]
 CommandOutputCallback = Callable[["CommandExecutionLog"], None]
@@ -71,7 +72,7 @@ class LocalCommandAdapter:
                     capture_output=True,
                     text=True,
                     cwd=working_dir,
-                    **_hidden_subprocess_kwargs(),
+                    **hidden_subprocess_kwargs(),
                 )
                 self._emit_command_output(
                     command,
@@ -215,18 +216,6 @@ def _decode_output(output: str | bytes | None) -> str:
     if isinstance(output, bytes):
         return output.decode("utf-8", errors="replace")
     return output
-
-
-def _hidden_subprocess_kwargs() -> dict[str, Any]:
-    if sys.platform != "win32":
-        return {}
-    startupinfo = subprocess.STARTUPINFO()
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    startupinfo.wShowWindow = subprocess.SW_HIDE
-    return {
-        "startupinfo": startupinfo,
-        "creationflags": subprocess.CREATE_NO_WINDOW,
-    }
 
 
 def _run_with_optional_cwd(

@@ -71,6 +71,48 @@ def test_main_window_generation_timer_updates_every_second(qtbot, tmp_path) -> N
     window._mark_generation_completed()
 
 
+def test_main_window_pause_freezes_elapsed_and_recorded_total(
+    qtbot, tmp_path, monkeypatch
+) -> None:
+    from ivo.core import project as project_module
+    from ivo.core.project import DubbingProject
+    from ivo.ui import main_window as main_window_module
+    from ivo.ui.main_window import MainWindow
+
+    fake_now = 100.0
+    monkeypatch.setattr(main_window_module.time, "time", lambda: fake_now)
+    monkeypatch.setattr(project_module.time, "time", lambda: fake_now)
+    project = DubbingProject.create(
+        tmp_path / "paused-timer.ivoproj",
+        name="Paused Timer",
+        source_language="en",
+        target_language="zh",
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.current_project = project
+
+    window._mark_generation_started()
+    fake_now = 105.0
+    window._update_generation_elapsed_label()
+    paused_text = window.generation_progress.elapsed_label.text()
+    assert paused_text == "已用时 00:05"
+
+    window.pause_generation()
+    fake_now = 120.0
+    window._update_generation_elapsed_label()
+
+    assert window.generation_progress.elapsed_label.text() == paused_text
+
+    window.resume_generation()
+    fake_now = 125.0
+    window._update_generation_elapsed_label()
+    window._mark_generation_completed()
+
+    assert window.generation_progress.elapsed_label.text() == "已用时 00:10"
+    assert project.metadata.generation_elapsed_seconds == 10
+
+
 def test_main_window_pause_and_resume_generation(qtbot) -> None:
     from ivo.ui.main_window import MainWindow
 

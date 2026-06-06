@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from ivo.compliance.confirmation import ExportConfirmation
 from ivo.compliance.watermark import WatermarkOptions, build_watermark_filter
 from ivo.pipeline.import_video import require_ffmpeg
+from ivo.subprocess_utils import hidden_subprocess_kwargs
 
 CommandRunner = Callable[[list[str]], None]
 
@@ -44,7 +45,7 @@ def export_dubbed_video(
     executable = ffmpeg_path or require_ffmpeg()
     command = build_export_command(executable, request)
     if runner is None:
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, **hidden_subprocess_kwargs())
     else:
         runner(command)
     return request.output_path

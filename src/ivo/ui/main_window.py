@@ -100,6 +100,8 @@ class MainWindow(QMainWindow):
         self.current_project: DubbingProject | None = None
         self.source_video_path: Path | None = None
         self._recent_project_paths: list[Path] = []
+        self._generation_pause_started_at: float | None = None
+        self._generation_paused_seconds = 0.0
         self.local_preview_worker: PipelineWorker | None = None
         self.segment_regeneration_worker: PipelineWorker | None = None
         self.regenerating_segment_id: str | None = None
@@ -692,6 +694,8 @@ class MainWindow(QMainWindow):
             return
         self.pipeline_control = PipelineControl()
         self.current_project.mark_generation_started()
+        self._generation_pause_started_at = None
+        self._generation_paused_seconds = 0.0
         self.generation_progress.set_elapsed_seconds(0)
         self.generation_progress.set_running_controls()
         self.generation_elapsed_timer.start()
@@ -700,7 +704,10 @@ class MainWindow(QMainWindow):
     def _mark_generation_completed(self) -> None:
         if self.current_project is None:
             return
-        self.current_project.mark_generation_completed()
+        elapsed_seconds = self._current_generation_elapsed_seconds()
+        self.current_project.mark_generation_completed(elapsed_seconds=elapsed_seconds)
+        self._generation_pause_started_at = None
+        self._generation_paused_seconds = 0.0
         self._update_generation_elapsed_label()
         self.generation_elapsed_timer.stop()
         self.generation_progress.set_finished_controls()
@@ -709,31 +716,55 @@ class MainWindow(QMainWindow):
     def _mark_generation_failed(self) -> None:
         if self.current_project is None:
             return
-        self.current_project.mark_generation_failed()
+        elapsed_seconds = self._current_generation_elapsed_seconds()
+        self.current_project.mark_generation_failed(elapsed_seconds=elapsed_seconds)
+        self._generation_pause_started_at = None
+        self._generation_paused_seconds = 0.0
         self._update_generation_elapsed_label()
         self.generation_elapsed_timer.stop()
         self.generation_progress.set_finished_controls()
         self.refresh_project_library()
 
     def _update_generation_elapsed_label(self) -> None:
-        if self.current_project is None:
-            return
-        elapsed = self.current_project.metadata.generation_elapsed_seconds
-        started_at = self.current_project.metadata.generation_started_at
-        if elapsed is None and started_at is not None:
-            elapsed = max(0, round(time.time() - started_at))
+        elapsed = self._current_generation_elapsed_seconds()
         if elapsed is not None:
             self.generation_progress.set_elapsed_seconds(elapsed)
 
+    def _current_generation_elapsed_seconds(self) -> int | None:
+        if self.current_project is None:
+            return None
+        elapsed = self.current_project.metadata.generation_elapsed_seconds
+        started_at = self.current_project.metadata.generation_started_at
+        if elapsed is not None:
+            return elapsed
+        if started_at is None:
+            return None
+        paused_seconds = self._generation_paused_seconds
+        if self._generation_pause_started_at is not None:
+            paused_seconds += max(0.0, time.time() - self._generation_pause_started_at)
+        return max(0, round(time.time() - started_at - paused_seconds))
+
     def pause_generation(self) -> None:
         self.pipeline_control.pause()
+        if self._generation_pause_started_at is None:
+            self._generation_pause_started_at = time.time()
+        self._update_generation_elapsed_label()
+        self.generation_elapsed_timer.stop()
         self.generation_progress.set_paused_controls()
         self.progress_label.setText("生成已暂停，当前模型命令结束后会停在下一个检查点。")
         self.run_log_panel.append_stage_message("配音生成", "已暂停")
 
     def resume_generation(self) -> None:
+        if self._generation_pause_started_at is not None:
+            self._generation_paused_seconds += max(
+                0.0,
+                time.time() - self._generation_pause_started_at,
+            )
+            self._generation_pause_started_at = None
         self.pipeline_control.resume()
         self.generation_progress.set_running_controls()
+        if self.current_project is not None and self.current_project.metadata.generation_status == "running":
+            self.generation_elapsed_timer.start()
         self.progress_label.setText("生成已继续")
         self.run_log_panel.append_stage_message("配音生成", "已继续")
 

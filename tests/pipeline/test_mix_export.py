@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -65,3 +67,38 @@ def test_export_command_places_segments_metadata_and_watermark(tmp_path) -> None
     assert any("drawtext" in part for part in command)
     assert "-metadata" in command
     assert "ai_dubbing=true" in command
+
+
+def test_export_hides_ffmpeg_command_window_on_windows(monkeypatch, tmp_path) -> None:
+    from ivo.compliance.confirmation import ExportConfirmation
+    from ivo.pipeline.mix_export import ExportRequest, export_dubbed_video
+
+    source_video = tmp_path / "source.mp4"
+    background_audio = tmp_path / "background.wav"
+    output_path = tmp_path / "final.mp4"
+    source_video.write_bytes(b"video")
+    background_audio.write_bytes(b"background")
+    calls: list[dict[str, object]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        calls.append(kwargs)
+        output_path.write_bytes(b"final")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("ivo.pipeline.mix_export.subprocess.run", fake_run)
+
+    export_dubbed_video(
+        ExportRequest(
+            source_video=source_video,
+            background_audio=background_audio,
+            output_path=output_path,
+            metadata={"ai_dubbing": "true"},
+        ),
+        ExportConfirmation(accepted=True),
+        ffmpeg_path="ffmpeg-test",
+    )
+
+    assert calls[0]["check"] is True
+    if sys.platform == "win32":
+        assert calls[0]["creationflags"] & subprocess.CREATE_NO_WINDOW
+        assert calls[0]["startupinfo"] is not None

@@ -63,6 +63,7 @@ def test_generation_progress_shows_elapsed_time(qtbot) -> None:
 
 def test_generation_progress_pause_resume_buttons_emit_signals(qtbot) -> None:
     from ivo.ui.generation_progress import GenerationProgressPanel
+    from ivo.ui.theme import WARNING
 
     panel = GenerationProgressPanel()
     qtbot.addWidget(panel)
@@ -78,3 +79,4 @@ def test_generation_progress_pause_resume_buttons_emit_signals(qtbot) -> None:
     assert events == ["pause", "resume"]
     assert panel.pause_button.text() == "暂停"
     assert panel.resume_button.text() == "继续"
+    assert WARNING in panel.overall_progress.styleSheet()
