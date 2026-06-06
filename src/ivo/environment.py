@@ -121,8 +121,7 @@ def _executable_names(name: str) -> list[str]:
     if path.suffix:
         return [path.name]
     names = [path.name]
-    if sys.platform == "win32":
-        names.insert(0, f"{path.name}.exe")
+    names.insert(0, f"{path.name}.exe")
     return names
 
 
