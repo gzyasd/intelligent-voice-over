@@ -68,6 +68,70 @@ def test_model_center_apply_current_preset_emits_signal_and_status(qtbot) -> Non
     assert center.status_label.text() == "已应用方案：本机高质量（LM Studio + F5-TTS）"
 
 
+def test_model_center_copies_edits_and_applies_visual_config(qtbot, tmp_path) -> None:
+    from ivo.ui.model_center import ModelCenter
+
+    center = ModelCenter(config_store_path=tmp_path / "model-configs.json")
+    qtbot.addWidget(center)
+    emitted: list[str] = []
+    center.preset_applied.connect(emitted.append)
+
+    center.select_config("local_fast_gpu")
+    center.copy_config_button.click()
+    custom_id = center.current_config_id()
+    center.config_name_edit.setText("我的 GPU 预览配置")
+    center.config_description_edit.setText("先快速看效果")
+    center.config_local_profiles_path_edit.setText(
+        "examples/local_command_profiles.real_gpu_fast_preview.json"
+    )
+    center.save_config_button.click()
+    center.apply_preset_button.click()
+
+    assert custom_id.startswith("custom-")
+    assert emitted == [custom_id]
+    assert center.current_config_display_name() == "我的 GPU 预览配置"
+    assert center.advanced_settings.local_command_profiles_path_edit.text().endswith(
+        "real_gpu_fast_preview.json"
+    )
+
+
+def test_model_center_saves_stage_visual_settings(qtbot, tmp_path) -> None:
+    from ivo.ui.model_center import ModelCenter
+
+    center = ModelCenter(config_store_path=tmp_path / "model-configs.json")
+    qtbot.addWidget(center)
+
+    center.select_config("local_quality_lmstudio_qwen_f5")
+    center.copy_config_button.click()
+    custom_id = center.current_config_id()
+    center.stage_enabled_checks["diarization"].setChecked(False)
+    center.stage_service_combos["translation"].setCurrentText("在线 API")
+    center.stage_provider_edits["translation"].setText("LM Studio / Qwen3.6 35B")
+    center.save_config_button.click()
+
+    saved = center.config_store.get(custom_id)
+    stages = {stage.stage: stage for stage in saved.stages}
+    assert stages["diarization"].enabled is False
+    assert stages["translation"].service_type == "http"
+    assert stages["translation"].provider_name == "LM Studio / Qwen3.6 35B"
+    assert "翻译：在线 API" in center.selected_preset_detail_label.text()
+
+
+def test_model_center_deletes_custom_visual_config(qtbot, tmp_path) -> None:
+    from ivo.ui.model_center import ModelCenter
+
+    center = ModelCenter(config_store_path=tmp_path / "model-configs.json")
+    qtbot.addWidget(center)
+
+    center.select_config("local_cpu_preview")
+    center.copy_config_button.click()
+    custom_id = center.current_config_id()
+    center.delete_config_button.click()
+
+    assert custom_id not in center.config_ids()
+    assert center.current_config_id() == "local_quality_lmstudio_qwen_f5"
+
+
 def test_model_center_check_models_runs_diagnostics_and_readiness(monkeypatch, qtbot, tmp_path) -> None:
     from ivo.ui.model_center import ModelCenter
 
@@ -127,3 +191,28 @@ def test_main_window_saves_applied_model_preset(qtbot, tmp_path) -> None:
 
     assert window.settings_page.store.load().preferred_preset_id == "local_fast_gpu"
     assert window.progress_label.text() == "模型方案已保存：本机快速预览（GPU）"
+
+
+def test_main_window_saves_applied_custom_model_config(qtbot, tmp_path) -> None:
+    from ivo.core.user_settings import UserSettingsStore
+    from ivo.core.visual_model_config import VisualModelConfigStore
+    from ivo.ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.settings_page.store = UserSettingsStore(
+        tmp_path / ".ivo-work" / "user-settings.json",
+        runtime_root=tmp_path,
+    )
+    window.model_center.config_store = VisualModelConfigStore(tmp_path / "model-configs.json")
+    window.model_center.refresh_config_list()
+
+    window.model_center.select_config("local_fast_gpu")
+    window.model_center.copy_config_button.click()
+    custom_id = window.model_center.current_config_id()
+    window.model_center.config_name_edit.setText("我的正式生成配置")
+    window.model_center.save_config_button.click()
+    window.model_center.apply_preset_button.click()
+
+    assert window.settings_page.store.load().preferred_preset_id == custom_id
+    assert window.progress_label.text() == "模型方案已保存：我的正式生成配置"

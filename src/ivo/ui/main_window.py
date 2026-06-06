@@ -26,7 +26,6 @@ from ivo.core.project import DubbingProject
 from ivo.core.settings import ProfileSelectionSettings, TranslationSettings
 from ivo.core.timeline import SourceLanguage
 from ivo.core.user_settings import UserSettings
-from ivo.core.model_presets import get_model_preset
 from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
 from ivo.pipeline.local_command_preview import (
@@ -405,7 +404,7 @@ class MainWindow(QMainWindow):
         self.model_center.model_dir_edit.setText(str(settings.models_dir))
         self.model_center.sync_model_dir_to_advanced()
         try:
-            self.model_center.select_preset(settings.preferred_preset_id)
+            self.model_center.select_config(settings.preferred_preset_id)
         except KeyError:
             pass
 
@@ -421,8 +420,9 @@ class MainWindow(QMainWindow):
         saved = self.settings_page.store.save(updated)
         self.model_center.model_dir_edit.setText(str(saved.models_dir))
         self.model_center.sync_model_dir_to_advanced()
-        preset = get_model_preset(preset_id)
-        self.progress_label.setText(f"模型方案已保存：{preset.display_name}")
+        self.progress_label.setText(
+            f"模型方案已保存：{self.model_center.current_config_display_name()}"
+        )
 
     def show_generation_progress(self) -> None:
         self.app_shell.set_current_page("current")
