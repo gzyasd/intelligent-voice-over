@@ -6,7 +6,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from ivo.adapters.local import LocalCommandProfile
+from ivo.adapters.local import CommandOutputCallback, LocalCommandProfile
 from ivo.compliance.confirmation import ExportConfirmation
 from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
@@ -69,6 +69,7 @@ def run_local_command_preview(
     ffmpeg_path: str | None = None,
     watermark_text: str | None = "AI Dubbed",
     progress_callback: Callable[[PipelineProgressEvent], None] | None = None,
+    command_output_callback: CommandOutputCallback | None = None,
 ) -> LocalCommandPreviewResult:
     imported_video = _run_stage(
         project,
@@ -90,12 +91,19 @@ def run_local_command_preview(
         lambda: separate_audio(
             project,
             extracted_audio,
-            separation_adapter or LocalCommandSeparationAdapter(profiles.separation),
+            separation_adapter
+            or LocalCommandSeparationAdapter(
+                profiles.separation,
+                command_output_callback=command_output_callback,
+            ),
         ),
         resume_from=lambda: _resume_separation(project),
         progress_callback=progress_callback,
     )
-    active_asr_adapter = asr_adapter or LocalCommandAsrAdapter(profiles.asr)
+    active_asr_adapter = asr_adapter or LocalCommandAsrAdapter(
+        profiles.asr,
+        command_output_callback=command_output_callback,
+    )
     source_segments = _run_stage(
         project,
         "asr",
@@ -109,7 +117,10 @@ def run_local_command_preview(
     )
     active_diarization_adapter = diarization_adapter
     if active_diarization_adapter is None and profiles.diarization is not None:
-        active_diarization_adapter = LocalCommandDiarizationAdapter(profiles.diarization)
+        active_diarization_adapter = LocalCommandDiarizationAdapter(
+            profiles.diarization,
+            command_output_callback=command_output_callback,
+        )
     if active_diarization_adapter is not None:
         source_segments = _run_stage(
             project,
@@ -134,7 +145,10 @@ def run_local_command_preview(
 
     generated_segments: list[Path] = []
     segment_audio: list[SegmentAudio] = []
-    active_tts_adapter = tts_adapter or LocalCommandTtsAdapter(profiles.tts)
+    active_tts_adapter = tts_adapter or LocalCommandTtsAdapter(
+        profiles.tts,
+        command_output_callback=command_output_callback,
+    )
     _run_stage(
         project,
         "tts",
@@ -307,7 +321,12 @@ def _emit_progress(
             stage_label=STAGE_LABELS[stage],
             status=status,  # type: ignore[arg-type]
             message=message,
-            overall_percent=stage_percent(stage, status=status),  # type: ignore[arg-type]
+            overall_percent=stage_percent(
+                stage,
+                status=status,  # type: ignore[arg-type]
+                current_item=current_item,
+                total_items=total_items,
+            ),
             current_item=current_item,
             total_items=total_items,
             output_path=output_path,
@@ -330,10 +349,11 @@ def _emit_tts_progress(
             stage_label=STAGE_LABELS["tts"],
             status="progress",
             message=f"正在生成第 {current_item} / {total_items} 句：{segment_id}",
-            overall_percent=min(
-                99,
-                stage_percent("tts", status="started")
-                + round(current_item / total_items * 10),
+            overall_percent=stage_percent(
+                "tts",
+                status="progress",
+                current_item=current_item,
+                total_items=total_items,
             ),
             current_item=current_item,
             total_items=total_items,

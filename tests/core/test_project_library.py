@@ -36,6 +36,28 @@ def test_scan_project_library_reads_project_status_and_final_video(tmp_path: Pat
     assert by_name["Episode 02"].status_detail == "tts: model missing"
 
 
+def test_scan_project_library_reads_generation_elapsed_seconds(tmp_path: Path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.project_library import scan_project_library
+
+    runs_dir = tmp_path / "runs"
+    project = DubbingProject.create(
+        runs_dir / "Timed.ivoproj",
+        name="Timed",
+        source_language="en",
+        target_language="zh",
+    )
+    project.mark_generation_started(now=100.0)
+    project.mark_generation_completed(now=165.4)
+
+    items = scan_project_library(runs_dir, recent_projects=[])
+
+    assert items[0].name == "Timed"
+    assert items[0].status == "已完成"
+    assert items[0].elapsed_seconds == 65
+    assert "总耗时 01:05" in items[0].status_detail
+
+
 def test_scan_project_library_includes_recent_project_outside_runs(tmp_path: Path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.core.project_library import scan_project_library

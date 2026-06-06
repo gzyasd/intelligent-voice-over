@@ -40,6 +40,17 @@ STAGE_ORDER: tuple[PipelineStage, ...] = (
     "export",
 )
 
+STAGE_PROGRESS_RANGES: dict[PipelineStage, tuple[int, int]] = {
+    "import": (0, 5),
+    "audio_extract": (5, 10),
+    "separation": (10, 20),
+    "asr": (20, 35),
+    "diarization": (35, 42),
+    "translation": (42, 55),
+    "tts": (55, 90),
+    "export": (90, 100),
+}
+
 
 class PipelineProgressEvent(BaseModel):
     stage: PipelineStage
@@ -52,8 +63,19 @@ class PipelineProgressEvent(BaseModel):
     output_path: Path | None = None
 
 
-def stage_percent(stage: PipelineStage, *, status: PipelineProgressStatus) -> int:
-    index = STAGE_ORDER.index(stage)
+def stage_percent(
+    stage: PipelineStage,
+    *,
+    status: PipelineProgressStatus,
+    current_item: int | None = None,
+    total_items: int | None = None,
+) -> int:
+    start, end = STAGE_PROGRESS_RANGES[stage]
     if status == "completed":
-        index += 1
-    return round(index / len(STAGE_ORDER) * 100)
+        return end
+    if status == "progress" and current_item is not None and total_items:
+        fraction = max(0, min(current_item / total_items, 1))
+        return min(end, start + int((end - start) * fraction))
+    if status == "skipped":
+        return end
+    return start

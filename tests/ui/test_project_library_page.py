@@ -27,6 +27,32 @@ def test_project_library_page_lists_project_cards(qtbot, tmp_path: Path) -> None
     assert page.open_folder_buttons[0].text() == "打开文件夹"
 
 
+def test_project_library_page_shows_status_and_elapsed_time(qtbot, tmp_path: Path) -> None:
+    from ivo.core.project_library import ProjectLibraryItem
+    from ivo.ui.project_library_page import ProjectLibraryPage
+
+    page = ProjectLibraryPage()
+    qtbot.addWidget(page)
+    page.set_projects(
+        [
+            ProjectLibraryItem(
+                name="Episode 02",
+                path=tmp_path / "Episode 02.ivoproj",
+                source_language="ja",
+                target_language="zh",
+                updated_at=1,
+                status="生成中",
+                status_detail="总耗时 12:03",
+                elapsed_seconds=723,
+            )
+        ]
+    )
+
+    assert "Episode 02" in page.summary_text()
+    assert "生成中" in page.summary_text()
+    assert "总耗时 12:03" in page.summary_text()
+
+
 def test_project_library_page_shows_empty_state(qtbot) -> None:
     from ivo.ui.project_library_page import ProjectLibraryPage
 

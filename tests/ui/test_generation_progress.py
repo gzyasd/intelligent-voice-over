@@ -48,3 +48,14 @@ def test_generation_progress_shows_failure_with_recovery_hint(qtbot) -> None:
     assert panel.stage_status("translation") == "failed"
     assert "LM Studio 未连接" in panel.failure_label.text()
     assert "模型中心" in panel.recovery_hint_label.text()
+
+
+def test_generation_progress_shows_elapsed_time(qtbot) -> None:
+    from ivo.ui.generation_progress import GenerationProgressPanel
+
+    panel = GenerationProgressPanel()
+    qtbot.addWidget(panel)
+
+    panel.set_elapsed_seconds(125)
+
+    assert panel.elapsed_label.text() == "已用时 02:05"

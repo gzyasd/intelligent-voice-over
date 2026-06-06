@@ -121,6 +121,20 @@ def test_background_worker_stores_task_result() -> None:
     assert worker.result == "done"
 
 
+def test_run_log_panel_filters_error_logs(qtbot) -> None:
+    from ivo.ui.run_log import RunLogPanel
+
+    panel = RunLogPanel()
+    qtbot.addWidget(panel)
+
+    panel.append_stage_message("配音生成", "开始生成")
+    panel.append_stage_message("配音生成", "模型加载失败", level="error")
+    panel.error_only_checkbox.setChecked(True)
+
+    assert "模型加载失败" in panel.plain_text()
+    assert "开始生成" not in panel.plain_text()
+
+
 def test_model_settings_saves_and_loads_http_adapter_profile(qtbot, tmp_path) -> None:
     from ivo.adapters.profiles import AdapterProfileStore
     from ivo.ui.model_settings import ModelSettings

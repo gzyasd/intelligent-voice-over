@@ -8,7 +8,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ivo.adapters.base import AdapterContext
 from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter
-from ivo.adapters.local import CommandRunner, LocalCommandAdapter, LocalCommandProfile
+from ivo.adapters.local import (
+    CommandOutputCallback,
+    CommandRunner,
+    LocalCommandAdapter,
+    LocalCommandProfile,
+)
 from ivo.core.timeline import SourceLanguage
 
 
@@ -73,9 +78,14 @@ class LocalCommandAsrAdapter:
         profile: LocalCommandProfile,
         *,
         runner: CommandRunner | None = None,
+        command_output_callback: CommandOutputCallback | None = None,
     ) -> None:
         self.profile = profile
-        self.adapter = LocalCommandAdapter(profile, runner=runner)
+        self.adapter = LocalCommandAdapter(
+            profile,
+            runner=runner,
+            command_output_callback=command_output_callback,
+        )
 
     def transcribe(self, audio_path: Path, *, source_language: SourceLanguage) -> list[TranscriptionSegment]:
         if not audio_path.is_file():
@@ -122,9 +132,14 @@ class LocalCommandDiarizationAdapter:
         profile: LocalCommandProfile,
         *,
         runner: CommandRunner | None = None,
+        command_output_callback: CommandOutputCallback | None = None,
     ) -> None:
         self.profile = profile
-        self.adapter = LocalCommandAdapter(profile, runner=runner)
+        self.adapter = LocalCommandAdapter(
+            profile,
+            runner=runner,
+            command_output_callback=command_output_callback,
+        )
 
     def diarize(self, audio_path: Path) -> list[DiarizationSegment]:
         if not audio_path.is_file():

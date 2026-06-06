@@ -32,6 +32,8 @@ class GenerationProgressPanel(QWidget):
         self.overall_progress.setRange(0, 100)
         self.current_stage_label = QLabel("等待开始")
         self.current_stage_label.setStyleSheet("font-size: 18px; font-weight: 700;")
+        self.elapsed_label = QLabel("已用时 00:00")
+        self.elapsed_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: 600;")
         self.current_item_label = QLabel("尚未处理句子")
         self.current_item_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
         self.detail_label = QLabel("创建项目后点击开始生成。")
@@ -52,6 +54,7 @@ class GenerationProgressPanel(QWidget):
         card_layout.setContentsMargins(16, 16, 16, 16)
         card_layout.setSpacing(10)
         card_layout.addWidget(self.current_stage_label)
+        card_layout.addWidget(self.elapsed_label)
         card_layout.addWidget(self.overall_progress)
         card_layout.addWidget(self.current_item_label)
         card_layout.addWidget(self.detail_label)
@@ -90,9 +93,13 @@ class GenerationProgressPanel(QWidget):
     def stage_status(self, stage: PipelineStage) -> str:
         return self._stage_statuses[stage]
 
+    def set_elapsed_seconds(self, seconds: int) -> None:
+        self.elapsed_label.setText(f"已用时 {_format_elapsed(seconds)}")
+
     def reset(self) -> None:
         self.overall_progress.setValue(0)
         self.current_stage_label.setText("等待开始")
+        self.set_elapsed_seconds(0)
         self.current_item_label.setText("尚未处理句子")
         self.detail_label.setText("创建项目后点击开始生成。")
         self.failure_label.clear()
@@ -117,3 +124,11 @@ def _status_color(status: str) -> str:
     if status in {"started", "progress"}:
         return WARNING
     return TEXT_SECONDARY
+
+
+def _format_elapsed(seconds: int) -> str:
+    minutes, rest = divmod(max(0, seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{rest:02d}"
+    return f"{minutes:02d}:{rest:02d}"

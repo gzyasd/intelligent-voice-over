@@ -139,6 +139,17 @@ def test_local_command_preview_emits_stage_and_tts_progress_events(monkeypatch, 
     assert events[-1].output_path == result.final_video
 
 
+def test_stage_percent_gives_tts_the_largest_progress_range() -> None:
+    from ivo.pipeline.progress import stage_percent
+
+    assert stage_percent("import", status="completed") == 5
+    assert stage_percent("translation", status="completed") == 55
+    assert stage_percent("tts", status="started") == 55
+    assert stage_percent("tts", status="progress", current_item=1, total_items=2) == 72
+    assert stage_percent("tts", status="completed") == 90
+    assert stage_percent("export", status="completed") == 100
+
+
 def _profiles(tmp_path: Path):
     from ivo.adapters.local import LocalCommandProfile
     from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles

@@ -215,3 +215,52 @@ def test_local_command_adapter_error_includes_command_context(tmp_path) -> None:
     assert result.error.exit_code == 7
     assert result.error.stderr_summary == "model path not found full traceback omitted"
     assert result.error.output_json_path == str(output)
+
+
+def test_local_command_adapter_hides_windows_console_and_reports_command_output(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.local import CommandExecutionLog, LocalCommandAdapter, LocalCommandProfile
+
+    output = tmp_path / "result.json"
+    calls: list[dict[str, object]] = []
+    logs: list[CommandExecutionLog] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(kwargs)
+        output.write_text('{"ok": true}', encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="loaded model", stderr="warning")
+
+    monkeypatch.setattr("ivo.adapters.local.subprocess.run", fake_run)
+
+    adapter = LocalCommandAdapter(
+        LocalCommandProfile(
+            id="local-tts",
+            stage="tts",
+            command=["python", "tts.py", "--out", "{{ output_json_path }}"],
+            output_json_path=str(output),
+        ),
+        command_output_callback=logs.append,
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="你好",
+            source_language="ja",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is True
+    assert calls[0]["capture_output"] is True
+    assert calls[0]["text"] is True
+    if sys.platform == "win32":
+        assert calls[0]["creationflags"] & subprocess.CREATE_NO_WINDOW
+        assert calls[0]["startupinfo"] is not None
+    assert logs[0].stage == "tts"
+    assert logs[0].stdout == "loaded model"
+    assert logs[0].stderr == "warning"

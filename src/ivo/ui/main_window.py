@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from ivo.compliance.confirmation import ExportConfirmation
 from ivo.adapters.http import ApiAdapterProfile
+from ivo.adapters.local import CommandExecutionLog
 from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
 from ivo.core.settings import ProfileSelectionSettings, TranslationSettings
@@ -92,6 +94,7 @@ class MainWindow(QMainWindow):
         self.run_log_panel = RunLogPanel()
         self.current_project: DubbingProject | None = None
         self.source_video_path: Path | None = None
+        self._recent_project_paths: list[Path] = []
         self.local_preview_worker: PipelineWorker | None = None
         self.segment_regeneration_worker: PipelineWorker | None = None
         self.regenerating_segment_id: str | None = None
@@ -123,9 +126,7 @@ class MainWindow(QMainWindow):
 
         self.app_shell = AppShell()
         self.app_shell.add_page("home", "首页", self._build_home_page())
-        self.project_library_page.set_projects(
-            scan_project_library(default_runs_dir(), recent_projects=[])
-        )
+        self.refresh_project_library()
         self.app_shell.add_page("projects", "项目库", self.project_library_page)
         self.app_shell.add_page("current", "当前项目", self._build_current_project_page())
         self.app_shell.add_page("model_center", "模型中心", _scrollable(self.model_center))
@@ -242,6 +243,8 @@ class MainWindow(QMainWindow):
         )
         self.current_project = project
         self.source_video_path = source_video
+        self._remember_project(project.path)
+        self.refresh_project_library()
         self.progress_label.setText(self.NEXT_STEP_TEXT)
         self.project_overview.set_project(project)
         self.timeline_editor.set_project(project)
@@ -305,11 +308,28 @@ class MainWindow(QMainWindow):
 
         self.current_project = project
         self.source_video_path = project.source_video_path
+        self._remember_project(project.path)
+        self.refresh_project_library()
         self.project_overview.set_project(project)
         self.timeline_editor.set_project(project)
         self.progress_label.setText(f"项目已打开。下一步：点击“{self.START_DUBBING_TEXT}”。")
         self.app_shell.set_current_page("current")
         return project
+
+    def recent_project_paths(self) -> list[Path]:
+        return list(self._recent_project_paths)
+
+    def refresh_project_library(self) -> None:
+        self.project_library_page.set_projects(
+            scan_project_library(default_runs_dir(), recent_projects=self._recent_project_paths)
+        )
+
+    def _remember_project(self, project_path: Path) -> None:
+        resolved = project_path.resolve()
+        self._recent_project_paths = [
+            path for path in self._recent_project_paths if path.resolve() != resolved
+        ]
+        self._recent_project_paths.insert(0, project_path)
 
     def open_path_in_shell(self, path: Path) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
@@ -330,24 +350,37 @@ class MainWindow(QMainWindow):
         return result
 
     def run_local_preview(self) -> LocalCommandPreviewResult:
+        self._mark_generation_started()
         self.progress_label.setText("正在生成配音，请稍候")
         self.run_log_panel.append_stage_message("配音生成", "已开始")
         self.generation_progress.reset()
-        result = self._execute_local_preview(progress_callback=self.handle_generation_progress)
+        try:
+            result = self._execute_local_preview(
+                progress_callback=self.handle_generation_progress,
+                command_output_callback=self.handle_command_output,
+            )
+        except Exception:
+            self._mark_generation_failed()
+            raise
+        self._mark_generation_completed()
         self.run_log_panel.append_stage_message("配音生成", f"输出：{result.final_video}")
         self._refresh_after_local_preview(result.final_video)
         return result
 
     def create_local_preview_worker(self) -> PipelineWorker:
         self.show_generation_progress()
+        self._mark_generation_started()
         self.progress_label.setText("正在生成配音，请稍候")
         self.run_log_panel.append_stage_message("配音生成", "已开始")
         self.local_preview_button.setEnabled(False)
         self.generation_progress.reset()
         worker = PipelineWorker(
-            lambda: self._execute_local_preview(progress_callback=worker.progress.emit)
+            lambda: self._execute_local_preview(
+                progress_callback=worker.progress.emit,
+                command_output_callback=worker.progress.emit,
+            )
         )
-        worker.progress.connect(self.handle_generation_progress)
+        worker.progress.connect(self.handle_worker_event)
         worker.succeeded.connect(self.handle_local_preview_succeeded)
         worker.failed.connect(self.handle_local_preview_failed)
         self.local_preview_worker = worker
@@ -372,6 +405,7 @@ class MainWindow(QMainWindow):
         return self.start_local_preview_background()
 
     def handle_local_preview_succeeded(self) -> None:
+        self._mark_generation_completed()
         final_video: Path | None = None
         if self.local_preview_worker is not None and self.local_preview_worker.result is not None:
             result = self.local_preview_worker.result
@@ -382,19 +416,31 @@ class MainWindow(QMainWindow):
         self.local_preview_button.setEnabled(True)
 
     def handle_local_preview_failed(self, message: str) -> None:
+        self._mark_generation_failed()
         self.progress_label.setText(f"生成配音失败：{message}")
-        self.run_log_panel.append_stage_message("配音生成", f"失败：{message}")
+        self.run_log_panel.append_stage_message("配音生成", f"失败：{message}", level="error")
         if self.current_project is not None:
             self.project_overview.set_project(self.current_project)
         self.local_preview_button.setEnabled(True)
         QMessageBox.warning(self, "生成配音失败", message)
 
+    def handle_worker_event(self, event: object) -> None:
+        if isinstance(event, PipelineProgressEvent):
+            self.handle_generation_progress(event)
+            return
+        if isinstance(event, CommandExecutionLog):
+            self.handle_command_output(event)
+
     def handle_generation_progress(self, event: PipelineProgressEvent) -> None:
+        self._update_generation_elapsed_label()
         self.generation_progress.handle_progress(event)
         stage_label = getattr(event, "stage_label", "生成进度")
         message = getattr(event, "message", "")
         status = getattr(event, "status", "")
         self.progress_label.setText(message or f"{stage_label}：{status}")
+
+    def handle_command_output(self, log: CommandExecutionLog) -> None:
+        self.run_log_panel.append_command_output(log)
 
     def handle_user_settings_saved(self, settings: UserSettings) -> None:
         self.apply_user_settings(settings)
@@ -588,6 +634,7 @@ class MainWindow(QMainWindow):
     def _execute_local_preview(
         self,
         progress_callback: Callable[[PipelineProgressEvent], None] | None = None,
+        command_output_callback: Callable[[CommandExecutionLog], None] | None = None,
     ) -> LocalCommandPreviewResult:
         if self.current_project is None:
             raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
@@ -605,6 +652,7 @@ class MainWindow(QMainWindow):
             translation_adapter=self._build_translation_adapter(),
             tts_adapter=self._build_http_tts_adapter(),
             progress_callback=progress_callback,
+            command_output_callback=command_output_callback,
         )
 
     def _save_model_profile_settings(self) -> None:
@@ -625,10 +673,42 @@ class MainWindow(QMainWindow):
         if self.current_project is not None:
             self.project_overview.set_project(self.current_project)
             self.timeline_editor.set_project(self.current_project)
+            self.refresh_project_library()
         if final_video is not None:
             self.progress_label.setText(f"配音生成已完成：{final_video}")
         else:
             self.progress_label.setText("配音生成已完成")
+
+    def _mark_generation_started(self) -> None:
+        if self.current_project is None:
+            return
+        self.current_project.mark_generation_started()
+        self.generation_progress.set_elapsed_seconds(0)
+        self.refresh_project_library()
+
+    def _mark_generation_completed(self) -> None:
+        if self.current_project is None:
+            return
+        self.current_project.mark_generation_completed()
+        self._update_generation_elapsed_label()
+        self.refresh_project_library()
+
+    def _mark_generation_failed(self) -> None:
+        if self.current_project is None:
+            return
+        self.current_project.mark_generation_failed()
+        self._update_generation_elapsed_label()
+        self.refresh_project_library()
+
+    def _update_generation_elapsed_label(self) -> None:
+        if self.current_project is None:
+            return
+        elapsed = self.current_project.metadata.generation_elapsed_seconds
+        started_at = self.current_project.metadata.generation_started_at
+        if elapsed is None and started_at is not None:
+            elapsed = max(0, round(time.time() - started_at))
+        if elapsed is not None:
+            self.generation_progress.set_elapsed_seconds(elapsed)
 
     def _execute_segment_regeneration(self, segment_id: str) -> SynthesisResult:
         if self.current_project is None:

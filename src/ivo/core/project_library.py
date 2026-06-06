@@ -16,6 +16,7 @@ class ProjectLibraryItem(BaseModel):
     updated_at: float
     status: str
     status_detail: str = ""
+    elapsed_seconds: int | None = None
     final_video_path: Path | None = None
 
 
@@ -59,6 +60,8 @@ def _read_project_item(path: Path) -> ProjectLibraryItem:
 
     final_video = _final_video_path(project.path)
     status, detail = _project_status(project, final_video)
+    elapsed_seconds = project.metadata.generation_elapsed_seconds
+    detail = _append_elapsed_detail(detail, elapsed_seconds)
     return ProjectLibraryItem(
         name=project.name,
         path=project.path,
@@ -68,6 +71,7 @@ def _read_project_item(path: Path) -> ProjectLibraryItem:
         updated_at=_path_updated_at(project.path),
         status=status,
         status_detail=detail,
+        elapsed_seconds=elapsed_seconds,
         final_video_path=final_video,
     )
 
@@ -77,16 +81,37 @@ def _project_status(project: DubbingProject, final_video: Path | None) -> tuple[
     failed = next((record for record in records if record.status == "failed"), None)
     if failed is not None:
         return "失败", f"{failed.stage}: {failed.message}"
+    if project.metadata.generation_status == "failed":
+        return "失败", ""
     if any(record.status == "running" for record in records):
+        return "生成中", ""
+    if project.metadata.generation_status == "running":
         return "生成中", ""
     export_record = next((record for record in records if record.stage == "export"), None)
     if final_video is not None or (
         export_record is not None and export_record.status == "completed"
+    ) or (
+        project.metadata.generation_status == "completed"
     ):
         return "已完成", ""
     if records:
         return "未完成", ""
     return "未开始", ""
+
+
+def _append_elapsed_detail(detail: str, elapsed_seconds: int | None) -> str:
+    if elapsed_seconds is None:
+        return detail
+    elapsed = f"总耗时 {_format_elapsed(elapsed_seconds)}"
+    return f"{detail} · {elapsed}" if detail else elapsed
+
+
+def _format_elapsed(seconds: int) -> str:
+    minutes, rest = divmod(max(0, seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{rest:02d}"
+    return f"{minutes:02d}:{rest:02d}"
 
 
 def _final_video_path(project_path: Path) -> Path | None:

@@ -11,7 +11,12 @@ from pydantic import BaseModel
 
 from ivo.adapters.base import AdapterContext
 from ivo.adapters.http import ApiAdapterProfile, HttpStageAdapter
-from ivo.adapters.local import CommandRunner, LocalCommandAdapter, LocalCommandProfile
+from ivo.adapters.local import (
+    CommandOutputCallback,
+    CommandRunner,
+    LocalCommandAdapter,
+    LocalCommandProfile,
+)
 from ivo.core.project import DubbingProject
 from ivo.core.timeline import DubbingSegment, TimelineStore
 
@@ -63,9 +68,14 @@ class LocalCommandTtsAdapter:
         profile: LocalCommandProfile,
         *,
         runner: CommandRunner | None = None,
+        command_output_callback: CommandOutputCallback | None = None,
     ) -> None:
         self.profile = profile
-        self.adapter = LocalCommandAdapter(profile, runner=runner)
+        self.adapter = LocalCommandAdapter(
+            profile,
+            runner=runner,
+            command_output_callback=command_output_callback,
+        )
 
     def synthesize(
         self,

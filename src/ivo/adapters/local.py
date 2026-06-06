@@ -15,6 +15,16 @@ from pydantic import BaseModel, Field
 from ivo.adapters.base import AdapterContext, AdapterError, AdapterResult, MockStageAdapter
 
 CommandRunner = Callable[..., None]
+CommandOutputCallback = Callable[["CommandExecutionLog"], None]
+
+
+class CommandExecutionLog(BaseModel):
+    stage: str
+    provider: str
+    command: list[str]
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: int = 0
 
 
 class LocalCommandProfile(BaseModel):
@@ -31,11 +41,13 @@ class LocalCommandAdapter:
         profile: LocalCommandProfile,
         *,
         runner: CommandRunner | None = None,
+        command_output_callback: CommandOutputCallback | None = None,
     ) -> None:
         self.profile = profile
         self.stage = profile.stage
         self.provider = profile.id
         self.runner = runner
+        self.command_output_callback = command_output_callback
         self._environment = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
 
     def validate_config(self) -> None:
@@ -53,7 +65,20 @@ class LocalCommandAdapter:
 
         try:
             if self.runner is None:
-                subprocess.run(command, check=True, capture_output=True, text=True, cwd=working_dir)
+                completed = subprocess.run(
+                    command,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    cwd=working_dir,
+                    **_hidden_subprocess_kwargs(),
+                )
+                self._emit_command_output(
+                    command,
+                    stdout=completed.stdout,
+                    stderr=completed.stderr,
+                    exit_code=completed.returncode,
+                )
             else:
                 _run_with_optional_cwd(self.runner, command, working_dir)
             if not output_path.is_file():
@@ -76,6 +101,12 @@ class LocalCommandAdapter:
                 payload=payload,
             )
         except subprocess.CalledProcessError as exc:
+            self._emit_command_output(
+                command,
+                stdout=exc.stdout or "",
+                stderr=exc.stderr or "",
+                exit_code=exc.returncode,
+            )
             return self._error(
                 "local command failed",
                 command=command,
@@ -122,6 +153,27 @@ class LocalCommandAdapter:
             ),
         )
 
+    def _emit_command_output(
+        self,
+        command: list[str],
+        *,
+        stdout: str | bytes | None,
+        stderr: str | bytes | None,
+        exit_code: int,
+    ) -> None:
+        if self.command_output_callback is None:
+            return
+        self.command_output_callback(
+            CommandExecutionLog(
+                stage=self.stage,
+                provider=self.provider,
+                command=command,
+                stdout=_decode_output(stdout),
+                stderr=_decode_output(stderr),
+                exit_code=exit_code,
+            )
+        )
+
     def _format_error_message(
         self,
         message: str,
@@ -157,6 +209,26 @@ def _summarize_stderr(stderr: str | bytes | None) -> str:
     return " ".join(text.split())[:500]
 
 
+def _decode_output(output: str | bytes | None) -> str:
+    if output is None:
+        return ""
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output
+
+
+def _hidden_subprocess_kwargs() -> dict[str, Any]:
+    if sys.platform != "win32":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    return {
+        "startupinfo": startupinfo,
+        "creationflags": subprocess.CREATE_NO_WINDOW,
+    }
+
+
 def _run_with_optional_cwd(
     runner: CommandRunner,
     command: list[str],
@@ -173,4 +245,9 @@ def _run_with_optional_cwd(
     runner(command)
 
 
-__all__ = ["LocalCommandAdapter", "LocalCommandProfile", "MockStageAdapter"]
+__all__ = [
+    "CommandExecutionLog",
+    "LocalCommandAdapter",
+    "LocalCommandProfile",
+    "MockStageAdapter",
+]

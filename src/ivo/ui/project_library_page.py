@@ -3,11 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ivo.core.project_library import ProjectLibraryItem
 from ivo.ui.empty_states import EmptyStatePanel
-from ivo.ui.theme import CARD_STYLE, PRIMARY_BUTTON_STYLE, SECONDARY_BUTTON_STYLE
+from ivo.ui.theme import (
+    BORDER,
+    CARD_STYLE,
+    DANGER,
+    PRIMARY,
+    PRIMARY_BUTTON_STYLE,
+    SECONDARY_BUTTON_STYLE,
+    SUCCESS,
+    TEXT_SECONDARY,
+    WARNING,
+)
 
 
 class ProjectLibraryPage(QWidget):
@@ -31,6 +41,9 @@ class ProjectLibraryPage(QWidget):
         title = QLabel("项目库")
         title.setObjectName("PageTitle")
         self.content_layout.addWidget(title)
+        subtitle = QLabel("查看每个作品的生成状态、总耗时和输出文件。")
+        subtitle.setObjectName("SecondaryText")
+        self.content_layout.addWidget(subtitle)
         self.setLayout(self.content_layout)
 
     def set_projects(self, projects: list[ProjectLibraryItem]) -> None:
@@ -73,15 +86,38 @@ class ProjectLibraryPage(QWidget):
 
     def _add_project_card(self, item: ProjectLibraryItem) -> None:
         card = QFrame()
-        card.setStyleSheet(CARD_STYLE)
+        card.setStyleSheet(
+            CARD_STYLE
+            + """
+            QFrame {
+                border-radius: 14px;
+            }
+            """
+        )
         layout = QVBoxLayout()
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+
+        header = QHBoxLayout()
         name = QLabel(item.name)
-        name.setStyleSheet("font-size: 16px; font-weight: 700;")
-        status = QLabel(f"{item.status}  {item.status_detail}".strip())
+        name.setStyleSheet("font-size: 17px; font-weight: 700;")
+        status_badge = QLabel(item.status)
+        status_badge.setStyleSheet(_status_badge_style(item.status))
+        header.addWidget(name)
+        header.addStretch()
+        header.addWidget(status_badge)
+
+        language = _language_text(item)
+        meta = QLabel(language)
+        meta.setObjectName("SecondaryText")
+        meta.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        status = QLabel(item.status_detail or "尚未记录耗时")
         status.setObjectName("SecondaryText")
+        status.setStyleSheet("font-size: 13px;")
         path_label = QLabel(str(item.path))
         path_label.setObjectName("SecondaryText")
+        path_label.setWordWrap(True)
+        path_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
         open_project = QPushButton("打开项目")
         open_project.setStyleSheet(PRIMARY_BUTTON_STYLE)
         open_folder = QPushButton("打开文件夹")
@@ -92,16 +128,21 @@ class ProjectLibraryPage(QWidget):
         open_folder.clicked.connect(
             lambda _checked=False, path=item.path: self.open_folder_requested.emit(path)
         )
-        layout.addWidget(name)
+        actions = QHBoxLayout()
+        actions.addWidget(open_project)
+        actions.addWidget(open_folder)
+        actions.addStretch()
+
+        layout.addLayout(header)
+        layout.addWidget(meta)
         layout.addWidget(status)
         layout.addWidget(path_label)
-        layout.addWidget(open_project)
-        layout.addWidget(open_folder)
+        layout.addLayout(actions)
         card.setLayout(layout)
         self.content_layout.addWidget(card)
         self.open_project_buttons.append(open_project)
         self.open_folder_buttons.append(open_folder)
-        self._summary_parts.extend([item.name, item.status, item.status_detail])
+        self._summary_parts.extend([item.name, item.status, item.status_detail, language])
 
     def _clear_project_widgets(self) -> None:
         while self.content_layout.count() > 1:
@@ -111,3 +152,29 @@ class ProjectLibraryPage(QWidget):
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
+
+
+def _language_text(item: ProjectLibraryItem) -> str:
+    source = item.source_language or "未知"
+    target = item.target_language or "未知"
+    return f"{source} → {target}"
+
+
+def _status_badge_style(status: str) -> str:
+    color = {
+        "已完成": SUCCESS,
+        "生成中": PRIMARY,
+        "失败": DANGER,
+        "未完成": WARNING,
+        "未开始": TEXT_SECONDARY,
+    }.get(status, TEXT_SECONDARY)
+    return f"""
+        QLabel {{
+            color: {color};
+            background: #ffffff;
+            border: 1px solid {BORDER};
+            border-radius: 10px;
+            padding: 5px 10px;
+            font-weight: 700;
+        }}
+    """
