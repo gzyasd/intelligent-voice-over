@@ -59,3 +59,22 @@ def test_generation_progress_shows_elapsed_time(qtbot) -> None:
     panel.set_elapsed_seconds(125)
 
     assert panel.elapsed_label.text() == "已用时 02:05"
+
+
+def test_generation_progress_pause_resume_buttons_emit_signals(qtbot) -> None:
+    from ivo.ui.generation_progress import GenerationProgressPanel
+
+    panel = GenerationProgressPanel()
+    qtbot.addWidget(panel)
+    events: list[str] = []
+    panel.pause_requested.connect(lambda: events.append("pause"))
+    panel.resume_requested.connect(lambda: events.append("resume"))
+
+    panel.set_running_controls()
+    panel.pause_button.click()
+    panel.set_paused_controls()
+    panel.resume_button.click()
+
+    assert events == ["pause", "resume"]
+    assert panel.pause_button.text() == "暂停"
+    assert panel.resume_button.text() == "继续"

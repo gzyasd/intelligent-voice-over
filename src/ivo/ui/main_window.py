@@ -5,7 +5,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QSize, QUrl
+from PySide6.QtCore import QSize, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -30,6 +30,7 @@ from ivo.core.timeline import SourceLanguage
 from ivo.core.user_settings import UserSettings
 from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
+from ivo.pipeline.control import PipelineControl
 from ivo.pipeline.local_command_preview import (
     LocalCommandPipelineProfiles,
     LocalCommandPreviewResult,
@@ -92,6 +93,10 @@ class MainWindow(QMainWindow):
         self.generation_progress = GenerationProgressPanel()
         self.settings_page = SettingsPage()
         self.run_log_panel = RunLogPanel()
+        self.pipeline_control = PipelineControl()
+        self.generation_elapsed_timer = QTimer(self)
+        self.generation_elapsed_timer.setInterval(1000)
+        self.generation_elapsed_timer.timeout.connect(self._update_generation_elapsed_label)
         self.current_project: DubbingProject | None = None
         self.source_video_path: Path | None = None
         self._recent_project_paths: list[Path] = []
@@ -116,6 +121,8 @@ class MainWindow(QMainWindow):
         self.project_library_page.open_existing_requested.connect(lambda: self.open_existing_project())
         self.settings_page.saved.connect(self.handle_user_settings_saved)
         self.model_center.preset_applied.connect(self.handle_model_preset_applied)
+        self.generation_progress.pause_requested.connect(self.pause_generation)
+        self.generation_progress.resume_requested.connect(self.resume_generation)
         self.apply_user_settings(self.settings_page.store.load())
 
         self.project_workspace_tabs = QTabWidget()
@@ -653,6 +660,7 @@ class MainWindow(QMainWindow):
             tts_adapter=self._build_http_tts_adapter(),
             progress_callback=progress_callback,
             command_output_callback=command_output_callback,
+            control=self.pipeline_control,
         )
 
     def _save_model_profile_settings(self) -> None:
@@ -682,8 +690,11 @@ class MainWindow(QMainWindow):
     def _mark_generation_started(self) -> None:
         if self.current_project is None:
             return
+        self.pipeline_control = PipelineControl()
         self.current_project.mark_generation_started()
         self.generation_progress.set_elapsed_seconds(0)
+        self.generation_progress.set_running_controls()
+        self.generation_elapsed_timer.start()
         self.refresh_project_library()
 
     def _mark_generation_completed(self) -> None:
@@ -691,6 +702,8 @@ class MainWindow(QMainWindow):
             return
         self.current_project.mark_generation_completed()
         self._update_generation_elapsed_label()
+        self.generation_elapsed_timer.stop()
+        self.generation_progress.set_finished_controls()
         self.refresh_project_library()
 
     def _mark_generation_failed(self) -> None:
@@ -698,6 +711,8 @@ class MainWindow(QMainWindow):
             return
         self.current_project.mark_generation_failed()
         self._update_generation_elapsed_label()
+        self.generation_elapsed_timer.stop()
+        self.generation_progress.set_finished_controls()
         self.refresh_project_library()
 
     def _update_generation_elapsed_label(self) -> None:
@@ -709,6 +724,18 @@ class MainWindow(QMainWindow):
             elapsed = max(0, round(time.time() - started_at))
         if elapsed is not None:
             self.generation_progress.set_elapsed_seconds(elapsed)
+
+    def pause_generation(self) -> None:
+        self.pipeline_control.pause()
+        self.generation_progress.set_paused_controls()
+        self.progress_label.setText("生成已暂停，当前模型命令结束后会停在下一个检查点。")
+        self.run_log_panel.append_stage_message("配音生成", "已暂停")
+
+    def resume_generation(self) -> None:
+        self.pipeline_control.resume()
+        self.generation_progress.set_running_controls()
+        self.progress_label.setText("生成已继续")
+        self.run_log_panel.append_stage_message("配音生成", "已继续")
 
     def _execute_segment_regeneration(self, segment_id: str) -> SynthesisResult:
         if self.current_project is None:

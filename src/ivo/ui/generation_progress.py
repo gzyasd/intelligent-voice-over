@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QProgressBar,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -21,6 +24,9 @@ STATUS_TEXT = {
 
 
 class GenerationProgressPanel(QWidget):
+    pause_requested = Signal()
+    resume_requested = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._stage_labels: dict[PipelineStage, QLabel] = {}
@@ -44,6 +50,11 @@ class GenerationProgressPanel(QWidget):
         self.recovery_hint_label = QLabel("")
         self.recovery_hint_label.setWordWrap(True)
         self.recovery_hint_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        self.pause_button = QPushButton("暂停")
+        self.resume_button = QPushButton("继续")
+        self.pause_button.clicked.connect(self.pause_requested.emit)
+        self.resume_button.clicked.connect(self.resume_requested.emit)
+        self.set_idle_controls()
 
         root_layout = QVBoxLayout()
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -60,6 +71,11 @@ class GenerationProgressPanel(QWidget):
         card_layout.addWidget(self.detail_label)
         card_layout.addWidget(self.failure_label)
         card_layout.addWidget(self.recovery_hint_label)
+        controls = QHBoxLayout()
+        controls.addWidget(self.pause_button)
+        controls.addWidget(self.resume_button)
+        controls.addStretch()
+        card_layout.addLayout(controls)
         for stage in STAGE_ORDER:
             label = QLabel(f"{STAGE_LABELS[stage]}：等待中")
             label.setObjectName(f"stage_{stage}")
@@ -96,6 +112,21 @@ class GenerationProgressPanel(QWidget):
     def set_elapsed_seconds(self, seconds: int) -> None:
         self.elapsed_label.setText(f"已用时 {_format_elapsed(seconds)}")
 
+    def set_idle_controls(self) -> None:
+        self.pause_button.setEnabled(False)
+        self.resume_button.setEnabled(False)
+
+    def set_running_controls(self) -> None:
+        self.pause_button.setEnabled(True)
+        self.resume_button.setEnabled(False)
+
+    def set_paused_controls(self) -> None:
+        self.pause_button.setEnabled(False)
+        self.resume_button.setEnabled(True)
+
+    def set_finished_controls(self) -> None:
+        self.set_idle_controls()
+
     def reset(self) -> None:
         self.overall_progress.setValue(0)
         self.current_stage_label.setText("等待开始")
@@ -104,6 +135,7 @@ class GenerationProgressPanel(QWidget):
         self.detail_label.setText("创建项目后点击开始生成。")
         self.failure_label.clear()
         self.recovery_hint_label.clear()
+        self.set_idle_controls()
         for stage in STAGE_ORDER:
             self._stage_statuses[stage] = "pending"
             self._refresh_stage_label(stage)

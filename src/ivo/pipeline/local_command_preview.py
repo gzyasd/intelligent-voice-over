@@ -11,6 +11,7 @@ from ivo.compliance.confirmation import ExportConfirmation
 from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
 from ivo.core.timeline import DubbingSegment
+from ivo.pipeline.control import PipelineControl
 from ivo.pipeline.import_video import extract_normalized_audio, import_source_video
 from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
 from ivo.pipeline.progress import PipelineProgressEvent, PipelineStage, STAGE_LABELS, stage_percent
@@ -70,6 +71,7 @@ def run_local_command_preview(
     watermark_text: str | None = "AI Dubbed",
     progress_callback: Callable[[PipelineProgressEvent], None] | None = None,
     command_output_callback: CommandOutputCallback | None = None,
+    control: PipelineControl | None = None,
 ) -> LocalCommandPreviewResult:
     imported_video = _run_stage(
         project,
@@ -77,6 +79,7 @@ def run_local_command_preview(
         lambda: import_source_video(project, source_video),
         resume_from=lambda: _resume_file(project.path / "assets" / f"source_video{source_video.suffix}"),
         progress_callback=progress_callback,
+        control=control,
     )
     extracted_audio = _run_stage(
         project,
@@ -84,6 +87,7 @@ def run_local_command_preview(
         lambda: extract_normalized_audio(project, imported_video, ffmpeg_path=ffmpeg_path),
         resume_from=lambda: _resume_file(project.path / "assets" / "extracted_audio.wav"),
         progress_callback=progress_callback,
+        control=control,
     )
     separation = _run_stage(
         project,
@@ -99,6 +103,7 @@ def run_local_command_preview(
         ),
         resume_from=lambda: _resume_separation(project),
         progress_callback=progress_callback,
+        control=control,
     )
     active_asr_adapter = asr_adapter or LocalCommandAsrAdapter(
         profiles.asr,
@@ -114,6 +119,7 @@ def run_local_command_preview(
         ),
         resume_from=lambda: _resume_source_segments(project),
         progress_callback=progress_callback,
+        control=control,
     )
     active_diarization_adapter = diarization_adapter
     if active_diarization_adapter is None and profiles.diarization is not None:
@@ -130,6 +136,7 @@ def run_local_command_preview(
                 diarize_audio(active_diarization_adapter, separation.vocals_path),
             ),
             progress_callback=progress_callback,
+            control=control,
         )
     adapter = translation_adapter or _build_override_translation_adapter(
         source_segments,
@@ -141,6 +148,7 @@ def run_local_command_preview(
         lambda: translate_segments(project, source_segments, adapter),
         resume_from=lambda: _resume_translated_segments(project),
         progress_callback=progress_callback,
+        control=control,
     )
 
     generated_segments: list[Path] = []
@@ -159,8 +167,10 @@ def run_local_command_preview(
             generated_segments,
             segment_audio,
             progress_callback=progress_callback,
+            control=control,
         ),
         progress_callback=progress_callback,
+        control=control,
     )
 
     metadata = build_ai_dubbing_metadata(
@@ -184,6 +194,7 @@ def run_local_command_preview(
         ),
         resume_from=lambda: _resume_file(project.path / "renders" / "local-preview.mp4"),
         progress_callback=progress_callback,
+        control=control,
     )
     return LocalCommandPreviewResult(
         final_video=final_video,
@@ -199,7 +210,10 @@ def _run_stage(
     *,
     resume_from: Callable[[], T | None] | None = None,
     progress_callback: Callable[[PipelineProgressEvent], None] | None = None,
+    control: PipelineControl | None = None,
 ) -> T:
+    if control is not None:
+        control.wait_if_paused()
     record = project.jobs.get(stage)
     if record is not None and record.status == "completed" and resume_from is not None:
         resumed = resume_from()
@@ -265,9 +279,12 @@ def _synthesize_segments(
     generated_segments: list[Path],
     segment_audio: list[SegmentAudio],
     progress_callback: Callable[[PipelineProgressEvent], None] | None = None,
+    control: PipelineControl | None = None,
 ) -> None:
     total_items = len(dubbed_segments)
     for index, segment in enumerate(dubbed_segments, start=1):
+        if control is not None:
+            control.wait_if_paused()
         resumed_audio = _resume_segment_audio(project, segment)
         if resumed_audio is not None:
             generated_segments.append(resumed_audio)

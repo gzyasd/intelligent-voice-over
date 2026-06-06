@@ -50,6 +50,44 @@ def test_main_window_runs_local_preview_from_model_settings(monkeypatch, qtbot, 
     assert window.progress_label.text() == f"配音生成已完成：{result.final_video}"
 
 
+def test_main_window_generation_timer_updates_every_second(qtbot, tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.ui.main_window import MainWindow
+
+    project = DubbingProject.create(
+        tmp_path / "timer.ivoproj",
+        name="Timer",
+        source_language="en",
+        target_language="zh",
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.current_project = project
+
+    window._mark_generation_started()
+    qtbot.wait(1200)
+
+    assert window.generation_progress.elapsed_label.text() != "已用时 00:00"
+    window._mark_generation_completed()
+
+
+def test_main_window_pause_and_resume_generation(qtbot) -> None:
+    from ivo.ui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.generation_progress.pause_requested.emit()
+
+    assert window.pipeline_control.is_paused() is True
+    assert "已暂停" in window.progress_label.text()
+
+    window.generation_progress.resume_requested.emit()
+
+    assert window.pipeline_control.is_paused() is False
+    assert window.progress_label.text() == "生成已继续"
+
+
 def test_model_settings_panel_shows_structured_readiness_results(qtbot) -> None:
     from ivo.ui.model_settings import ModelSettingsPanel
 

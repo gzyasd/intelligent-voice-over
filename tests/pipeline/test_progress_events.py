@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Thread
+from time import sleep
 
 
 def test_local_command_preview_emits_stage_and_tts_progress_events(monkeypatch, tmp_path) -> None:
@@ -148,6 +150,37 @@ def test_stage_percent_gives_tts_the_largest_progress_range() -> None:
     assert stage_percent("tts", status="progress", current_item=1, total_items=2) == 72
     assert stage_percent("tts", status="completed") == 90
     assert stage_percent("export", status="completed") == 100
+
+
+def test_run_stage_waits_while_pipeline_is_paused(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.control import PipelineControl
+    from ivo.pipeline.local_command_preview import _run_stage
+
+    project = DubbingProject.create(
+        tmp_path / "paused.ivoproj",
+        name="Paused",
+        source_language="en",
+        target_language="zh",
+    )
+    control = PipelineControl()
+    control.pause()
+    ran: list[str] = []
+
+    def action() -> Path:
+        ran.append("import")
+        output = project.path / "assets" / "source.mp4"
+        output.write_bytes(b"video")
+        return output
+
+    thread = Thread(target=lambda: _run_stage(project, "import", action, control=control))
+    thread.start()
+    sleep(0.1)
+
+    assert ran == []
+    control.resume()
+    thread.join(timeout=2)
+    assert ran == ["import"]
 
 
 def _profiles(tmp_path: Path):
