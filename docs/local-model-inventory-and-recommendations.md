@@ -88,7 +88,7 @@
 
 - Community-1 适合本地离线、自托管、开源项目迭代。
 - pyannote 官方说明 `Precision-2` 比 Community-1 更准确，但它是线上 / 商业 API 路线。
-- 当前模型文件已下载，但运行还需要安装 `pyannote.audio` 包，并确保 profile 能加载本地目录。
+- 当前模型文件已下载。由于 Community-1 需要 `pyannote.audio 4.x`，而 F5-TTS 依赖的 numpy 版本与 pyannote 4.x 冲突，正式 F5 + pyannote 流程使用独立 `.venv-pyannote` 环境运行说话人分离。
 
 ### F5-TTS
 
@@ -233,7 +233,7 @@
 
 | 项目 | 当前情况 | 建议 |
 |---|---|---|
-| `pyannote.audio` 运行包 | 模型已下载，Python 包仍缺失 | 安装并做短音频 smoke test |
+| `pyannote.audio` 运行包 | 模型已下载，`.venv-pyannote` 隔离环境已在本机验证可导入并可加载本地模型 | 正式流程使用 `examples/local_command_profiles.real_full_gpu_f5_diarization.json` |
 | CosyVoice 运行环境 | 模型已下载，Python 包仍缺失 | 按官方仓库安装，接入 engine command |
 | 本地 LLM 服务 | LM Studio 已提供 `http://127.0.0.1:1995`，Qwen3.6 35B 模型可发现 | 使用 `examples/http_translation_lm_studio_qwen36_35b.example.json` 作为质量优先翻译 profile |
 | 更大翻译模型 | 已有 LM Studio Qwen3.6 35B 量化模型 | 后续主要做真实台词 A/B 质量评估，而不是继续盲目下载 |

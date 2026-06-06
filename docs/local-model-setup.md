@@ -83,7 +83,7 @@ uv run python examples/local_commands/demucs_separate.py --help
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_separation_asr_cpu_small.json --project-name "CPU Small Probe" --source-language ja --no-watermark
 ```
 
-Windows 真实验证中，`demucs==4.0.1` 搭配最新 `torch/torchaudio` 可能在保存 WAV 时遇到 `torchcodec` 或音频 backend 问题；当前项目的 `local-separation` extra 固定为 `torch==2.5.1`、`torchaudio==2.5.1` 并安装 `soundfile`，这是已用 20 秒日语真实样片跑通过的组合。`real_separation_asr_cpu_small` profile 使用 CPU Demucs 和 `faster-whisper small`，适合首次真实验收；高质量整片再切回 `real_separation_asr` 的 large-v3/GPU 配置。
+Windows 真实验证中，`demucs==4.0.1` 搭配新版 `torch/torchaudio` 可能在保存 WAV 时遇到 `torchcodec` 或音频 backend 问题；项目的 Demucs adapter 已使用 `soundfile` 读写 WAV，因此当前 `local-separation` extra 允许 `torch>=2.8.0`、`torchaudio>=2.8.0`。`real_separation_asr_cpu_small` profile 使用 CPU Demucs 和 `faster-whisper small`，适合首次真实验收；高质量整片再切回 GPU profile。
 
 ### 说话人分离
 
@@ -99,6 +99,16 @@ huggingface-cli download pyannote/speaker-diarization-community-1 --local-dir .\
 ```powershell
 $env:HF_TOKEN="你的 token"
 ```
+
+`pyannote/speaker-diarization-community-1` 需要 `pyannote.audio 4.x`，而 F5-TTS 当前依赖 `numpy<=1.26.4`；pyannote 4.x 依赖 `numpy>=2.0`。因此正式 F5 + pyannote 流程不要把 pyannote 安装进主 `.venv`，应使用隔离环境：
+
+```powershell
+uv venv .venv-pyannote --python 3.10
+uv pip install --python .\.venv-pyannote\Scripts\python.exe "pyannote.audio>=4,<5" soundfile
+uv pip install --python .\.venv-pyannote\Scripts\python.exe --index-url https://download.pytorch.org/whl/cu128 torch==2.11.0+cu128 torchaudio==2.11.0+cu128
+```
+
+项目的正式 profile `examples/local_command_profiles.real_full_gpu_f5_diarization.json` 会用 `.venv-pyannote/Scripts/python.exe` 调用 pyannote wrapper，并用本地模型目录 `models/diarization/pyannote-community-1`，不需要在运行时设置 `HF_TOKEN`。
 
 ### 中文 TTS / 音色克隆
 
@@ -143,7 +153,7 @@ uv run f5-tts_infer-cli --help
 uv run python .\examples\local_commands\f5_tts_command.py --text "你好，我们继续测试。" --speaker speaker-1 --audio-out .\scratch\f5-real.wav --json-out .\scratch\f5-real.json --reference-audio .\scratch\ref.wav --reference-text "参考音频文本" --duration-ms 2500 --engine-command-json-file .\examples\engine_commands\f5_tts_engine_command.example.json
 ```
 
-Windows 真实验证中，`f5-tts==1.1.20` 搭配 `transformers 5.x` 会因当前 `torch==2.5.1` 缺少部分 float8 属性而无法启动；项目的 `local-tts-f5` extra 使用 `transformers<5`。注意：F5-TTS 代码是 MIT，但预训练模型是 CC-BY-NC，商业用途需要格外谨慎。
+Windows 真实验证中，`f5-tts==1.1.20` 搭配 `transformers 5.x` 会因 PyTorch/float8 兼容细节无法启动；项目的 `local-tts-f5` extra 使用 `transformers<5`。注意：F5-TTS 代码是 MIT，但预训练模型是 CC-BY-NC，商业用途需要格外谨慎。
 
 ### Windows CUDA / RTX 路线
 
@@ -160,6 +170,12 @@ Windows 上 PyTorch 官方 CUDA wheel 源当前没有可用的 `torchcodec` Wind
 
 ```powershell
 uv run ivo local-preview "$env:TEMP\ivo_gpu_real_probe\jp_gpu_probe_60s.mp4" "$env:TEMP\ivo_final_f5_gpu_60s" --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_gpu_small.json --project-name JP-Final-F5-GPU-60s --source-language ja --require-readiness --resume-existing --no-watermark
+```
+
+正式质量预演可以使用 Demucs `htdemucs_ft`、faster-whisper large-v3、pyannote 本地目录和 F5-TTS CUDA：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json --project-name "Full GPU F5 Diarization Probe" --source-language ja --require-readiness --resume-existing --no-watermark
 ```
 
 本次 1 分钟 GPU F5 链路验收耗时约 122 秒，9 个片段全部 `rendered`，`import/audio_extract/separation/asr/translation/tts/export` 全部 `completed`。

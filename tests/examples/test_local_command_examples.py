@@ -205,6 +205,31 @@ def test_real_diarization_profile_uses_pyannote_command() -> None:
     assert "pyannote/speaker-diarization-community-1" in profile.diarization.command
 
 
+def test_real_full_gpu_f5_diarization_profile_uses_local_pyannote_and_gpu_f5() -> None:
+    profile = LocalCommandPipelineProfiles.model_validate(
+        json.loads(
+            Path("examples/local_command_profiles.real_full_gpu_f5_diarization.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+
+    assert profile.separation.id == "demucs-htdemucs-ft-gpu"
+    assert profile.asr.id == "faster-whisper-large-v3-gpu"
+    assert profile.diarization is not None
+    assert profile.diarization.id == "pyannote-community-1-local"
+    assert profile.diarization.extra["pyannote_python_executable"] == (
+        ".venv-pyannote/Scripts/python.exe"
+    )
+    assert "{{ pyannote_python_executable }}" in profile.diarization.command
+    assert "models/diarization/pyannote-community-1" in profile.diarization.command
+    assert "--device" in profile.diarization.command
+    assert "cuda" in profile.diarization.command
+    assert "--hf-token-env" not in profile.diarization.command
+    assert profile.tts.id == "f5-tts-local-gpu"
+    assert "examples/engine_commands/f5_tts_engine_command.cuda.example.json" in profile.tts.command
+
+
 def test_real_translation_qwen_profile_keeps_model_stages_dry_run() -> None:
     profile = LocalCommandPipelineProfiles.model_validate(
         json.loads(

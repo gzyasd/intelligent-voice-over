@@ -22,8 +22,8 @@ local-asr = [
 local-separation = [
     "demucs==4.0.1",
     "soundfile>=0.13.0",
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
+    "torch>=2.8.0",
+    "torchaudio>=2.8.0",
 ]
 local-tts-f5 = [
     "f5-tts==1.1.20",

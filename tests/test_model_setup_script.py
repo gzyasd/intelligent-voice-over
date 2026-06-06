@@ -38,6 +38,7 @@ def test_example_setup_script_documents_safe_model_downloads() -> None:
     assert "确认模型许可证" in text
     assert "不要提交 models/" in text
     assert "uv sync --extra local-separation" in text
+    assert ".venv-pyannote" in text
     assert "uv sync --extra local-tts-f5" in text
     assert "uv sync --extra local-tts-cosyvoice" in text
     assert "huggingface-cli login" in text

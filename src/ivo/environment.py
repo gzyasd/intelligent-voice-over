@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 import sys
 from dataclasses import dataclass
-from importlib.util import find_spec
+from importlib import import_module
 from os import getenv
 from pathlib import Path
 
@@ -110,7 +110,10 @@ def collect_optional_model_dependencies(
             name="pyannote.audio",
             stage="diarization",
             import_name="pyannote.audio",
-            install_hint="uv pip install pyannote.audio",
+            install_hint=(
+                "install pyannote.audio>=4,<5 in an isolated .venv-pyannote environment; "
+                "it conflicts with F5-TTS numpy constraints in the main venv"
+            ),
             download_hint=(
                 "huggingface-cli download pyannote/speaker-diarization-community-1 "
                 "--local-dir models/diarization/pyannote-community-1"
@@ -119,7 +122,7 @@ def collect_optional_model_dependencies(
                 "Requires Hugging Face login and accepted model terms; keep HF_TOKEN out of Git."
             ),
             model_subdir=Path("diarization") / "pyannote-community-1",
-            verify_hint="uv run python examples/local_commands/pyannote_diarization.py --help",
+            verify_hint=".venv-pyannote/Scripts/python.exe examples/local_commands/pyannote_diarization.py --help",
             required_env_var="HF_TOKEN",
         ),
         OptionalDependencySpec(
@@ -209,6 +212,20 @@ def collect_optional_model_dependencies(
 
 def _is_importable(import_name: str) -> bool:
     try:
-        return find_spec(import_name) is not None
-    except ModuleNotFoundError:
+        if import_name == "pyannote.audio":
+            _patch_torchaudio_metadata_type()
+        import_module(import_name)
+    except (ImportError, ModuleNotFoundError, AttributeError):
         return False
+    return True
+
+
+def _patch_torchaudio_metadata_type() -> None:
+    try:
+        torchaudio = import_module("torchaudio")
+    except (ImportError, ModuleNotFoundError):
+        return
+    if not hasattr(torchaudio, "AudioMetaData"):
+        setattr(torchaudio, "AudioMetaData", object)
+    if not hasattr(torchaudio, "list_audio_backends"):
+        setattr(torchaudio, "list_audio_backends", lambda: ["soundfile"])

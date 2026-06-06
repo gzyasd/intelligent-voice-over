@@ -72,7 +72,10 @@ def build_local_readiness_report(
                     message=message,
                 )
             )
-        profile_missing = _missing_engine_command_file_messages(profile)
+        profile_missing = [
+            *_missing_engine_command_file_messages(profile),
+            *_missing_external_python_messages(profile),
+        ]
         missing.extend(profile_missing)
         ui_results.extend(
             ReadinessResult(
@@ -87,7 +90,7 @@ def build_local_readiness_report(
         for dependency in dependency_by_stage.get(profile.stage, []):
             if _profile_uses_dependency(profile, dependency):
                 dependency_matched = True
-                dependency_missing = _missing_dependency_messages(dependency)
+                dependency_missing = _missing_dependency_messages(dependency, profile)
                 missing.extend(dependency_missing)
                 if dependency_missing:
                     ui_results.extend(
@@ -180,15 +183,66 @@ def _profile_uses_dependency(
     return any(token and token in command_text for token in tokens)
 
 
-def _missing_dependency_messages(dependency: OptionalDependencyStatus) -> list[str]:
+def _missing_dependency_messages(
+    dependency: OptionalDependencyStatus,
+    profile: LocalCommandProfile,
+) -> list[str]:
     missing: list[str] = []
     prefix = f"{dependency.stage}/{dependency.name}"
-    if not dependency.installed:
-        missing.append(f"{prefix}: package missing")
     if dependency.model_dir_required and not dependency.model_dir_exists:
         missing.append(f"{prefix}: model dir missing")
-    if dependency.required_env_var is not None and not dependency.env_var_set:
+    if not dependency.installed and not _profile_uses_external_python(profile):
+        missing.append(f"{prefix}: package missing")
+    if (
+        dependency.required_env_var is not None
+        and not dependency.env_var_set
+        and not _profile_uses_local_model_dir(profile, dependency)
+    ):
         missing.append(f"{prefix}: env {dependency.required_env_var} missing")
+    return missing
+
+
+def _profile_uses_local_model_dir(
+    profile: LocalCommandProfile,
+    dependency: OptionalDependencyStatus,
+) -> bool:
+    if not dependency.model_dir_exists:
+        return False
+    model_dir = str(dependency.model_dir).replace("\\", "/").lower()
+    command_text = " ".join(profile.command).replace("\\", "/").lower()
+    if model_dir in command_text:
+        return True
+    relative_parts = dependency.model_dir.parts[-3:]
+    if not relative_parts:
+        return False
+    relative_model_dir = "/".join(relative_parts).lower()
+    return relative_model_dir in command_text
+
+
+def _profile_uses_external_python(profile: LocalCommandProfile) -> bool:
+    return any(
+        "python_executable" in item and item != "{{ python_executable }}"
+        for item in profile.command
+    )
+
+
+def _missing_external_python_messages(profile: LocalCommandProfile) -> list[str]:
+    missing: list[str] = []
+    for item in profile.command:
+        if not item.startswith("{{ ") or not item.endswith(" }}"):
+            continue
+        variable_name = item.removeprefix("{{ ").removesuffix(" }}").strip()
+        if "python_executable" not in variable_name or variable_name == "python_executable":
+            continue
+        configured = profile.extra.get(variable_name)
+        if not configured:
+            missing.append(f"{profile.stage}/{profile.id}: external python missing: {variable_name}")
+            continue
+        configured_path = Path(str(configured))
+        if not configured_path.is_file():
+            missing.append(
+                f"{profile.stage}/{profile.id}: external python not found: {configured_path}"
+            )
     return missing
 
 

@@ -94,6 +94,12 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_gpu_small.json --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json --project-name "LM Studio Qwen Translation" --source-language ja --no-watermark
 ```
 
+正式质量预演可以把它和 GPU + F5 + pyannote profile 搭配：
+
+```powershell
+uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json --project-name "Full GPU LM Studio Probe" --source-language ja --require-readiness --resume-existing --no-watermark
+```
+
 该 profile 当前固定使用 LM Studio 模型 ID：
 
 ```text

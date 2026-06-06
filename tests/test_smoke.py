@@ -1416,8 +1416,8 @@ def test_pyproject_declares_local_separation_extra() -> None:
 
     assert "local-separation" in pyproject
     assert "demucs" in pyproject
-    assert "torch==2.5.1" in pyproject
-    assert "torchaudio==2.5.1" in pyproject
+    assert "torch>=2.8.0" in pyproject
+    assert "torchaudio>=2.8.0" in pyproject
     assert "soundfile" in pyproject
 
 
