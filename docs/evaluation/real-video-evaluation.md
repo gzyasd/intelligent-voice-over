@@ -2,7 +2,7 @@
 
 本规范用于记录真实本地模型或线上 API 组合在授权视频片段上的效果。仓库不保存美剧、日剧、韩剧原片、切片、音频或模型权重；这里只保存评测方法、空白模板和不含敏感素材的结论。
 
-当前验收矩阵见 `docs/evaluation/acceptance-matrix.md`。截至 2026-06-05，项目已经用 20 秒授权日语样片跑通 Demucs + faster-whisper small + F5-TTS 的真实本地预览链路；后续评测应继续按 20 秒、1-3 分钟、5-10 分钟、整集四个层级推进。
+当前验收矩阵见 `docs/evaluation/acceptance-matrix.md`。截至 2026-06-06，项目已经用授权日语样片跑通 Demucs + faster-whisper + pyannote + LM Studio + F5-TTS 的完整 GPU 预览链路；其中 3 分 21 秒真实视频已完整导出，56 个片段全部 `rendered`。后续评测应继续按 20 秒、1-3 分钟、5-10 分钟、整集四个层级推进，重点转向长视频稳定性、多语言覆盖和人工质量评分。
 
 ## 素材要求
 

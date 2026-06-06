@@ -36,9 +36,10 @@
 | CPU Separation + ASR | `examples/local_command_profiles.real_separation_asr_cpu_small.json` | 快速真实分离/ASR 验收 | 已通过 20 秒真实样片 |
 | CPU F5 Full Preview | `examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json` | 真实本地 TTS 预览 | 已通过 20 秒和 1 分钟真实样片 |
 | GPU F5 Small Preview | `examples/local_command_profiles.real_separation_asr_tts_f5_gpu_small.json` | RTX/CUDA 环境下的真实本地 F5 预览 | 已通过 20 秒和 1 分钟真实样片，1 分钟耗时约 122 秒 |
+| Full GPU F5 + Diarization + LM Studio | `examples/local_command_profiles.real_full_gpu_f5_diarization.json` + `examples/http_translation_lm_studio_qwen36_35b.example.json` | 当前质量优先本地链路 | 已通过 20 秒预检和 3 分 21 秒完整真实视频；56 个片段全部 `rendered`，8 个阶段全部 `completed` |
 | CosyVoice Full Preview | `examples/local_command_profiles.real_separation_asr_tts_cosyvoice_cpu_small.json` | 下一条优先 TTS 路线 | 待实现和验证 |
 | GPU Quality | `examples/local_command_profiles.real_gpu_quality.json` | 高质量本地模式 | profile 已提供；CosyVoice 模型安装后再做质量验收 |
-| HTTP Hybrid | HTTP stage override profiles | 线上 API 或本地 OpenAI-compatible 服务 | 待真实验证 |
+| HTTP Hybrid | HTTP stage override profiles | 线上 API 或本地 OpenAI-compatible 服务 | LM Studio 本地 OpenAI-compatible 翻译已在完整 GPU 链路中通过 |
 
 ## 通过条件
 
@@ -53,7 +54,7 @@ P0 通过条件：
 
 P1 通过条件：
 
-- 1-3 分钟真实样片可完成或可恢复。
+- 1-3 分钟真实样片可完成或可恢复；当前 Full GPU F5 + Diarization + LM Studio 链路已完成 3 分 21 秒真实样片。
 - UI 能选择本地/HTTP profile、检查 readiness、查看运行日志。
 - 时间线能编辑译文、speaker、style prompt，并可单句重生成。
 - 质量面板能统计时长偏差、静音、缺参考音频、speaker 不确定等问题。
@@ -64,7 +65,7 @@ P2 通过条件：
 - Windows 打包脚本通过本地冒烟。
 - Release 文档明确不包含模型权重和影视素材。
 - 合规文档说明模型许可证、素材授权、AI 配音元数据和可见水印。
-- 最终验收记录覆盖 mock、20 秒真实样片、1-3 分钟真实样片和 UI 冒烟。
+- 最终验收记录覆盖 mock、20 秒真实样片、1-3 分钟真实样片、完整 GPU + 说话人分离 + 本地 LLM 翻译链路和 UI 冒烟。
 
 ## 失败处理
 

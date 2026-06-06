@@ -99,6 +99,36 @@ uv run ivo evaluate-project "$env:TEMP\ivo_final_f5_gpu_60s\JP-Final-F5-GPU-60s.
 - 质量标记：`duration_ok: 9`。
 - 作业阶段：`import`、`audio_extract`、`separation`、`asr`、`translation`、`tts`、`export` 全部 `completed`。
 
+## 真实完整 GPU + 说话人分离 + LM Studio 链路
+
+执行日期：2026-06-06。
+
+环境：
+- GPU：NVIDIA GeForce RTX 5090。
+- 主环境 PyTorch：`torch 2.11.0+cu128`，CUDA 可用。
+- pyannote 隔离环境：`.venv-pyannote`，`torch 2.11.0+cu128`，CUDA 可用。
+- Profile：`examples/local_command_profiles.real_full_gpu_f5_diarization.json`。
+- Translation profile：`examples/http_translation_lm_studio_qwen36_35b.example.json`。
+- LM Studio 模型：`qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive-q4_k_p`。
+
+命令：
+```powershell
+uv run ivo local-preview $src $out --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json --project-name JP-Full-GPU-F5-Diarization-LMStudio-Full --source-language ja --require-readiness --resume-existing --no-watermark
+uv run ivo evaluate-project "$env:TEMP\ivo_full_gpu_formal_output\JP-Full-GPU-F5-Diarization-LMStudio-Full.ivoproj" --format json
+```
+
+结果：
+- 输入：用户本机授权测试视频，保存在 `.gitignore` 排除目录，不提交仓库。
+- 视频时长：约 201.64 秒。
+- 总耗时：约 701 秒。
+- 导出视频：`%TEMP%\ivo_full_gpu_formal_output\JP-Full-GPU-F5-Diarization-LMStudio-Full.ivoproj\renders\local-preview.mp4`。
+- 输出大小：约 18.78 MB。
+- 片段：56 个，全部 `rendered`。
+- 说话人：5 个。
+- 质量标记：`duration_ok: 56`，`speaker_ambiguous: 1`。
+- 作业阶段：`import`、`audio_extract`、`separation`、`asr`、`diarization`、`translation`、`tts`、`export` 全部 `completed`。
+- 详细记录：`docs/evaluation/runs/2026-06-06-full-gpu-f5-diarization-lmstudio-full.md`。
+
 ## 打包 dry-run
 
 命令：
@@ -115,12 +145,12 @@ uv run python scripts/build_windows_package.py --dry-run --output-dir dist
 
 ## 已知限制
 
-- 当前开源依赖配置仍保留 CPU 稳定路线：`local-separation` extra 固定 `torch==2.5.1`、`torchaudio==2.5.1`，避免普通用户在 Windows 上被新版 torchcodec 音频链路阻塞。
-- 本机 GPU 验收通过的是额外安装的 CUDA wheel 环境：`uv pip install --upgrade --index-url https://download.pytorch.org/whl/cu128 torch torchaudio`。重新 `uv sync` 可能会回到锁定的 CPU 组合，GPU 验收前需要再次确认 `torch.cuda.is_available()`。
+- 当前开源依赖配置允许较新的 `torch`/`torchaudio`，但 Windows 上的 `torchcodec` wheel 仍可能缺失；项目在 Demucs、F5 adapter 和 pyannote wrapper 中使用 `soundfile` 绕过默认音频读写链路。
+- 本机 GPU 验收通过的是 CUDA wheel 环境：`torch 2.11.0+cu128`、`torchaudio 2.11.0+cu128`。重新 `uv sync` 或更换 Python 环境后，GPU 验收前需要再次确认 `torch.cuda.is_available()`。
 - `real_gpu_quality` 的 CosyVoice 高质量路线仍需要安装 CosyVoice 模型和本地推理脚本后再做质量验收。
 - CosyVoice profile 和安装脚本已补齐，但本次最终验收的真实 TTS 路线仍以 F5-TTS 为准。
 - 真实素材、生成视频、音频片段和模型权重均保存在本机临时目录或忽略目录，不进入 Git。
 
 ## 结论
 
-截至 2026-06-05，本项目已达到可开源预览和继续真实样片迭代的状态：本地/HTTP profile 架构、桌面 UI、运行日志、时间线审核、质量统计、恢复重跑、模型安装脚本、GPU profile、Windows 打包 dry-run、合规文档、mock E2E、真实 CPU/GPU 20 秒与真实 CPU/GPU 1 分钟 F5 本地链路均已完成或验证。
+截至 2026-06-06，本项目已达到可开源预览和继续真实样片迭代的状态：本地/HTTP profile 架构、桌面 UI、运行日志、时间线审核、质量统计、恢复重跑、模型安装脚本、GPU profile、Windows 打包 dry-run、合规文档、mock E2E、真实 CPU/GPU 20 秒、真实 CPU/GPU 1 分钟 F5 本地链路，以及完整 GPU + pyannote 说话人分离 + LM Studio 本地翻译 + F5-TTS 3 分 21 秒真实视频链路均已完成或验证。

@@ -4,7 +4,7 @@
 
 当前状态：已完成 v1 的可测试工程骨架、mock 端到端流水线、本地命令 adapter、HTTP adapter、基础桌面 UI、时间线编辑/单句后台重生成、最终导出和导出合规闸门。详细计划见 `docs/superpowers/plans/2026-06-01-intelligent-video-dubbing-v1.md`。
 
-最新真实模型基线：已在本机授权日语 20 秒和 1 分钟样片上跑通 CPU 与 GPU 两条 F5-TTS 预览链路。CPU 路线使用 Demucs CPU 分离、faster-whisper small CPU/int8 ASR、F5-TTS CPU 真实生成；GPU 路线使用 RTX/CUDA 环境下的 Demucs、faster-whisper small/float16 和 F5-TTS CUDA，1 分钟样片耗时约 122 秒。当前剩余完整实施计划见 `docs/superpowers/plans/2026-06-05-complete-remaining-implementation-plan.md`，验收矩阵见 `docs/evaluation/acceptance-matrix.md`，最终验收记录见 `docs/evaluation/runs/2026-06-final-acceptance.md`。
+最新真实模型基线：已在本机授权日语样片上跑通 CPU、GPU 和完整质量优先三条本地链路。当前最高质量验收链路使用 Demucs `htdemucs_ft` GPU 分离、faster-whisper `large-v3` GPU/float16 ASR、pyannote community-1 本地说话人分离、LM Studio Qwen3.6 35B 本地翻译，以及 F5-TTS CUDA 真实生成；3 分 21 秒真实视频完整导出耗时约 701 秒，56 个片段全部 `rendered`。当前剩余完整实施计划见 `docs/superpowers/plans/2026-06-05-complete-remaining-implementation-plan.md`，验收矩阵见 `docs/evaluation/acceptance-matrix.md`，最终验收记录见 `docs/evaluation/runs/2026-06-final-acceptance.md`，完整 GPU 跑测记录见 `docs/evaluation/runs/2026-06-06-full-gpu-f5-diarization-lmstudio-full.md`。
 
 默认模型策略：CLI 和桌面 UI 在未手动指定本地命令 profile 时，会优先选择 `examples/local_command_profiles.real_separation_asr_tts_f5_gpu_small.json`；如果未检测到 NVIDIA 工具或 GPU profile 不存在，再回退到 `examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json`。手动传入 `--profiles` 或在 UI 里选择 profile 时，会尊重用户选择。
 
