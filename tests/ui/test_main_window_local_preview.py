@@ -47,7 +47,7 @@ def test_main_window_runs_local_preview_from_model_settings(monkeypatch, qtbot, 
     assert adapter.profile.id == "translator"
     assert adapter.extra == {"api_key": "test-token"}
     assert window.timeline_editor.table.rowCount() == 1
-    assert window.progress_label.text() == "本地命令预览已完成"
+    assert window.progress_label.text() == f"配音生成已完成：{result.final_video}"
 
 
 def test_model_settings_panel_shows_structured_readiness_results(qtbot) -> None:
@@ -154,7 +154,7 @@ def test_main_window_builds_background_worker_for_local_preview(monkeypatch, qtb
     assert worker.result.final_video.is_file()
     assert window.local_preview_button.isEnabled() is True
     assert window.timeline_editor.table.rowCount() == 1
-    assert window.progress_label.text() == "本地命令预览已完成"
+    assert window.progress_label.text() == f"配音生成已完成：{worker.result.final_video}"
 
 
 def test_main_window_local_preview_button_starts_background_worker(monkeypatch, qtbot) -> None:

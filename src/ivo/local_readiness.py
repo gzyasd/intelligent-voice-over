@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field
 from ivo.adapters.local import LocalCommandProfile
 from ivo.environment import OptionalDependencyStatus, collect_optional_model_dependencies
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+from ivo.profile_runtime import (
+    infer_local_runtime_root,
+    prepare_local_command_profiles,
+    resolve_local_model_root,
+)
 
 
 class ReadinessResult(BaseModel):
@@ -139,9 +144,23 @@ def check_profiles_readiness(
     profiles = LocalCommandPipelineProfiles.model_validate(
         json.loads(profiles_path.read_text(encoding="utf-8"))
     )
+    runtime_root = infer_local_runtime_root(profiles_path, models_dir=models_dir)
+    model_root = resolve_local_model_root(models_dir, runtime_root)
+    profiles = prepare_local_command_profiles(
+        profiles,
+        profiles_path=profiles_path,
+        models_dir=model_root,
+    )
+    python_executable = profiles.separation.extra.get("python_executable")
     return build_local_readiness_report(
         profiles,
-        dependencies=collect_optional_model_dependencies(models_dir),
+        dependencies=collect_optional_model_dependencies(
+            model_root,
+            python_executable=(
+                Path(str(python_executable)) if python_executable is not None else None
+            ),
+        ),
+        base_dir=runtime_root,
     )
 
 

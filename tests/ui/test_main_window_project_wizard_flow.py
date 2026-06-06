@@ -34,7 +34,7 @@ def test_main_window_opens_wizard_and_creates_project(monkeypatch, qtbot, tmp_pa
     assert project.path == output_dir / "Episode 01.ivoproj"
     assert project.source_language == "ko"
     assert window.source_video_path == source_video
-    assert window.progress_label.text() == "项目已创建"
+    assert window.progress_label.text() == "项目已创建。下一步：点击“开始生成配音（完整流程）”。"
 
 
 def test_main_window_warns_when_wizard_input_is_invalid(monkeypatch, qtbot) -> None:

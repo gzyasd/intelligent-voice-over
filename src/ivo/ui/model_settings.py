@@ -19,11 +19,11 @@ from PySide6.QtWidgets import (
 
 from ivo.adapters.http import ApiAdapterProfile
 from ivo.adapters.profiles import AdapterProfileStore
-from ivo.environment import collect_optional_model_dependencies
-from ivo.local_readiness import build_local_readiness_report
+from ivo.environment import collect_optional_model_dependencies, resolve_local_python
+from ivo.local_readiness import check_profiles_readiness
 from ivo.model_setup import build_model_setup_script
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
-from ivo.profile_runtime import infer_local_runtime_root, prepare_local_command_profiles
+from ivo.profile_runtime import infer_local_runtime_root, resolve_local_model_root
 from ivo.profile_defaults import default_local_command_profiles_path
 from ivo.profile_validation import validate_http_profile, validate_local_command_profiles
 
@@ -262,9 +262,17 @@ class ModelSettings(QWidget):
             self._stage_summary("tts", profiles.tts.id, self.tts_profile_path_edit)
         )
 
-    def load_model_diagnostics(self, model_root: Path) -> None:
+    def load_model_diagnostics(
+        self,
+        model_root: Path,
+        *,
+        python_executable: Path | None = None,
+    ) -> None:
         self.model_diagnostics_list.clear()
-        for dependency in collect_optional_model_dependencies(model_root):
+        for dependency in collect_optional_model_dependencies(
+            model_root,
+            python_executable=python_executable,
+        ):
             package_status = "已安装" if dependency.installed else "未安装"
             model_status = "已找到" if dependency.model_dir_exists else "未找到"
             env_status = ""
@@ -278,7 +286,12 @@ class ModelSettings(QWidget):
 
     def refresh_model_diagnostics(self) -> None:
         raw_path = self.local_model_path_edit.text().strip()
-        self.load_model_diagnostics(Path(raw_path) if raw_path else Path("models"))
+        model_root = Path(raw_path) if raw_path else Path("models")
+        runtime_root = self._infer_current_runtime_root(model_root)
+        self.load_model_diagnostics(
+            resolve_local_model_root(model_root, runtime_root),
+            python_executable=resolve_local_python(runtime_root),
+        )
 
     def browse_model_root(self) -> None:
         path = QFileDialog.getExistingDirectory(
@@ -329,28 +342,11 @@ class ModelSettings(QWidget):
             self.model_diagnostics_list.addItem("缺失：本地命令配置路径为空")
             return
         try:
-            profiles = LocalCommandPipelineProfiles.model_validate(
-                json.loads(Path(raw_profiles_path).read_text(encoding="utf-8"))
-            )
+            report = check_profiles_readiness(Path(raw_profiles_path), models_dir=model_root)
         except (OSError, ValueError) as exc:
             self.model_diagnostics_list.addItem("就绪检查：失败")
             self.model_diagnostics_list.addItem(f"缺失：{exc}")
             return
-        profiles_path = Path(raw_profiles_path)
-        runtime_root = infer_local_runtime_root(profiles_path, models_dir=model_root)
-        profiles = prepare_local_command_profiles(
-            profiles,
-            profiles_path=profiles_path,
-            models_dir=model_root,
-        )
-        report = build_local_readiness_report(
-            profiles,
-            dependencies=collect_optional_model_dependencies(
-                model_root,
-                python_executable=Path(str(profiles.separation.extra.get("python_executable", ""))),
-            ),
-            base_dir=runtime_root,
-        )
         self.model_diagnostics_list.addItem("就绪检查：通过" if report.ok else "就绪检查：失败")
         for profile in report.checked_profiles:
             self.model_diagnostics_list.addItem(f"已检查：{profile}")
@@ -359,6 +355,13 @@ class ModelSettings(QWidget):
         for missing in report.missing:
             self.model_diagnostics_list.addItem(f"缺失：{missing}")
         self.show_readiness_results([result.model_dump() for result in report.ui_results])
+
+    def _infer_current_runtime_root(self, model_root: Path) -> Path:
+        raw_profiles_path = self.local_command_profiles_path_edit.text().strip()
+        profiles_path = Path(raw_profiles_path) if raw_profiles_path else default_local_command_profiles_path()
+        if profiles_path is not None:
+            return infer_local_runtime_root(profiles_path, models_dir=model_root)
+        return Path.cwd()
 
     def show_readiness_results(self, results: list[dict[str, object]]) -> None:
         self.readiness_results_table.setRowCount(len(results))

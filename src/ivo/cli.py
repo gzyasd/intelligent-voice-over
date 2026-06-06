@@ -25,7 +25,7 @@ from ivo.evaluation_runs import (
     default_run_output_path,
     render_run_markdown,
 )
-from ivo.local_readiness import LocalReadinessReport, build_local_readiness_report
+from ivo.local_readiness import LocalReadinessReport, check_profiles_readiness
 from ivo.model_setup import write_setup_script
 from ivo.model_smoke import (
     default_adapter_smoke_output_path,
@@ -41,6 +41,7 @@ from ivo.pipeline.synthesize import HttpTtsAdapter
 from ivo.pipeline.transcribe import HttpAsrAdapter, HttpDiarizationAdapter
 from ivo.pipeline.translate import HttpTranslationAdapter
 from ivo.profile_defaults import default_local_command_profiles_path
+from ivo.profile_runtime import prepare_local_command_profiles
 from ivo.profile_validation import validate_http_profile, validate_local_command_profiles
 from ivo.workspace_paths import default_runs_dir
 
@@ -230,13 +231,15 @@ def batch_local_preview(
         json.loads(resolved_profiles_path.read_text(encoding="utf-8"))
     )
     if require_readiness:
-        readiness = build_local_readiness_report(
-            profiles,
-            dependencies=collect_optional_model_dependencies(models_dir),
-        )
+        readiness = check_profiles_readiness(resolved_profiles_path, models_dir=models_dir)
         _echo_local_readiness(readiness)
         if not readiness.ok:
             raise typer.Exit(1)
+    profiles = prepare_local_command_profiles(
+        profiles,
+        profiles_path=resolved_profiles_path,
+        models_dir=models_dir,
+    )
 
     output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -439,13 +442,7 @@ def check_local_readiness(
     ] = False,
 ) -> None:
     """Check whether selected local profiles appear ready for real model execution."""
-    profiles = LocalCommandPipelineProfiles.model_validate(
-        json.loads(profiles_path.read_text(encoding="utf-8"))
-    )
-    report = build_local_readiness_report(
-        profiles,
-        dependencies=collect_optional_model_dependencies(models_dir),
-    )
+    report = check_profiles_readiness(profiles_path, models_dir=models_dir)
     if json_output:
         typer.echo(report.model_dump_json(indent=2))
     else:
@@ -557,13 +554,15 @@ def local_preview(
         json.loads(resolved_profiles_path.read_text(encoding="utf-8"))
     )
     if require_readiness:
-        readiness = build_local_readiness_report(
-            profiles,
-            dependencies=collect_optional_model_dependencies(models_dir),
-        )
+        readiness = check_profiles_readiness(resolved_profiles_path, models_dir=models_dir)
         _echo_local_readiness(readiness)
         if not readiness.ok:
             raise typer.Exit(1)
+    profiles = prepare_local_command_profiles(
+        profiles,
+        profiles_path=resolved_profiles_path,
+        models_dir=models_dir,
+    )
 
     output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)

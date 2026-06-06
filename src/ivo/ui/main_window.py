@@ -50,13 +50,16 @@ from ivo.ui.workers import PipelineWorker
 
 
 class MainWindow(QMainWindow):
+    START_DUBBING_TEXT = "开始生成配音（完整流程）"
+    NEXT_STEP_TEXT = f"项目已创建。下一步：点击“{START_DUBBING_TEXT}”。"
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("\u667a\u80fd\u89c6\u9891\u914d\u97f3")
 
         self.create_project_button = QPushButton("\u65b0\u5efa\u9879\u76ee")
         self.open_project_button = QPushButton("\u6253\u5f00\u9879\u76ee")
-        self.local_preview_button = QPushButton("\u672c\u5730\u547d\u4ee4\u9884\u89c8")
+        self.local_preview_button = QPushButton(self.START_DUBBING_TEXT)
         self.evaluation_report_button = QPushButton("\u751f\u6210\u8bc4\u4f30\u62a5\u544a")
         self.export_button = QPushButton("\u6700\u7ec8\u5bfc\u51fa")
         self.progress_label = QLabel("\u5c1a\u672a\u5f00\u59cb")
@@ -112,7 +115,7 @@ class MainWindow(QMainWindow):
         )
         self.current_project = project
         self.source_video_path = source_video
-        self.progress_label.setText("\u9879\u76ee\u5df2\u521b\u5efa")
+        self.progress_label.setText(self.NEXT_STEP_TEXT)
         self.timeline_editor.set_project(project)
         return project
 
@@ -169,7 +172,7 @@ class MainWindow(QMainWindow):
         self.current_project = project
         self.source_video_path = project.source_video_path
         self.timeline_editor.set_project(project)
-        self.progress_label.setText("\u9879\u76ee\u5df2\u6253\u5f00")
+        self.progress_label.setText(f"项目已打开。下一步：点击“{self.START_DUBBING_TEXT}”。")
         return project
 
     def run_mock_preview(self) -> MockPipelineResult:
@@ -188,16 +191,16 @@ class MainWindow(QMainWindow):
         return result
 
     def run_local_preview(self) -> LocalCommandPreviewResult:
-        self.progress_label.setText("\u6b63\u5728\u751f\u6210\u672c\u5730\u547d\u4ee4\u9884\u89c8")
-        self.run_log_panel.append_stage_message("本地预览", "已开始")
+        self.progress_label.setText("正在生成配音，请稍候")
+        self.run_log_panel.append_stage_message("配音生成", "已开始")
         result = self._execute_local_preview()
-        self.run_log_panel.append_stage_message("本地预览", f"输出：{result.final_video}")
-        self._refresh_after_local_preview()
+        self.run_log_panel.append_stage_message("配音生成", f"输出：{result.final_video}")
+        self._refresh_after_local_preview(result.final_video)
         return result
 
     def create_local_preview_worker(self) -> PipelineWorker:
-        self.progress_label.setText("\u6b63\u5728\u751f\u6210\u672c\u5730\u547d\u4ee4\u9884\u89c8")
-        self.run_log_panel.append_stage_message("本地预览", "已开始")
+        self.progress_label.setText("正在生成配音，请稍候")
+        self.run_log_panel.append_stage_message("配音生成", "已开始")
         self.local_preview_button.setEnabled(False)
         worker = PipelineWorker(self._execute_local_preview)
         worker.succeeded.connect(self.handle_local_preview_succeeded)
@@ -211,19 +214,20 @@ class MainWindow(QMainWindow):
         return worker
 
     def handle_local_preview_succeeded(self) -> None:
+        final_video: Path | None = None
         if self.local_preview_worker is not None and self.local_preview_worker.result is not None:
             result = self.local_preview_worker.result
             final_video = getattr(result, "final_video", None)
             if final_video is not None:
-                self.run_log_panel.append_stage_message("本地预览", f"输出：{final_video}")
-        self._refresh_after_local_preview()
+                self.run_log_panel.append_stage_message("配音生成", f"输出：{final_video}")
+        self._refresh_after_local_preview(final_video)
         self.local_preview_button.setEnabled(True)
 
     def handle_local_preview_failed(self, message: str) -> None:
-        self.progress_label.setText(f"\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25: {message}")
-        self.run_log_panel.append_stage_message("本地预览", f"失败：{message}")
+        self.progress_label.setText(f"生成配音失败：{message}")
+        self.run_log_panel.append_stage_message("配音生成", f"失败：{message}")
         self.local_preview_button.setEnabled(True)
-        QMessageBox.warning(self, "\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5931\u8d25", message)
+        QMessageBox.warning(self, "生成配音失败", message)
 
     def write_evaluation_report(self) -> Path:
         if self.current_project is None:
@@ -394,10 +398,13 @@ class MainWindow(QMainWindow):
             )
         )
 
-    def _refresh_after_local_preview(self) -> None:
+    def _refresh_after_local_preview(self, final_video: Path | None = None) -> None:
         if self.current_project is not None:
             self.timeline_editor.set_project(self.current_project)
-        self.progress_label.setText("\u672c\u5730\u547d\u4ee4\u9884\u89c8\u5df2\u5b8c\u6210")
+        if final_video is not None:
+            self.progress_label.setText(f"配音生成已完成：{final_video}")
+        else:
+            self.progress_label.setText("配音生成已完成")
 
     def _execute_segment_regeneration(self, segment_id: str) -> SynthesisResult:
         if self.current_project is None:

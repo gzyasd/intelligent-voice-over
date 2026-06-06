@@ -114,4 +114,4 @@ def test_main_window_creates_project_from_wizard_inputs(qtbot, tmp_path) -> None
     assert project.settings.load().translation.series_type == "japanese_drama"
     assert project.settings.load().translation.translation_style_notes == "日剧口吻"
     assert window.source_video_path == source_video
-    assert window.progress_label.text() == "项目已创建"
+    assert window.progress_label.text() == "项目已创建。下一步：点击“开始生成配音（完整流程）”。"

@@ -12,6 +12,7 @@ from pathlib import Path
 
 APP_NAME = "IntelligentVoiceOver"
 VERSION_FILE = Path("src") / "ivo" / "__init__.py"
+LOCAL_RUNTIME_DIRS = (".venv", ".venv-pyannote")
 
 
 def build_command(output_dir: Path, *, ffmpeg_dir: Path | None = None) -> list[str]:
@@ -58,10 +59,13 @@ def build_release_manifest(
     output_dir: Path,
     *,
     ffmpeg_dir: Path | None = None,
+    include_local_runtimes: bool = True,
 ) -> dict[str, object]:
     included_data = ["examples", "docs"]
     if ffmpeg_dir is not None:
         included_data.append("ffmpeg")
+    if include_local_runtimes:
+        included_data.extend(LOCAL_RUNTIME_DIRS)
     return {
         "name": APP_NAME,
         "version": read_project_version(),
@@ -87,7 +91,12 @@ def build_release_manifest(
                 if ffmpeg_dir is not None
                 else "FFmpeg is not bundled for this build."
             ),
-            "Local model runtimes and model weights must be installed on the target machine.",
+            (
+                "Local model Python runtimes are bundled; model weights must be placed in "
+                "the app models directory or selected in the UI."
+                if include_local_runtimes
+                else "Local model runtimes and model weights must be installed on the target machine."
+            ),
         ],
     }
 
@@ -137,12 +146,21 @@ def read_project_version(version_file: Path = VERSION_FILE) -> str:
     raise RuntimeError(f"Cannot find __version__ in {version_file}")
 
 
-def write_release_manifest(output_dir: Path, *, ffmpeg_dir: Path | None = None) -> Path:
+def write_release_manifest(
+    output_dir: Path,
+    *,
+    ffmpeg_dir: Path | None = None,
+    include_local_runtimes: bool = True,
+) -> Path:
     manifest_path = release_manifest_path(output_dir)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         json.dumps(
-            build_release_manifest(output_dir, ffmpeg_dir=ffmpeg_dir),
+            build_release_manifest(
+                output_dir,
+                ffmpeg_dir=ffmpeg_dir,
+                include_local_runtimes=include_local_runtimes,
+            ),
             ensure_ascii=False,
             indent=2,
         ),
@@ -167,7 +185,9 @@ def write_portable_readme(output_dir: Path) -> Path:
                 "2. 保持 IntelligentVoiceOver 文件夹结构完整。",
                 "3. 双击 IntelligentVoiceOver\\IntelligentVoiceOver.exe 启动。",
                 "",
-                "模型权重不会内置在本包中，请按 docs 中的本地模型说明下载和配置。",
+                "本包已内置本地模型 Python 运行环境（.venv 和 .venv-pyannote）。",
+                "模型权重不会内置在本包中，请把模型放到 IntelligentVoiceOver\\models，或在客户端中选择已有模型目录。",
+                "GPU 驱动、CUDA 驱动组件、LM Studio 仍需在本机准备好。",
             ]
         ),
         encoding="utf-8",
@@ -189,10 +209,72 @@ def build_portable_archive(output_dir: Path) -> Path:
     return archive_path
 
 
+def copy_portable_support_files(
+    output_dir: Path,
+    *,
+    root: Path | None = None,
+    include_local_runtimes: bool = True,
+) -> list[Path]:
+    project_root = root or Path.cwd()
+    app_dir = output_dir / APP_NAME
+    if not app_dir.is_dir():
+        raise FileNotFoundError(app_dir)
+
+    copied: list[Path] = []
+    examples_source = project_root / "examples"
+    if examples_source.is_dir():
+        examples_target = app_dir / "examples"
+        _replace_tree(examples_source, examples_target)
+        copied.append(examples_target)
+
+    if include_local_runtimes:
+        for runtime_dir in LOCAL_RUNTIME_DIRS:
+            source = project_root / runtime_dir
+            if not source.is_dir():
+                continue
+            target = app_dir / runtime_dir
+            _replace_tree(source, target)
+            copied.append(target)
+    return copied
+
+
+def _replace_tree(source: Path, target: Path) -> None:
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source, target, ignore=_copy_ignore)
+
+
+def _copy_ignore(directory: str, names: list[str]) -> set[str]:
+    ignored_names = {
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".git",
+        ".hg",
+        ".svn",
+    }
+    return {
+        name
+        for name in names
+        if name in ignored_names or name.endswith((".pyc", ".pyo"))
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the Windows desktop package.")
     parser.add_argument("--output-dir", default="dist", type=Path)
     parser.add_argument("--ffmpeg-dir", type=Path)
+    parser.add_argument(
+        "--skip-local-runtimes",
+        action="store_true",
+        help="Do not copy .venv and .venv-pyannote into the portable package.",
+    )
+    parser.add_argument(
+        "--skip-archive",
+        action="store_true",
+        help="Do not create the portable zip archive after building the app directory.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -204,14 +286,23 @@ def main() -> int:
         )
 
     command = build_command(args.output_dir, ffmpeg_dir=ffmpeg_dir)
+    include_local_runtimes = not args.skip_local_runtimes
+    create_archive = not args.skip_archive
     if args.dry_run:
         print(
             json.dumps(
                 {
                     "command": command,
                     "manifest_path": str(release_manifest_path(args.output_dir)),
-                    "portable_archive_path": str(portable_archive_path(args.output_dir)),
-                    "manifest": build_release_manifest(args.output_dir, ffmpeg_dir=ffmpeg_dir),
+                    "create_archive": create_archive,
+                    "portable_archive_path": (
+                        str(portable_archive_path(args.output_dir)) if create_archive else None
+                    ),
+                    "manifest": build_release_manifest(
+                        args.output_dir,
+                        ffmpeg_dir=ffmpeg_dir,
+                        include_local_runtimes=include_local_runtimes,
+                    ),
                 },
                 ensure_ascii=False,
             )
@@ -219,11 +310,24 @@ def main() -> int:
         return 0
 
     subprocess.run(command, check=True)
-    manifest_path = write_release_manifest(args.output_dir, ffmpeg_dir=ffmpeg_dir)
+    copied_paths = copy_portable_support_files(
+        args.output_dir,
+        include_local_runtimes=include_local_runtimes,
+    )
+    manifest_path = write_release_manifest(
+        args.output_dir,
+        ffmpeg_dir=ffmpeg_dir,
+        include_local_runtimes=include_local_runtimes,
+    )
     write_portable_readme(args.output_dir)
-    archive_path = build_portable_archive(args.output_dir)
+    for copied_path in copied_paths:
+        print(f"Copied support files: {copied_path}")
     print(f"Release manifest written: {manifest_path}")
-    print(f"Portable archive written: {archive_path}")
+    if create_archive:
+        archive_path = build_portable_archive(args.output_dir)
+        print(f"Portable archive written: {archive_path}")
+    else:
+        print(f"Portable archive skipped: {portable_archive_path(args.output_dir)}")
     return 0
 
 

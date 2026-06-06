@@ -13,17 +13,18 @@ def infer_local_runtime_root(
     *,
     models_dir: Path | None = None,
 ) -> Path:
+    resolved_profiles_path = profiles_path.resolve()
     candidates: list[Path] = []
-    if models_dir is not None:
-        candidates.append(models_dir.parent)
-    if profiles_path.parent.name.lower() == "examples":
-        candidates.append(profiles_path.parent.parent)
-    candidates.append(profiles_path.parent)
-    candidates.append(Path.cwd())
+    if resolved_profiles_path.parent.name.lower() == "examples":
+        candidates.append(resolved_profiles_path.parent.parent)
+    if models_dir is not None and models_dir.is_absolute():
+        candidates.append(models_dir.resolve().parent)
+    candidates.append(resolved_profiles_path.parent)
+    candidates.append(Path.cwd().resolve())
 
     for candidate in candidates:
         if (candidate / "examples" / "local_commands").is_dir():
-            return candidate
+            return candidate.resolve()
     return candidates[0]
 
 
@@ -41,6 +42,12 @@ def prepare_local_command_profiles(
             profile.extra.setdefault("python_executable", str(python_executable))
         _resolve_extra_path(profile.extra, "pyannote_python_executable", runtime_root)
     return profiles
+
+
+def resolve_local_model_root(models_dir: Path, runtime_root: Path) -> Path:
+    if models_dir.is_absolute():
+        return models_dir
+    return runtime_root / models_dir
 
 
 def _iter_profiles(profiles: LocalCommandPipelineProfiles) -> Iterator[LocalCommandProfile]:

@@ -18,7 +18,7 @@ def test_main_window_warns_when_local_preview_worker_fails(monkeypatch, qtbot) -
     window.handle_local_preview_failed("provider busy")
 
     assert window.local_preview_button.isEnabled() is True
-    assert warnings == [("本地命令预览失败", "provider busy")]
+    assert warnings == [("生成配音失败", "provider busy")]
     assert "provider busy" in window.progress_label.text()
     assert "provider busy" in window.run_log_panel.plain_text()
 

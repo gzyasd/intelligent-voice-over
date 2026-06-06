@@ -85,6 +85,8 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command(tmp_path) ->
     assert "examples" in manifest["included_data"]
     assert "docs" in manifest["included_data"]
     assert "ffmpeg" in manifest["included_data"]
+    assert ".venv" in manifest["included_data"]
+    assert ".venv-pyannote" in manifest["included_data"]
     assert "models" in manifest["excluded_paths"]
     assert "测试视频" in manifest["excluded_paths"]
     assert "sample_media" in manifest["excluded_paths"]
@@ -94,6 +96,25 @@ def test_windows_package_script_dry_run_outputs_pyinstaller_command(tmp_path) ->
     assert "*.wav" in manifest["excluded_paths"]
     assert ".env" in manifest["excluded_paths"]
     assert "API keys and tokens" in manifest["excluded_secrets"]
+
+
+def test_windows_package_script_dry_run_can_skip_archive() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_windows_package.py",
+            "--dry-run",
+            "--skip-archive",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+
+    assert payload["create_archive"] is False
+    assert payload["portable_archive_path"] is None
 
 
 def test_windows_package_archive_contains_whole_app_directory(tmp_path) -> None:
@@ -118,6 +139,33 @@ def test_windows_package_archive_contains_whole_app_directory(tmp_path) -> None:
     assert "IntelligentVoiceOver/_internal/python310.dll" in names
     assert "IntelligentVoiceOver/_internal/ffmpeg/bin/ffmpeg.exe" in names
     assert "IntelligentVoiceOver/README_FIRST.txt" in names
+
+
+def test_windows_package_copies_local_runtime_envs_and_root_examples(tmp_path) -> None:
+    packager = load_windows_packager()
+    root = tmp_path / "repo"
+    output_dir = tmp_path / "dist"
+    app_dir = output_dir / "IntelligentVoiceOver"
+    app_dir.mkdir(parents=True)
+
+    examples_command = root / "examples" / "local_commands" / "asr.py"
+    examples_command.parent.mkdir(parents=True)
+    examples_command.write_text("print('asr')", encoding="utf-8")
+    main_python = root / ".venv" / "Scripts" / "python.exe"
+    pyannote_python = root / ".venv-pyannote" / "Scripts" / "python.exe"
+    main_python.parent.mkdir(parents=True)
+    pyannote_python.parent.mkdir(parents=True)
+    main_python.write_bytes(b"python")
+    pyannote_python.write_bytes(b"python")
+
+    copied = packager.copy_portable_support_files(output_dir, root=root)
+
+    assert app_dir / "examples" in copied
+    assert app_dir / ".venv" in copied
+    assert app_dir / ".venv-pyannote" in copied
+    assert (app_dir / "examples" / "local_commands" / "asr.py").is_file()
+    assert (app_dir / ".venv" / "Scripts" / "python.exe").is_file()
+    assert (app_dir / ".venv-pyannote" / "Scripts" / "python.exe").is_file()
 
 
 def test_windows_package_powershell_script_excludes_models_and_media() -> None:
