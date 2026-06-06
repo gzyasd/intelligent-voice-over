@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -29,6 +30,13 @@ class ModelCenter(QWidget):
         self.check_models_button = QPushButton("一键检查模型")
         self.toggle_advanced_button = QPushButton("显示开发者设置")
         self.preset_combo = QComboBox()
+        self.preset_buttons: dict[str, QPushButton] = {}
+        self.preset_button_group = QButtonGroup(self)
+        self.preset_button_group.setExclusive(True)
+        self.selected_preset_label = QLabel("")
+        self.selected_preset_label.setObjectName("SecondaryText")
+        self.developer_settings_hint_label = QLabel("开发者设置默认隐藏。普通用户通常不需要修改。")
+        self.developer_settings_hint_label.setObjectName("SecondaryText")
         self.model_hint_panel = EmptyStatePanel(
             title="模型目录尚未检查",
             description="请选择模型目录后点击一键检查。缺少模型时，这里会告诉你应该放到哪个文件夹。",
@@ -49,19 +57,26 @@ class ModelCenter(QWidget):
 
         for preset in builtin_model_presets():
             self.preset_combo.addItem(preset.display_name, preset.id)
-            card = _preset_card(preset.display_name, preset.description)
-            layout.addWidget(card)
+            button = _preset_button(preset.display_name, preset.description)
+            button.clicked.connect(
+                lambda _checked=False, preset_id=preset.id: self.select_preset(preset_id)
+            )
+            self.preset_buttons[preset.id] = button
+            self.preset_button_group.addButton(button)
+            layout.addWidget(button)
             self._summary_parts.extend([preset.display_name, preset.description])
 
         self.model_dir_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
         self.check_models_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
         self.toggle_advanced_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        layout.addWidget(self.selected_preset_label)
         layout.addWidget(QLabel("模型目录"))
         layout.addWidget(self.model_dir_edit)
         layout.addWidget(self.model_dir_button)
         layout.addWidget(self.check_models_button)
         layout.addWidget(self.model_hint_panel)
         layout.addWidget(self.toggle_advanced_button)
+        layout.addWidget(self.developer_settings_hint_label)
         self._summary_parts.extend(["选择模型目录", "一键检查模型"])
 
         advanced_layout = QVBoxLayout()
@@ -88,6 +103,11 @@ class ModelCenter(QWidget):
         show = self.advanced_container.isHidden()
         self.advanced_container.setVisible(show)
         self.toggle_advanced_button.setText("隐藏开发者设置" if show else "显示开发者设置")
+        self.developer_settings_hint_label.setText(
+            "开发者设置已展开，可在下方配置本地命令和在线 API。"
+            if show
+            else "开发者设置已隐藏。普通用户通常不需要修改。"
+        )
 
     def browse_model_dir(self) -> None:
         path = QFileDialog.getExistingDirectory(
@@ -110,14 +130,27 @@ class ModelCenter(QWidget):
             if self.preset_combo.itemData(index) == preset_id:
                 self.preset_combo.setCurrentIndex(index)
                 self.apply_selected_preset()
+                button = self.preset_buttons.get(preset_id)
+                if button is not None:
+                    button.setChecked(True)
                 return
         raise KeyError(preset_id)
+
+    def selected_preset_id(self) -> str:
+        preset_id = self.preset_combo.currentData()
+        if not isinstance(preset_id, str):
+            raise RuntimeError("当前没有选择模型方案")
+        return preset_id
 
     def apply_selected_preset(self) -> None:
         preset_id = self.preset_combo.currentData()
         if not isinstance(preset_id, str):
             return
         preset = get_model_preset(preset_id)
+        self.selected_preset_label.setText(f"当前方案：{preset.display_name}")
+        button = self.preset_buttons.get(preset_id)
+        if button is not None:
+            button.setChecked(True)
         self.advanced_settings.local_command_profiles_path_edit.setText(
             preset.local_profiles_path
         )
@@ -154,3 +187,31 @@ def _preset_card(title: str, description: str) -> QFrame:
     layout.addWidget(detail)
     card.setLayout(layout)
     return card
+
+
+def _preset_button(title: str, description: str) -> QPushButton:
+    button = QPushButton(f"{title}\n{description}")
+    button.setCheckable(True)
+    button.setMinimumHeight(86)
+    button.setStyleSheet(
+        """
+        QPushButton {
+            text-align: left;
+            padding: 14px 18px;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            background: #ffffff;
+            color: #111827;
+            font-size: 14px;
+        }
+        QPushButton:checked {
+            border: 2px solid #007aff;
+            background: #eef6ff;
+            font-weight: 700;
+        }
+        QPushButton:hover {
+            border-color: #007aff;
+        }
+        """
+    )
+    return button

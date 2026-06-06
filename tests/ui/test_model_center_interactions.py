@@ -37,6 +37,21 @@ def test_model_center_preset_selection_updates_advanced_profile_paths(qtbot) -> 
     assert center.advanced_settings.translation_profile_path_edit.text() == preset.translation_profile_path
 
 
+def test_model_center_preset_card_click_selects_preset(qtbot) -> None:
+    from ivo.core.model_presets import get_model_preset
+    from ivo.ui.model_center import ModelCenter
+
+    center = ModelCenter()
+    qtbot.addWidget(center)
+    preset = get_model_preset("local_cpu_preview")
+
+    center.preset_buttons["local_cpu_preview"].click()
+
+    assert center.selected_preset_id() == "local_cpu_preview"
+    assert center.selected_preset_label.text() == f"当前方案：{preset.display_name}"
+    assert center.advanced_settings.local_command_profiles_path_edit.text() == preset.local_profiles_path
+
+
 def test_model_center_check_models_runs_diagnostics_and_readiness(monkeypatch, qtbot, tmp_path) -> None:
     from ivo.ui.model_center import ModelCenter
 
@@ -51,3 +66,16 @@ def test_model_center_check_models_runs_diagnostics_and_readiness(monkeypatch, q
 
     assert center.advanced_settings.local_model_path_edit.text() == str(tmp_path / "models")
     assert calls == ["diagnostics", "readiness"]
+
+
+def test_model_center_developer_toggle_shows_feedback(qtbot) -> None:
+    from ivo.ui.model_center import ModelCenter
+
+    center = ModelCenter()
+    qtbot.addWidget(center)
+
+    center.toggle_advanced_button.click()
+
+    assert center.advanced_settings_visible() is True
+    assert center.toggle_advanced_button.text() == "隐藏开发者设置"
+    assert center.developer_settings_hint_label.text() == "开发者设置已展开，可在下方配置本地命令和在线 API。"
