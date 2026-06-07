@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from uuid import uuid4
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -23,6 +25,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ivo.core.model_inventory import (
+    ModelCandidate,
+    fetch_lm_studio_models,
+    group_candidates_by_stage,
+    scan_model_candidates,
+    validate_stage_config,
+)
 from ivo.core.visual_model_config import (
     VisualModelConfig,
     VisualModelConfigStore,
@@ -67,9 +76,14 @@ class ModelCenter(QWidget):
         self._current_config_id = ""
         self._applied_config_id = "local_quality_lmstudio_qwen_f5"
         self._editing_stage_id: str | None = None
+        self._model_candidates: dict[str, list[ModelCandidate]] = {}
+        self._lm_studio_models: list[str] = []
+        self._unsaved_changes = False
+        self._loading_form = False
 
         self.model_dir_edit = QLineEdit("models")
         self.model_dir_button = QPushButton("更换目录")
+        self.scan_models_button = QPushButton("刷新模型目录")
         self.check_models_button = QPushButton("一键检查此配置")
         self.current_config_status_label = QLabel("当前应用：本机高质量 · 已应用")
         self.current_config_status_label.setObjectName("SecondaryText")
@@ -138,6 +152,7 @@ class ModelCenter(QWidget):
         self.stage_provider_edit = QLineEdit()
         self.stage_enabled_check = QCheckBox("启用此阶段")
         self.stage_local_fields = QGroupBox("本地模型")
+        self.stage_model_combo = QComboBox()
         self.stage_model_path_edit = QLineEdit()
         self.stage_device_combo = QComboBox()
         self.stage_device_combo.addItems(["auto", "cuda", "cpu"])
@@ -145,11 +160,16 @@ class ModelCenter(QWidget):
         self.stage_precision_combo.addItems(["auto", "float16", "int8"])
         self.stage_api_fields = QGroupBox("在线 API")
         self.stage_api_base_url_edit = QLineEdit()
+        self.stage_api_model_combo = QComboBox()
         self.stage_api_model_edit = QLineEdit()
+        self.load_lm_studio_models_button = QPushButton("读取 LM Studio 模型")
+        self.test_stage_button = QPushButton("测试当前阶段")
         self.save_config_button = QPushButton("保存")
         self.save_apply_button = QPushButton("保存并应用")
         self.cancel_edit_button = QPushButton("放弃修改")
         self.new_config_button = QPushButton("新建配置")
+        self.export_config_button = QPushButton("导出配置")
+        self.import_config_button = QPushButton("导入配置")
         self.toggle_advanced_button = QPushButton("显示开发者设置")
         self.developer_settings_hint_label = QLabel("开发者源文件默认隐藏。普通用户通常不需要修改。")
         self.developer_settings_hint_label.setObjectName("SecondaryText")
@@ -222,6 +242,121 @@ class ModelCenter(QWidget):
         self.advanced_settings.local_model_path_edit.setText(
             self.model_dir_edit.text().strip() or "models"
         )
+
+    def refresh_model_candidates(self) -> None:
+        self.sync_model_dir_to_advanced()
+        candidates = scan_model_candidates(self._model_root())
+        self._model_candidates = group_candidates_by_stage(candidates)
+        if self._editing_stage_id:
+            self._populate_stage_model_combo(self._editing_stage_id)
+        total = sum(len(items) for items in self._model_candidates.values())
+        self.status_label.setText(f"已刷新模型目录：发现 {total} 个可选模型。")
+
+    def stage_model_choice_summary(self) -> str:
+        lines: list[str] = []
+        for stage, candidates in self._model_candidates.items():
+            names = "、".join(candidate.name for candidate in candidates) or "无"
+            lines.append(f"{_stage_label(stage)}：{names}")
+        return "\n".join(lines)
+
+    def load_lm_studio_models(self) -> None:
+        base_url = self.stage_api_base_url_edit.text().strip() or "http://127.0.0.1:1995/v1"
+        try:
+            self._lm_studio_models = fetch_lm_studio_models(base_url)
+        except Exception as exc:
+            self._lm_studio_models = []
+            self.status_label.setText(f"读取 LM Studio 模型失败：{exc}")
+            return
+        self._populate_api_model_combo()
+        if self._lm_studio_models:
+            self.status_label.setText(f"已读取 LM Studio 模型：{len(self._lm_studio_models)} 个。")
+        else:
+            self.status_label.setText("LM Studio 已响应，但没有返回可用模型。")
+
+    def test_current_stage(self) -> None:
+        if not self._editing_stage_id:
+            self.status_label.setText("请先选择一个阶段再测试。")
+            return
+        stage = self._current_stage_config_from_form()
+        result = validate_stage_config(
+            stage,
+            self._model_root(),
+            lm_studio_models=self._lm_studio_models if stage.service_type == "http" else None,
+        )
+        self.show_stage_validation_result(
+            result.stage,
+            provider=result.provider,
+            status=result.status,
+            message=result.message,
+        )
+        self.status_label.setText(f"{stage.label} 阶段测试完成：{_validation_text(result.status)}。")
+
+    def has_unsaved_changes(self) -> bool:
+        return self._unsaved_changes
+
+    def mark_unsaved_changes(self) -> None:
+        if self._loading_form:
+            return
+        if not self._current_config_id:
+            return
+        try:
+            current = self.config_store.get(self.current_config_id())
+        except KeyError:
+            return
+        if current.builtin:
+            return
+        self._unsaved_changes = True
+        self.status_label.setText("有未保存修改。")
+        self.save_apply_button.setText("保存未保存修改并应用")
+
+    def browse_export_current_config(self) -> None:
+        path, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "导出模型配置",
+            f"{self.current_config_display_name()}.json",
+            "JSON 配置 (*.json)",
+        )
+        if path:
+            self.export_current_config(Path(path))
+
+    def browse_import_config(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "导入模型配置",
+            "",
+            "JSON 配置 (*.json)",
+        )
+        if path:
+            self.import_config(Path(path))
+
+    def export_current_config(self, path: Path) -> Path:
+        config = self.config_store.get(self.current_config_id())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(config.model_dump_json(indent=2), encoding="utf-8")
+        self.status_label.setText(f"配置已导出：{path}")
+        return path
+
+    def import_config(self, path: Path) -> VisualModelConfig | None:
+        if not path.is_file():
+            self.status_label.setText(f"没有找到配置文件：{path}")
+            return None
+        try:
+            imported = VisualModelConfig.model_validate_json(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, ValueError) as exc:
+            self.status_label.setText(f"导入失败：{exc}")
+            return None
+        imported = imported.model_copy(
+            update={
+                "id": f"custom-{uuid4().hex[:12]}",
+                "builtin": False,
+            },
+            deep=True,
+        )
+        self.config_store.save_custom(imported)
+        self.refresh_config_list()
+        self.select_config(imported.id)
+        self.status_label.setText(f"已导入配置：{imported.display_name}")
+        return imported
 
     def refresh_config_list(self) -> None:
         self.config_list.blockSignals(True)
@@ -314,6 +449,7 @@ class ModelCenter(QWidget):
     def open_stage_editor(self, stage_id: str) -> None:
         config = self.config_store.get(self.current_config_id())
         stage = next(stage for stage in config.stages if stage.stage == stage_id)
+        self._loading_form = True
         self._editing_stage_id = stage_id
         self.editor_drawer.setVisible(True)
         self.editor_tabs.setCurrentWidget(self.stage_tab)
@@ -325,7 +461,10 @@ class ModelCenter(QWidget):
         _set_combo_text(self.stage_precision_combo, stage.precision)
         self.stage_api_base_url_edit.setText(stage.api_base_url)
         self.stage_api_model_edit.setText(stage.api_model)
+        self._populate_stage_model_combo(stage_id)
+        self._populate_api_model_combo()
         self._sync_stage_editor_mode()
+        self._loading_form = False
 
     def save_current_config(self) -> VisualModelConfig | None:
         current = self.config_store.get(self.current_config_id())
@@ -347,6 +486,8 @@ class ModelCenter(QWidget):
         self.config_store.save_custom(updated)
         self.refresh_config_list()
         self.select_config(updated.id)
+        self._unsaved_changes = False
+        self.save_apply_button.setText("保存并应用")
         self.status_label.setText(f"配置已保存：{updated.display_name}")
         return updated
 
@@ -373,19 +514,28 @@ class ModelCenter(QWidget):
 
     def check_models(self) -> None:
         self.sync_model_dir_to_advanced()
+        self.refresh_model_candidates()
         self.advanced_settings.refresh_model_diagnostics()
         self.advanced_settings.check_local_readiness()
         config = self.config_store.get(self.current_config_id())
+        results = [
+            validate_stage_config(
+                stage,
+                self._model_root(),
+                lm_studio_models=self._lm_studio_models if stage.service_type == "http" else None,
+            )
+            for stage in config.stages
+            if stage.enabled
+        ]
         self.show_validation_results(
             [
                 {
-                    "stage": stage.stage,
-                    "provider": stage.provider_name,
-                    "status": "ready",
-                    "message": "已完成基础检查",
+                    "stage": result.stage,
+                    "provider": result.provider,
+                    "status": result.status,
+                    "message": result.message,
                 }
-                for stage in config.stages
-                if stage.enabled
+                for result in results
             ]
         )
         self.model_hint_panel.setVisible(False)
@@ -478,8 +628,10 @@ class ModelCenter(QWidget):
         layout.addWidget(QLabel("模型目录"))
         layout.addWidget(self.model_dir_edit, 2)
         self.model_dir_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        self.scan_models_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
         self.check_models_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
         layout.addWidget(self.model_dir_button)
+        layout.addWidget(self.scan_models_button)
         layout.addWidget(self.check_models_button)
         layout.addWidget(self.current_config_status_label)
         layout.addWidget(self.search_config_edit, 1)
@@ -493,7 +645,9 @@ class ModelCenter(QWidget):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.addWidget(self.config_library_title)
         self.new_config_button.setStyleSheet(PRIMARY_BUTTON_STYLE)
+        self.import_config_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
         layout.addWidget(self.new_config_button)
+        layout.addWidget(self.import_config_button)
         layout.addWidget(self.config_list)
         panel.setLayout(layout)
         return panel
@@ -547,6 +701,8 @@ class ModelCenter(QWidget):
         self.cancel_edit_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
         actions.addWidget(self.save_config_button)
         actions.addWidget(self.save_apply_button)
+        self.export_config_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        actions.addWidget(self.export_config_button)
         actions.addWidget(self.cancel_edit_button)
         layout.addLayout(actions)
         self.editor_drawer.setLayout(layout)
@@ -574,6 +730,8 @@ class ModelCenter(QWidget):
 
         local_form = QFormLayout()
         self.stage_model_path_edit.setPlaceholderText("默认跟随全局模型目录")
+        self.stage_model_combo.addItem("手动指定或跟随默认目录", "")
+        local_form.addRow("已发现模型", self.stage_model_combo)
         local_form.addRow("模型位置", self.stage_model_path_edit)
         local_form.addRow("推理设备", self.stage_device_combo)
         local_form.addRow("精度", self.stage_precision_combo)
@@ -582,10 +740,14 @@ class ModelCenter(QWidget):
         self.stage_api_base_url_edit.setPlaceholderText("例如：http://127.0.0.1:1995/v1")
         self.stage_api_model_edit.setPlaceholderText("例如：Qwen3.6-35B-A3B")
         api_form.addRow("API 地址", self.stage_api_base_url_edit)
+        api_form.addRow("", self.load_lm_studio_models_button)
+        api_form.addRow("LM Studio 模型", self.stage_api_model_combo)
         api_form.addRow("模型名称", self.stage_api_model_edit)
         self.stage_api_fields.setLayout(api_form)
         layout.addWidget(self.stage_local_fields)
         layout.addWidget(self.stage_api_fields)
+        self.test_stage_button.setStyleSheet(SECONDARY_BUTTON_STYLE)
+        layout.addWidget(self.test_stage_button)
         layout.addWidget(self.stage_table)
         layout.addStretch()
         tab.setLayout(layout)
@@ -610,6 +772,7 @@ class ModelCenter(QWidget):
 
     def _connect_signals(self) -> None:
         self.model_dir_button.clicked.connect(lambda: self.browse_model_dir())
+        self.scan_models_button.clicked.connect(self.refresh_model_candidates)
         self.check_models_button.clicked.connect(lambda: self.check_models())
         self.model_hint_panel.action_button.clicked.connect(lambda: self.check_models())
         self.config_list.currentRowChanged.connect(self._handle_config_selection_changed)
@@ -623,8 +786,32 @@ class ModelCenter(QWidget):
         self.cancel_edit_button.clicked.connect(lambda: self.editor_drawer.setVisible(False))
         self.stage_flow.stage_edit_requested.connect(self.open_stage_editor)
         self.stage_service_type_combo.currentIndexChanged.connect(lambda _index: self._sync_stage_editor_mode())
+        self.stage_model_combo.currentIndexChanged.connect(lambda _index: self._apply_selected_model_candidate())
+        self.stage_api_model_combo.currentIndexChanged.connect(lambda _index: self._apply_selected_api_model())
+        self.load_lm_studio_models_button.clicked.connect(self.load_lm_studio_models)
+        self.test_stage_button.clicked.connect(self.test_current_stage)
+        self.export_config_button.clicked.connect(self.browse_export_current_config)
+        self.import_config_button.clicked.connect(self.browse_import_config)
         self.toggle_advanced_button.clicked.connect(self.toggle_advanced_settings)
         self.preset_combo.currentIndexChanged.connect(lambda _index: self.apply_selected_preset())
+        for line_edit in (
+            self.config_name_edit,
+            self.config_description_edit,
+            self.content_type_edit,
+            self.config_local_profiles_path_edit,
+            self.config_translation_profile_path_edit,
+            self.stage_provider_edit,
+            self.stage_model_path_edit,
+            self.stage_api_base_url_edit,
+            self.stage_api_model_edit,
+        ):
+            line_edit.textChanged.connect(lambda _text: self.mark_unsaved_changes())
+        self.quality_combo.currentIndexChanged.connect(lambda _index: self.mark_unsaved_changes())
+        self.prefer_gpu_check.toggled.connect(lambda _checked: self.mark_unsaved_changes())
+        self.stage_enabled_check.toggled.connect(lambda _checked: self.mark_unsaved_changes())
+        self.stage_service_type_combo.currentIndexChanged.connect(lambda _index: self.mark_unsaved_changes())
+        self.stage_device_combo.currentIndexChanged.connect(lambda _index: self.mark_unsaved_changes())
+        self.stage_precision_combo.currentIndexChanged.connect(lambda _index: self.mark_unsaved_changes())
 
     def _add_config_item(self, config: VisualModelConfig) -> None:
         prefix = "推荐" if config.builtin else "我的"
@@ -643,6 +830,7 @@ class ModelCenter(QWidget):
             self._load_config(self.config_store.get(raw_id))
 
     def _load_config(self, config: VisualModelConfig) -> None:
+        self._loading_form = True
         self._current_config_id = config.id
         self.config_name_edit.setText(config.display_name)
         self.config_description_edit.setText(config.description)
@@ -666,6 +854,9 @@ class ModelCenter(QWidget):
         )
         self._populate_compat_stage_controls(config.stages)
         self._sync_preset_combo(config.id)
+        self._unsaved_changes = False
+        self.save_apply_button.setText("保存并应用")
+        self._loading_form = False
 
     def _populate_compat_stage_controls(self, stages: list[VisualStageConfig]) -> None:
         self.stage_enabled_checks.clear()
@@ -726,7 +917,82 @@ class ModelCenter(QWidget):
 
     def _has_unsaved_custom_changes(self) -> bool:
         current = self.config_store.get(self.current_config_id())
-        return not current.builtin and self.editor_drawer.isVisible()
+        return not current.builtin and self._unsaved_changes
+
+    def _model_root(self) -> Path:
+        return Path(self.model_dir_edit.text().strip() or "models").expanduser()
+
+    def _populate_stage_model_combo(self, stage_id: str) -> None:
+        self.stage_model_combo.blockSignals(True)
+        self.stage_model_combo.clear()
+        self.stage_model_combo.addItem("手动指定或跟随默认目录", "")
+        for candidate in self._model_candidates.get(stage_id, []):
+            state = "已找到" if candidate.ready else "推荐"
+            self.stage_model_combo.addItem(
+                f"{candidate.name} · {state}",
+                str(candidate.path),
+            )
+        current_path = self.stage_model_path_edit.text().strip()
+        if current_path:
+            index = self.stage_model_combo.findData(current_path)
+            if index < 0:
+                index = self.stage_model_combo.findData(str((self._model_root() / current_path).resolve()))
+            if index >= 0:
+                self.stage_model_combo.setCurrentIndex(index)
+        self.stage_model_combo.blockSignals(False)
+
+    def _apply_selected_model_candidate(self) -> None:
+        raw_path = self.stage_model_combo.currentData()
+        if not isinstance(raw_path, str) or not raw_path:
+            return
+        try:
+            path_text = str(Path(raw_path).resolve().relative_to(self._model_root().resolve()))
+        except ValueError:
+            path_text = raw_path
+        self.stage_model_path_edit.setText(path_text)
+        label = self.stage_model_combo.currentText().split(" · ", maxsplit=1)[0]
+        if label:
+            self.stage_provider_edit.setText(label)
+        self.mark_unsaved_changes()
+
+    def _populate_api_model_combo(self) -> None:
+        self.stage_api_model_combo.blockSignals(True)
+        self.stage_api_model_combo.clear()
+        for model_name in self._lm_studio_models:
+            self.stage_api_model_combo.addItem(model_name)
+        current_model = self.stage_api_model_edit.text().strip()
+        if current_model:
+            index = self.stage_api_model_combo.findText(current_model)
+            if index >= 0:
+                self.stage_api_model_combo.setCurrentIndex(index)
+        self.stage_api_model_combo.blockSignals(False)
+
+    def _apply_selected_api_model(self) -> None:
+        model_name = self.stage_api_model_combo.currentText().strip()
+        if not model_name:
+            return
+        self.stage_api_model_edit.setText(model_name)
+        self.stage_provider_edit.setText("LM Studio")
+        self.mark_unsaved_changes()
+
+    def _current_stage_config_from_form(self) -> VisualStageConfig:
+        if not self._editing_stage_id:
+            raise RuntimeError("当前没有正在编辑的阶段")
+        config = self.config_store.get(self.current_config_id())
+        current_stage = next(stage for stage in config.stages if stage.stage == self._editing_stage_id)
+        raw_service = self.stage_service_type_combo.currentData()
+        return current_stage.model_copy(
+            update={
+                "enabled": self.stage_enabled_check.isChecked(),
+                "service_type": raw_service if isinstance(raw_service, str) else "local",
+                "provider_name": self.stage_provider_edit.text().strip(),
+                "model_path": self.stage_model_path_edit.text().strip(),
+                "device": self.stage_device_combo.currentText(),
+                "precision": self.stage_precision_combo.currentText(),
+                "api_base_url": self.stage_api_base_url_edit.text().strip(),
+                "api_model": self.stage_api_model_edit.text().strip(),
+            }
+        )
 
     def _sync_preset_combo(self, config_id: str) -> None:
         for index in range(self.preset_combo.count()):
