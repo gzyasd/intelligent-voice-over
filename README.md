@@ -14,13 +14,18 @@
 
 注意：F5-TTS 代码是 MIT，但默认预训练权重为 CC-BY-NC，商业用途前必须换用许可证合适的模型或服务。下一条优先评估的真实 TTS 路线是 CosyVoice。真实视频素材、生成音频/视频、模型权重、API key 和 token 都不要提交到 Git。
 
-## 开源许可
+## 许可证
 
-本项目已完全开源，采用 MIT License。你可以自由使用、复制、修改、分发和二次开发，但需要保留许可证和版权声明。
+本项目源码可见，采用 PolyForm Noncommercial License 1.0.0。你可以在非商业用途下查看、学习、修改、运行和分发本项目代码，但未经作者书面授权，不得用于商业用途。
+
+商业使用包括但不限于付费产品、SaaS 服务、企业内部生产部署、付费交付、商业项目集成、收费部署/咨询/运维、商业内容生产流程或以商业获利为目的的再分发。商业授权说明见 `COMMERCIAL-LICENSE.md`。
+
+请注意：PolyForm Noncommercial License 不是 OSI 认证的开源许可证，因为它限制商业使用。本项目采用“源码开放 / 非商业使用许可”的发布方式。
 
 参与贡献前请阅读：
 
 - `CONTRIBUTING.md`
+- `COMMERCIAL-LICENSE.md`
 - `CODE_OF_CONDUCT.md`
 - `SECURITY.md`
 - `docs/compliance-and-licenses.md`

@@ -1473,7 +1473,7 @@ uv run ivo check-local-readiness .\examples\local_command_profiles.real_separati
 
   `docs/compliance-and-licenses.md` 必须写清：
 
-  - 项目代码 MIT。
+  - 项目代码采用 PolyForm Noncommercial License 1.0.0，商业使用需另行授权。
   - 第三方模型许可证各自独立。
   - F5-TTS 权重 CC-BY-NC。
   - CosyVoice 使用前重新确认模型卡。

@@ -487,7 +487,7 @@ P1 完成时，应满足：
 
 ## 许可证与合规提醒
 
-- 本项目代码采用 MIT License，但第三方模型各自有许可证，不能用项目许可证覆盖模型许可证。
+- 本项目代码采用 PolyForm Noncommercial License 1.0.0，商业使用需另行授权；第三方模型各自有许可证，不能用项目许可证覆盖模型许可证。
 - F5-TTS 代码是 MIT，预训练模型是 CC-BY-NC；商业用途要避免默认推荐为商用方案。
 - Fun-CosyVoice3 当前标注 Apache-2.0，更适合作为首选本地 TTS 评估对象，但仍需在下载和使用前再次确认模型卡。
 - pyannote 模型需要用户登录并接受条件，不能把 Hugging Face token 写入仓库或 profile。
