@@ -1,0 +1,25 @@
+{
+  "id": "online-separation",
+  "stage": "separation",
+  "method": "POST",
+  "url": "https://api.example.test/separate",
+  "headers": {
+    "Authorization": "Bearer {{ api_key }}"
+  },
+  "request_template": {
+    "audio_path": "{{ audio_path }}"
+  },
+  "response_mapping": {
+    "vocals_base64": "$.vocals_base64",
+    "background_base64": "$.background_base64",
+    "vocals_path": "$.vocals_path",
+    "background_path": "$.background_path"
+  },
+  "optional_response_keys": [
+    "vocals_base64",
+    "background_base64",
+    "vocals_path",
+    "background_path"
+  ],
+  "timeout_seconds": 120
+}

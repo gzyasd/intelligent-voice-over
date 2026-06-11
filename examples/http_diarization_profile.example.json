@@ -1,0 +1,16 @@
+{
+  "id": "online-diarization",
+  "stage": "diarization",
+  "method": "POST",
+  "url": "https://api.example.test/diarize",
+  "headers": {
+    "Authorization": "Bearer {{ api_key }}"
+  },
+  "request_template": {
+    "audio_path": "{{ audio_path }}"
+  },
+  "response_mapping": {
+    "segments": "$.segments"
+  },
+  "timeout_seconds": 120
+}

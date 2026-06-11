@@ -1,0 +1,66 @@
+{
+  "separation": {
+    "id": "mock-separate",
+    "stage": "separation",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/mock_separate.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--vocals-out",
+      "{{ vocals_path }}",
+      "--background-out",
+      "{{ background_path }}",
+      "--json-out",
+      "{{ output_json_path }}"
+    ],
+    "output_json_path": "{{ project_path }}/mock-separation.json"
+  },
+  "asr": {
+    "id": "mock-asr",
+    "stage": "asr",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/mock_asr.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--language",
+      "{{ source_language }}",
+      "--out",
+      "{{ output_json_path }}"
+    ],
+    "output_json_path": "{{ project_path }}/mock-asr.json"
+  },
+  "diarization": {
+    "id": "mock-diarization",
+    "stage": "diarization",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/mock_diarization.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--out",
+      "{{ output_json_path }}"
+    ],
+    "output_json_path": "{{ project_path }}/mock-diarization.json"
+  },
+  "tts": {
+    "id": "mock-tts",
+    "stage": "tts",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/mock_tts.py",
+      "--text",
+      "{{ segment_text }}",
+      "--speaker",
+      "{{ speaker_id }}",
+      "--audio-out",
+      "{{ output_audio_path }}",
+      "--duration-ms",
+      "{{ target_duration_ms }}",
+      "--json-out",
+      "{{ output_json_path }}"
+    ],
+    "output_json_path": "{{ project_path }}/mock-tts.json"
+  }
+}

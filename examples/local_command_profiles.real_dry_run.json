@@ -1,0 +1,70 @@
+{
+  "separation": {
+    "id": "demucs-dry-run",
+    "stage": "separation",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/demucs_separate.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--vocals-out",
+      "{{ vocals_path }}",
+      "--background-out",
+      "{{ background_path }}",
+      "--json-out",
+      "{{ output_json_path }}",
+      "--model",
+      "htdemucs",
+      "--device",
+      "cuda",
+      "--dry-run"
+    ],
+    "output_json_path": "{{ project_path }}/demucs-dry-run.json"
+  },
+  "asr": {
+    "id": "faster-whisper-dry-run",
+    "stage": "asr",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/faster_whisper_asr.py",
+      "--audio",
+      "{{ audio_path }}",
+      "--language",
+      "{{ source_language }}",
+      "--model",
+      "base",
+      "--device",
+      "cuda",
+      "--compute-type",
+      "float16",
+      "--out",
+      "{{ output_json_path }}",
+      "--dry-run"
+    ],
+    "output_json_path": "{{ project_path }}/faster-whisper-dry-run.json"
+  },
+  "tts": {
+    "id": "f5-tts-dry-run",
+    "stage": "tts",
+    "command": [
+      "{{ python_executable }}",
+      "examples/local_commands/f5_tts_command.py",
+      "--text",
+      "{{ segment_text }}",
+      "--speaker",
+      "{{ speaker_id }}",
+      "--audio-out",
+      "{{ output_audio_path }}",
+      "--duration-ms",
+      "{{ target_duration_ms }}",
+      "--style-prompt",
+      "{{ style_prompt }}",
+      "--reference-audio",
+      "{{ reference_audio_path }}",
+      "--json-out",
+      "{{ output_json_path }}",
+      "--dry-run"
+    ],
+    "output_json_path": "{{ project_path }}/f5-tts-dry-run.json"
+  }
+}

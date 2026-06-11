@@ -1,0 +1,25 @@
+{
+  "id": "online-translator",
+  "stage": "translation",
+  "method": "POST",
+  "url": "https://api.example.test/translate",
+  "headers": {
+    "Authorization": "Bearer {{ api_key }}"
+  },
+  "request_template": {
+    "prompt": "{{ prompt }}",
+    "text": "{{ segment_text }}",
+    "source_language": "{{ source_language }}",
+    "target_language": "{{ target_language }}",
+    "speaker_id": "{{ speaker_id }}"
+  },
+  "response_mapping": {
+    "target_text": "$.target_text",
+    "emotion": "$.emotion",
+    "style_prompt": "$.style_prompt"
+  },
+  "optional_response_keys": [
+    "style_prompt"
+  ],
+  "timeout_seconds": 120
+}
