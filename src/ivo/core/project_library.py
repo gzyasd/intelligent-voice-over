@@ -4,29 +4,32 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from ivo.core.project import DubbingProject
+from ivo.core.project_status import find_project_output, read_project_status_snapshot
 
 
 class ProjectLibraryItem(BaseModel):
     name: str
     path: Path
-    source_video_path: Path | None = None
+    content_type: str = "video"
+    source_media_path: Path | None = None
     source_language: str = ""
     target_language: str = ""
     updated_at: float
     status: str
     status_detail: str = ""
     elapsed_seconds: int | None = None
-    final_video_path: Path | None = None
+    final_output_path: Path | None = None
 
 
 def scan_project_library(
     projects_dir: Path,
     *,
     recent_projects: list[Path],
+    active_project_paths: set[Path] | None = None,
 ) -> list[ProjectLibraryItem]:
+    active = active_project_paths or set()
     candidates = _candidate_project_paths(projects_dir, recent_projects)
-    items = [_read_project_item(path) for path in candidates]
+    items = [_read_project_item(path, active_project_paths=active) for path in candidates]
     return sorted(items, key=lambda item: item.updated_at, reverse=True)
 
 
@@ -46,82 +49,29 @@ def _candidate_project_paths(projects_dir: Path, recent_projects: list[Path]) ->
     return candidates
 
 
-def _read_project_item(path: Path) -> ProjectLibraryItem:
-    try:
-        project = DubbingProject.load(path)
-    except (OSError, ValueError, KeyError) as exc:
-        return ProjectLibraryItem(
-            name=path.stem,
-            path=path,
-            updated_at=_path_updated_at(path),
-            status="无法读取",
-            status_detail=str(exc),
-        )
-
-    final_video = _final_video_path(project.path)
-    status, detail = _project_status(project, final_video)
-    elapsed_seconds = project.metadata.generation_elapsed_seconds
-    detail = _append_elapsed_detail(detail, elapsed_seconds)
+def _read_project_item(
+    path: Path,
+    *,
+    active_project_paths: set[Path],
+) -> ProjectLibraryItem:
+    snapshot = read_project_status_snapshot(path, active_project_paths=active_project_paths)
     return ProjectLibraryItem(
-        name=project.name,
-        path=project.path,
-        source_video_path=project.source_video_path,
-        source_language=project.source_language,
-        target_language=project.target_language,
-        updated_at=_path_updated_at(project.path),
-        status=status,
-        status_detail=detail,
-        elapsed_seconds=elapsed_seconds,
-        final_video_path=final_video,
+        name=snapshot.name,
+        path=snapshot.project_path,
+        content_type=snapshot.content_type,
+        source_media_path=snapshot.source_media_path,
+        source_language=snapshot.source_language,
+        target_language=snapshot.target_language,
+        updated_at=snapshot.updated_at,
+        status=snapshot.status_label,
+        status_detail=snapshot.status_detail,
+        elapsed_seconds=snapshot.elapsed_seconds,
+        final_output_path=snapshot.final_output_path,
     )
 
 
-def _project_status(project: DubbingProject, final_video: Path | None) -> tuple[str, str]:
-    records = project.jobs.list_records()
-    failed = next((record for record in records if record.status == "failed"), None)
-    if failed is not None:
-        return "失败", f"{failed.stage}: {failed.message}"
-    if project.metadata.generation_status == "failed":
-        return "失败", ""
-    if any(record.status == "running" for record in records):
-        return "生成中", ""
-    if project.metadata.generation_status == "running":
-        return "生成中", ""
-    export_record = next((record for record in records if record.stage == "export"), None)
-    if final_video is not None or (
-        export_record is not None and export_record.status == "completed"
-    ) or (
-        project.metadata.generation_status == "completed"
-    ):
-        return "已完成", ""
-    if records:
-        return "未完成", ""
-    return "未开始", ""
-
-
-def _append_elapsed_detail(detail: str, elapsed_seconds: int | None) -> str:
-    if elapsed_seconds is None:
-        return detail
-    elapsed = f"总耗时 {_format_elapsed(elapsed_seconds)}"
-    return f"{detail} · {elapsed}" if detail else elapsed
-
-
-def _format_elapsed(seconds: int) -> str:
-    minutes, rest = divmod(max(0, seconds), 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours:02d}:{minutes:02d}:{rest:02d}"
-    return f"{minutes:02d}:{rest:02d}"
-
-
-def _final_video_path(project_path: Path) -> Path | None:
-    for candidate in (
-        project_path / "renders" / "final.mp4",
-        project_path / "renders" / "local-preview.mp4",
-    ):
-        if candidate.is_file():
-            return candidate
-    return None
+def _final_output_path(project_path: Path) -> Path | None:
+    return find_project_output(project_path)
 
 
 def _path_updated_at(path: Path) -> float:

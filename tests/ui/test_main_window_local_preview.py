@@ -20,7 +20,7 @@ def test_main_window_runs_local_preview_from_model_settings(monkeypatch, qtbot, 
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -32,7 +32,7 @@ def test_main_window_runs_local_preview_from_model_settings(monkeypatch, qtbot, 
     window.scheme_management_page._current_scheme = None
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -43,12 +43,12 @@ def test_main_window_runs_local_preview_from_model_settings(monkeypatch, qtbot, 
     result = window.run_local_preview()
 
     adapter = captured["translation_adapter"]
-    assert result.final_video.is_file()
+    assert result.final_output.is_file()
     assert captured["profiles"].tts.id == "tts"
     assert adapter.profile.id == "translator"
     assert adapter.extra == {"api_key": "test-token"}
     assert window.timeline_editor.table.rowCount() == 1
-    assert window.progress_label.text() == f"配音生成已完成：{result.final_video}"
+    assert window.progress_label.text() == f"配音生成已完成：{result.final_output}"
 
 
 def test_main_window_generation_timer_updates_every_second(qtbot, tmp_path) -> None:
@@ -140,7 +140,7 @@ def test_main_window_enables_pause_button_when_generation_worker_is_created(qtbo
     qtbot.addWidget(window)
     window.create_project_from_inputs(
         project_name="Episode",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -191,7 +191,7 @@ def test_main_window_saves_selected_profile_paths_to_project_settings(
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -202,7 +202,7 @@ def test_main_window_saves_selected_profile_paths_to_project_settings(
     qtbot.addWidget(window)
     project = window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -229,7 +229,7 @@ def test_main_window_builds_background_worker_for_local_preview(monkeypatch, qtb
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -240,7 +240,7 @@ def test_main_window_builds_background_worker_for_local_preview(monkeypatch, qtb
     qtbot.addWidget(window)
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -254,10 +254,10 @@ def test_main_window_builds_background_worker_for_local_preview(monkeypatch, qtb
     worker.run()
     window.handle_local_preview_succeeded()
 
-    assert worker.result.final_video.is_file()
+    assert worker.result.final_output.is_file()
     assert window.local_preview_button.isEnabled() is True
     assert window.timeline_editor.table.rowCount() == 1
-    assert window.progress_label.text() == f"配音生成已完成：{worker.result.final_video}"
+    assert window.progress_label.text() == f"配音生成已完成：{worker.result.final_output}"
 
 
 def test_main_window_routes_local_preview_progress_to_generation_panel(
@@ -288,7 +288,7 @@ def test_main_window_routes_local_preview_progress_to_generation_panel(
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -299,7 +299,7 @@ def test_main_window_routes_local_preview_progress_to_generation_panel(
     qtbot.addWidget(window)
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -328,7 +328,7 @@ def test_main_window_local_preview_button_starts_background_worker(
     qtbot.addWidget(window)
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -359,7 +359,7 @@ def test_main_window_runs_local_preview_with_http_tts_profile(monkeypatch, qtbot
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -371,7 +371,7 @@ def test_main_window_runs_local_preview_with_http_tts_profile(monkeypatch, qtbot
     window.scheme_management_page._current_scheme = None
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -382,7 +382,7 @@ def test_main_window_runs_local_preview_with_http_tts_profile(monkeypatch, qtbot
     result = window.run_local_preview()
 
     adapter = captured["tts_adapter"]
-    assert result.final_video.is_file()
+    assert result.final_output.is_file()
     assert adapter.__class__.__name__ == "HttpTtsAdapter"
     assert adapter.profile.id == "online-tts"
     assert adapter.extra == {"api_key": "test-token"}
@@ -404,7 +404,7 @@ def test_main_window_runs_local_preview_with_http_asr_profile(monkeypatch, qtbot
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -416,7 +416,7 @@ def test_main_window_runs_local_preview_with_http_asr_profile(monkeypatch, qtbot
     window.scheme_management_page._current_scheme = None
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -427,7 +427,7 @@ def test_main_window_runs_local_preview_with_http_asr_profile(monkeypatch, qtbot
     result = window.run_local_preview()
 
     adapter = captured["asr_adapter"]
-    assert result.final_video.is_file()
+    assert result.final_output.is_file()
     assert adapter.__class__.__name__ == "HttpAsrAdapter"
     assert adapter.profile.id == "online-asr"
     assert adapter.extra == {"api_key": "test-token"}
@@ -453,7 +453,7 @@ def test_main_window_runs_local_preview_with_http_separation_profile(
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -465,7 +465,7 @@ def test_main_window_runs_local_preview_with_http_separation_profile(
     window.scheme_management_page._current_scheme = None
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -476,7 +476,7 @@ def test_main_window_runs_local_preview_with_http_separation_profile(
     result = window.run_local_preview()
 
     adapter = captured["separation_adapter"]
-    assert result.final_video.is_file()
+    assert result.final_output.is_file()
     assert adapter.__class__.__name__ == "HttpSeparationAdapter"
     assert adapter.profile.id == "online-separation"
     assert adapter.extra == {"api_key": "test-token"}
@@ -502,7 +502,7 @@ def test_main_window_runs_local_preview_with_http_diarization_profile(
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -514,7 +514,7 @@ def test_main_window_runs_local_preview_with_http_diarization_profile(
     window.scheme_management_page._current_scheme = None
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -525,7 +525,7 @@ def test_main_window_runs_local_preview_with_http_diarization_profile(
     result = window.run_local_preview()
 
     adapter = captured["diarization_adapter"]
-    assert result.final_video.is_file()
+    assert result.final_output.is_file()
     assert adapter.__class__.__name__ == "HttpDiarizationAdapter"
     assert adapter.profile.id == "online-diarization"
     assert adapter.extra == {"api_key": "test-token"}

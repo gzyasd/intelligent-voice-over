@@ -7,7 +7,7 @@ def test_mock_pipeline_creates_final_video_with_metadata(tmp_path) -> None:
     from ivo.compliance.confirmation import ExportConfirmation
     from ivo.compliance.metadata import build_ai_dubbing_metadata
     from ivo.core.project import DubbingProject
-    from ivo.pipeline.import_video import extract_normalized_audio, import_source_video
+    from ivo.pipeline.import_video import extract_normalized_audio, import_source_media
     from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
     from ivo.pipeline.separate_audio import MockSeparationAdapter, separate_audio
     from ivo.pipeline.synthesize import MockTtsAdapter, synthesize_segment
@@ -22,7 +22,7 @@ def test_mock_pipeline_creates_final_video_with_metadata(tmp_path) -> None:
     )
     source = tmp_path / "episode.mp4"
     source.write_bytes(b"video")
-    imported = import_source_video(project, source)
+    imported = import_source_media(project, source)
 
     def audio_runner(command: list[str]) -> None:
         Path(command[-1]).write_bytes(b"wav")

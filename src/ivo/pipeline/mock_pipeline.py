@@ -7,8 +7,14 @@ from pydantic import BaseModel
 from ivo.compliance.confirmation import ExportConfirmation
 from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
-from ivo.pipeline.import_video import extract_normalized_audio, import_source_video
-from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
+from ivo.pipeline.import_video import extract_normalized_audio, import_source_media
+from ivo.pipeline.mix_export import (
+    AudioExportRequest,
+    ExportRequest,
+    SegmentAudio,
+    export_dubbed_audio,
+    export_dubbed_video,
+)
 from ivo.pipeline.separate_audio import MockSeparationAdapter, separate_audio
 from ivo.pipeline.synthesize import MockTtsAdapter, synthesize_segment
 from ivo.pipeline.transcribe import MockAsrAdapter, TranscriptionSegment, transcribe_audio
@@ -16,17 +22,17 @@ from ivo.pipeline.translate import MockTranslationAdapter, TranslationResult, tr
 
 
 class MockPipelineResult(BaseModel):
-    final_video: Path
+    final_output: Path
     metadata: dict[str, str]
 
 
 def run_mock_dubbing_pipeline(
     project: DubbingProject,
     *,
-    source_video: Path,
+    source_media: Path,
     watermark_text: str = "AI Dubbed",
 ) -> MockPipelineResult:
-    imported = import_source_video(project, source_video)
+    imported = import_source_media(project, source_media)
     extracted_audio = extract_normalized_audio(
         project,
         imported,
@@ -69,20 +75,36 @@ def run_mock_dubbing_pipeline(
         source_language=project.source_language,
         target_language=project.target_language,
     )
-    final_video = export_dubbed_video(
-        ExportRequest(
-            source_video=imported,
-            background_audio=separation.background_path,
-            segment_audio=[SegmentAudio(path=synthesis.audio_path, start_ms=100)],
-            output_path=project.path / "renders" / "preview.mp4",
-            metadata=metadata,
-            watermark_text=watermark_text,
-        ),
-        ExportConfirmation(accepted=True),
-        ffmpeg_path="ffmpeg-mock",
-        runner=_write_mock_video,
-    )
-    return MockPipelineResult(final_video=final_video, metadata=metadata)
+    if project.content_type == "video":
+        output_path = project.path / "renders" / "preview.mp4"
+        final_output = export_dubbed_video(
+            ExportRequest(
+                source_video=imported,
+                background_audio=separation.background_path,
+                segment_audio=[SegmentAudio(path=synthesis.audio_path, start_ms=100)],
+                output_path=output_path,
+                metadata=metadata,
+                watermark_text=watermark_text,
+            ),
+            ExportConfirmation(accepted=True),
+            ffmpeg_path="ffmpeg-mock",
+            runner=_write_mock_video,
+        )
+    else:
+        output_path = project.path / "renders" / "preview.wav"
+        final_output = export_dubbed_audio(
+            AudioExportRequest(
+                background_audio=separation.background_path,
+                segment_audio=[SegmentAudio(path=synthesis.audio_path, start_ms=100)],
+                output_path=output_path,
+                metadata=metadata,
+                format="wav",
+            ),
+            ExportConfirmation(accepted=True),
+            ffmpeg_path="ffmpeg-mock",
+            runner=_write_mock_audio,
+        )
+    return MockPipelineResult(final_output=final_output, metadata=metadata)
 
 
 def _write_mock_audio(command: list[str]) -> None:

@@ -130,3 +130,77 @@ def test_main_window_warns_when_export_has_no_project(monkeypatch, qtbot) -> Non
     assert result is None
     assert warnings == [("无法导出", "请先在首页新建项目或从项目库打开已有项目，然后再导出。")]
     assert window.progress_label.text() == "请先在首页新建项目或从项目库打开已有项目，然后再导出。"
+
+
+def test_run_log_panel_copy_uses_full_command_log(monkeypatch, qtbot) -> None:
+    from ivo.adapters.local import CommandExecutionLog
+    from ivo.ui.run_log import RunLogPanel
+
+    copied: dict[str, str] = {}
+
+    class FakeClipboard:
+        def setText(self, text: str) -> None:
+            copied["text"] = text
+
+    monkeypatch.setattr(
+        "ivo.ui.run_log.QApplication.clipboard",
+        lambda: FakeClipboard(),
+    )
+
+    panel = RunLogPanel()
+    qtbot.addWidget(panel)
+    panel.append_command_output(
+        CommandExecutionLog(
+            stage="diarization",
+            provider="pyannote-community-1-local",
+            command=["python", "pyannote_diarization.py"],
+            stderr=(
+                "torchcodec is not installed correctly so built-in audio decoding will fail.\n"
+                "Traceback (most recent call last):\n"
+                "FileNotFoundError: libtorchcodec_core8.dll"
+            ),
+            exit_code=0,
+        )
+    )
+
+    assert "Traceback" not in panel.plain_text()
+
+    panel.copy_log()
+
+    assert "Traceback (most recent call last):" in copied["text"]
+    assert "libtorchcodec_core8.dll" in copied["text"]
+
+
+def test_run_log_panel_can_hide_warning_logs(qtbot) -> None:
+    from ivo.adapters.local import CommandExecutionLog
+    from ivo.ui.run_log import RunLogPanel
+
+    panel = RunLogPanel()
+    qtbot.addWidget(panel)
+    panel.append_stage_message("import", "开始导入", level="info")
+    panel.append_command_output(
+        CommandExecutionLog(
+            stage="tts",
+            provider="f5",
+            command=["python", "tts.py"],
+            stderr="FutureWarning: Python 3.10 support will stop later",
+            exit_code=0,
+        )
+    )
+    panel.append_stage_message("tts", "真正失败", level="error")
+
+    assert "开始导入" in panel.plain_text()
+    assert "命令警告" in panel.plain_text()
+    assert "真正失败" in panel.plain_text()
+
+    panel.show_warning_checkbox.setChecked(False)
+
+    assert "开始导入" in panel.plain_text()
+    assert "命令警告" not in panel.plain_text()
+    assert "真正失败" in panel.plain_text()
+
+    panel.error_only_checkbox.setChecked(True)
+
+    assert "开始导入" not in panel.plain_text()
+    assert "命令警告" not in panel.plain_text()
+    assert "真正失败" in panel.plain_text()

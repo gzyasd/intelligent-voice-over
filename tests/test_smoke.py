@@ -133,7 +133,7 @@ def test_batch_mock_preview_command_creates_projects_for_each_video(tmp_path) ->
     )
 
     assert result.exit_code == 0
-    assert "Processed 2 videos" in result.output
+    assert "Processed 2 items" in result.output
     assert (output_dir / "episode-01.ivoproj" / "renders" / "preview.mp4").is_file()
     assert (output_dir / "episode-02.ivoproj" / "renders" / "preview.mp4").is_file()
 
@@ -182,7 +182,7 @@ def test_batch_local_preview_command_processes_each_video(monkeypatch, tmp_path)
         final_video.parent.mkdir(parents=True, exist_ok=True)
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -205,7 +205,7 @@ def test_batch_local_preview_command_processes_each_video(monkeypatch, tmp_path)
 
     assert result.exit_code == 0
     assert processed == ["episode-01", "episode-02"]
-    assert "Processed 2 videos" in result.output
+    assert "Processed 2 items" in result.output
     assert (output_dir / "episode-01.ivoproj" / "renders" / "local-preview.mp4").is_file()
     assert (output_dir / "episode-02.ivoproj" / "renders" / "local-preview.mp4").is_file()
 
@@ -232,7 +232,7 @@ def test_batch_local_preview_command_continues_after_video_failure(monkeypatch, 
         final_video.parent.mkdir(parents=True, exist_ok=True)
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -257,22 +257,22 @@ def test_batch_local_preview_command_continues_after_video_failure(monkeypatch, 
     assert result.exit_code == 1
     assert processed == ["episode-01", "episode-02"]
     assert "episode-01.mp4: FAILED: asr provider failed" in result.output
-    assert "Failed 1 of 2 videos" in result.output
+    assert "Failed 1 of 2 items" in result.output
     assert (output_dir / "episode-02.ivoproj" / "renders" / "local-preview.mp4").is_file()
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["processed"] == 2
     assert report["failed"] == 1
     assert report["completed"] == 1
-    assert report["videos"][0]["source_video"].endswith("episode-01.mp4")
-    assert "duration_seconds" in report["videos"][0]
-    assert report["videos"][0]["status"] == "failed"
-    assert report["videos"][0]["failed_stage"] == "asr"
-    assert report["videos"][0]["error"] == "asr provider failed"
-    assert report["videos"][1]["source_video"].endswith("episode-02.mp4")
-    assert report["videos"][1]["status"] == "passed"
-    assert report["videos"][1]["failed_stage"] is None
-    assert report["videos"][1]["final_video"].endswith("local-preview.mp4")
-    assert "duration_seconds" in report["videos"][1]
+    assert report["items"][0]["source_media"].endswith("episode-01.mp4")
+    assert "duration_seconds" in report["items"][0]
+    assert report["items"][0]["status"] == "failed"
+    assert report["items"][0]["failed_stage"] == "asr"
+    assert report["items"][0]["error"] == "asr provider failed"
+    assert report["items"][1]["source_media"].endswith("episode-02.mp4")
+    assert report["items"][1]["status"] == "passed"
+    assert report["items"][1]["failed_stage"] is None
+    assert report["items"][1]["final_output"].endswith("local-preview.mp4")
+    assert "duration_seconds" in report["items"][1]
 
 
 def test_batch_local_preview_command_skips_existing_outputs(monkeypatch, tmp_path) -> None:
@@ -297,7 +297,7 @@ def test_batch_local_preview_command_skips_existing_outputs(monkeypatch, tmp_pat
         final_video.parent.mkdir(parents=True, exist_ok=True)
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -323,11 +323,11 @@ def test_batch_local_preview_command_skips_existing_outputs(monkeypatch, tmp_pat
     assert "episode-01.mp4: SKIPPED existing output" in result.output
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["skipped"] == 1
-    assert report["videos"][0]["source_video"].endswith("episode-01.mp4")
-    assert report["videos"][0]["status"] == "skipped"
-    assert report["videos"][0]["failed_stage"] is None
-    assert report["videos"][0]["final_video"].endswith("local-preview.mp4")
-    assert "duration_seconds" in report["videos"][0]
+    assert report["items"][0]["source_media"].endswith("episode-01.mp4")
+    assert report["items"][0]["status"] == "skipped"
+    assert report["items"][0]["failed_stage"] is None
+    assert report["items"][0]["final_output"].endswith("local-preview.mp4")
+    assert "duration_seconds" in report["items"][0]
 
 
 def test_batch_local_preview_command_can_resume_existing_projects(monkeypatch, tmp_path) -> None:
@@ -356,7 +356,7 @@ def test_batch_local_preview_command_can_resume_existing_projects(monkeypatch, t
         final_video.parent.mkdir(parents=True, exist_ok=True)
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -380,7 +380,7 @@ def test_batch_local_preview_command_can_resume_existing_projects(monkeypatch, t
         "project_path": output_dir / "episode-01.ivoproj",
         "audio_extract_status": "completed",
     }
-    assert "Processed 1 videos" in result.output
+    assert "Processed 1 items" in result.output
 
 
 def test_batch_local_preview_command_reports_existing_project_without_resume(
@@ -410,7 +410,7 @@ def test_batch_local_preview_command_reports_existing_project_without_resume(
         final_video.parent.mkdir(parents=True, exist_ok=True)
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -432,7 +432,7 @@ def test_batch_local_preview_command_reports_existing_project_without_resume(
     assert processed == ["episode-02"]
     assert "episode-01.mp4: FAILED:" in result.output
     assert "--resume-existing" in result.output
-    assert "Failed 1 of 2 videos" in result.output
+    assert "Failed 1 of 2 items" in result.output
 
 
 def test_batch_local_preview_command_can_require_readiness_before_creating_projects(
@@ -506,7 +506,7 @@ def test_local_preview_command_loads_profiles_and_reports_output(monkeypatch, tm
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -565,7 +565,7 @@ def test_local_preview_command_can_resume_existing_project(monkeypatch, tmp_path
         final_video = current_project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -716,7 +716,7 @@ def test_local_preview_command_loads_translation_profile(monkeypatch, tmp_path) 
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -810,7 +810,7 @@ def test_local_preview_command_loads_http_tts_profile(monkeypatch, tmp_path) -> 
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -901,7 +901,7 @@ def test_local_preview_command_loads_http_asr_profile(monkeypatch, tmp_path) -> 
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -995,7 +995,7 @@ def test_local_preview_command_loads_http_separation_profile(monkeypatch, tmp_pa
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -1086,7 +1086,7 @@ def test_local_preview_command_loads_http_diarization_profile(monkeypatch, tmp_p
         final_video = project.path / "renders" / "local-preview.mp4"
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )
@@ -1213,7 +1213,7 @@ def test_adapter_profile_cli_adds_and_lists_http_profile(tmp_path) -> None:
     assert profile.file_upload_fields == {"audio": "audio_path"}
 
 
-def test_model_cli_registers_and_lists_local_model(tmp_path) -> None:
+def test_model_cli_add_local_and_list_are_deprecated(tmp_path) -> None:
     from ivo.cli import app
 
     store_path = tmp_path / "models.json"
@@ -1241,10 +1241,11 @@ def test_model_cli_registers_and_lists_local_model(tmp_path) -> None:
     )
     list_result = CliRunner().invoke(app, ["model", "list", str(store_path)])
 
-    assert add_result.exit_code == 0
-    assert list_result.exit_code == 0
-    assert "cosyvoice-local" in list_result.output
-    assert "license: yes" in list_result.output
+    # Deprecated commands should exit with code 1 and print deprecation notice
+    assert add_result.exit_code == 1
+    assert "deprecated" in add_result.output.lower()
+    assert list_result.exit_code == 1
+    assert "deprecated" in list_result.output.lower()
 
 
 def test_doctor_models_reports_optional_dependency_status() -> None:

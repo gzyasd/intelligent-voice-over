@@ -71,7 +71,7 @@ def test_local_preview_uses_runs_dir_when_output_dir_is_omitted(
         final_video.parent.mkdir(parents=True, exist_ok=True)
         final_video.write_bytes(b"preview")
         return LocalCommandPreviewResult(
-            final_video=final_video,
+            final_output=final_video,
             metadata={"ai_dubbing": "true"},
             generated_segments=[],
         )

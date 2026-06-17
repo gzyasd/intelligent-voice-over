@@ -11,14 +11,15 @@ def test_main_window_creates_project_from_inputs(qtbot, tmp_path) -> None:
 
     project = window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
 
     assert project.path == tmp_path / "Episode 01.ivoproj"
-    assert window.current_project == project
-    assert window.source_video_path == source
+    assert window.current_project is not None
+    assert window.current_project.path == project.path
+    assert window.source_media_path == source
     assert window.progress_label.text() == "项目已创建。下一步：点击“开始生成配音（完整流程）”。"
     assert window.app_shell.current_page_id() == "current"
 
@@ -32,14 +33,14 @@ def test_main_window_runs_mock_preview_and_refreshes_timeline(qtbot, tmp_path) -
     qtbot.addWidget(window)
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
 
     result = window.run_mock_preview()
 
-    assert result.final_video.is_file()
+    assert result.final_output.is_file()
     assert window.progress_label.text() == "mock 预览已完成"
     assert window.timeline_editor.table.rowCount() == 1
     assert window.timeline_editor.table.item(0, 3).text() == "嗯，你好。"
@@ -55,7 +56,7 @@ def test_main_window_writes_evaluation_report(qtbot, tmp_path) -> None:
     qtbot.addWidget(window)
     project = window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import sys
 from unittest.mock import MagicMock
 
 import pytest
@@ -211,3 +212,28 @@ class TestAdapterFactoryLocal:
         ]
         assert "--hf-token-env" in captured_command
         assert "HF_TOKEN" in captured_command
+
+    def test_builtin_local_template_sets_runtime_context(self, tmp_path, monkeypatch) -> None:
+        app_root = tmp_path / "app"
+        examples_dir = app_root / "examples" / "local_commands"
+        examples_dir.mkdir(parents=True)
+        local_python = app_root / ".venv" / "Scripts" / "python.exe"
+        local_python.parent.mkdir(parents=True)
+        local_python.write_text("", encoding="utf-8")
+        monkeypatch.chdir(app_root)
+
+        factory = _make_factory()
+        config = _make_config(
+            stage="separation",
+            protocol="local_demucs",
+            kind="local",
+            provider_key="demucs",
+            local_model_path=str(app_root / "models" / "separation" / "demucs"),
+        )
+
+        adapter = factory.create(config)
+
+        profile = adapter.profile
+        assert profile.extra["working_dir"] == str(app_root)
+        assert profile.extra["python_executable"] in {str(local_python), sys.executable}
+        assert profile.extra["model_path"] == str(app_root / "models" / "separation" / "demucs")

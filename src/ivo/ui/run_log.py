@@ -12,6 +12,7 @@ from ivo.adapters.local import CommandExecutionLog
 class _LogEntry:
     level: str
     text: str
+    full_text: str
 
 
 class RunLogPanel(QWidget):
@@ -22,11 +23,15 @@ class RunLogPanel(QWidget):
         self.log_text.setReadOnly(True)
         self.error_only_checkbox = QCheckBox("仅显示错误日志")
         self.error_only_checkbox.stateChanged.connect(self._render_entries)
+        self.show_warning_checkbox = QCheckBox("显示警告日志")
+        self.show_warning_checkbox.setChecked(True)
+        self.show_warning_checkbox.stateChanged.connect(self._render_entries)
         self.copy_button = QPushButton("复制日志")
         self.copy_button.clicked.connect(self.copy_log)
 
         layout = QVBoxLayout()
         layout.addWidget(self.error_only_checkbox)
+        layout.addWidget(self.show_warning_checkbox)
         layout.addWidget(self.log_text)
         layout.addWidget(self.copy_button)
         self.setLayout(layout)
@@ -50,34 +55,34 @@ class RunLogPanel(QWidget):
         self._append("error", "\n".join(lines))
 
     def append_command_output(self, log: CommandExecutionLog) -> None:
-        command = " ".join(log.command)
-        if log.stdout.strip():
-            self._append(
-                "info",
-                f"[{log.stage}] 命令输出：{log.provider}\n命令：{command}\n{log.stdout.strip()}",
-            )
-        if log.stderr.strip():
-            self._append(
-                "error" if log.exit_code else "warning",
-                f"[{log.stage}] 命令错误输出：{log.provider}\n命令：{command}\n{log.stderr.strip()}",
-            )
+        from ivo.ui.log_classification import classify_command_log
+
+        for entry in classify_command_log(log):
+            self._append(entry.level, entry.text, full_text=entry.full_text)
 
     def plain_text(self) -> str:
         return self.log_text.toPlainText()
 
     def copy_log(self) -> None:
-        QApplication.clipboard().setText(self.plain_text())
+        QApplication.clipboard().setText("\n\n".join(entry.full_text for entry in self._entries))
 
-    def _append(self, level: str, text: str) -> None:
-        self._entries.append(_LogEntry(level=level, text=text))
-        if self.error_only_checkbox.isChecked() and level != "error":
+    def _should_show_entry(self, entry: _LogEntry) -> bool:
+        if self.error_only_checkbox.isChecked():
+            return entry.level == "error"
+        if not self.show_warning_checkbox.isChecked() and entry.level == "warning":
+            return False
+        return True
+
+    def _append(self, level: str, text: str, *, full_text: str | None = None) -> None:
+        entry = _LogEntry(level=level, text=text, full_text=full_text or text)
+        self._entries.append(entry)
+        if not self._should_show_entry(entry):
             return
         self.log_text.appendPlainText(text)
 
     def _render_entries(self) -> None:
         self.log_text.clear()
-        error_only = self.error_only_checkbox.isChecked()
         for entry in self._entries:
-            if error_only and entry.level != "error":
+            if not self._should_show_entry(entry):
                 continue
             self.log_text.appendPlainText(entry.text)

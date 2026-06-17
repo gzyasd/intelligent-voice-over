@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -63,6 +64,7 @@ class LocalCommandAdapter:
         command = [self._render_string(part, values) for part in self.profile.command]
         output_path = Path(str(values["output_json_path"]))
         working_dir = str(values["working_dir"]) if values.get("working_dir") else None
+        env = _build_subprocess_env(working_dir)
 
         try:
             if self.runner is None:
@@ -72,6 +74,7 @@ class LocalCommandAdapter:
                     capture_output=True,
                     text=True,
                     cwd=working_dir,
+                    env=env,
                     **hidden_subprocess_kwargs(),
                 )
                 self._emit_command_output(
@@ -232,6 +235,33 @@ def _run_with_optional_cwd(
         runner(command, cwd=cwd)
         return
     runner(command)
+
+
+def _build_subprocess_env(working_dir: str | None) -> dict[str, str]:
+    env = os.environ.copy()
+    if working_dir is None:
+        return env
+    ffmpeg_bin = _find_bundled_ffmpeg_bin(Path(working_dir))
+    if ffmpeg_bin is None:
+        return env
+    current_path = env.get("PATH", "")
+    entries = current_path.split(os.pathsep) if current_path else []
+    ffmpeg_entry = str(ffmpeg_bin)
+    if ffmpeg_entry not in entries:
+        env["PATH"] = os.pathsep.join([ffmpeg_entry, *entries]) if entries else ffmpeg_entry
+    return env
+
+
+def _find_bundled_ffmpeg_bin(runtime_root: Path) -> Path | None:
+    for candidate in (
+        runtime_root / "_internal" / "ffmpeg" / "bin",
+        runtime_root / "ffmpeg" / "bin",
+        runtime_root / "_internal" / "ffmpeg",
+        runtime_root / "ffmpeg",
+    ):
+        if (candidate / "ffmpeg.exe").is_file() or (candidate / "ffmpeg").is_file():
+            return candidate
+    return None
 
 
 __all__ = [

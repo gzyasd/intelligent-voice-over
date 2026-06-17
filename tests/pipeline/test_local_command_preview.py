@@ -51,7 +51,7 @@ def test_local_command_preview_runs_from_video_to_preview_export(tmp_path) -> No
 
     result = run_local_command_preview(
         project,
-        source_video=source_video,
+        source_media=source_video,
         profiles=LocalCommandPipelineProfiles(
             separation=LocalCommandProfile(
                 id="mock-separate",
@@ -111,8 +111,8 @@ def test_local_command_preview_runs_from_video_to_preview_export(tmp_path) -> No
     )
 
     segment = project.timeline.get_segment("seg-001")
-    assert result.final_video.is_file()
-    assert result.final_video.stat().st_size > 0
+    assert result.final_output.is_file()
+    assert result.final_output.stat().st_size > 0
     assert result.metadata["ai_dubbing"] == "true"
     assert result.generated_segments[0].is_file()
     assert segment.status == "rendered"
@@ -185,7 +185,7 @@ def test_local_command_preview_uses_translation_adapter(tmp_path) -> None:
 
     run_local_command_preview(
         project,
-        source_video=source_video,
+        source_media=source_video,
         profiles=_mock_profiles(tmp_path),
         translation_adapter=adapter,
         ffmpeg_path=ffmpeg,
@@ -265,7 +265,7 @@ def test_local_command_preview_can_use_custom_tts_adapter(tmp_path) -> None:
 
     result = run_local_command_preview(
         project,
-        source_video=source_video,
+        source_media=source_video,
         profiles=_mock_profiles(tmp_path),
         translation_overrides={"seg-001": "\u4f60\u597d\u3002"},
         tts_adapter=tts_adapter,
@@ -332,7 +332,7 @@ def test_local_command_preview_marks_failed_stage_for_tts_error(tmp_path) -> Non
     with pytest.raises(RuntimeError, match="tts model crashed"):
         run_local_command_preview(
             project,
-            source_video=source_video,
+            source_media=source_video,
             profiles=_mock_profiles(tmp_path),
             translation_overrides={"seg-001": "\u4f60\u597d\u3002"},
             tts_adapter=FailingTtsAdapter(),
@@ -443,7 +443,7 @@ def test_local_command_preview_resumes_completed_file_stages(tmp_path) -> None:
     asr_adapter = RecordingAsrAdapter()
     result = run_local_command_preview(
         project,
-        source_video=tmp_path / "source-does-not-need-to-exist.mp4",
+        source_media=tmp_path / "source-does-not-need-to-exist.mp4",
         profiles=_mock_profiles(tmp_path),
         separation_adapter=ExplodingSeparationAdapter(),
         asr_adapter=asr_adapter,
@@ -454,7 +454,7 @@ def test_local_command_preview_resumes_completed_file_stages(tmp_path) -> None:
     )
 
     assert asr_adapter.audio_paths == [project.path / "work" / "vocals.wav"]
-    assert result.final_video.is_file()
+    assert result.final_output.is_file()
     assert project.jobs.get("import").status == "completed"  # type: ignore[union-attr]
     assert project.jobs.get("audio_extract").status == "completed"  # type: ignore[union-attr]
     assert project.jobs.get("separation").status == "completed"  # type: ignore[union-attr]
@@ -523,14 +523,14 @@ def test_local_command_preview_resumes_completed_timeline_and_export_artifacts(t
 
     result = run_local_command_preview(
         project,
-        source_video=tmp_path / "missing-source.mp4",
+        source_media=tmp_path / "missing-source.mp4",
         profiles=_mock_profiles(tmp_path),
         asr_adapter=ExplodingAsrAdapter(),
         tts_adapter=ExplodingTtsAdapter(),
         watermark_text=None,
     )
 
-    assert result.final_video == final_video
+    assert result.final_output == final_video
     assert final_video.read_bytes() == b"existing final"
     assert result.generated_segments == [project.path / "work" / "generated_segments" / "seg-001.wav"]
 
@@ -638,7 +638,7 @@ def test_local_command_preview_resumes_failed_tts_from_rendered_segments(tmp_pat
     with pytest.raises(RuntimeError, match="second segment failed"):
         run_local_command_preview(
             project,
-            source_video=source_video,
+            source_media=source_video,
             profiles=_mock_profiles(tmp_path),
             asr_adapter=TwoSegmentAsrAdapter(),
             tts_adapter=FailSecondTtsAdapter(),
@@ -654,7 +654,7 @@ def test_local_command_preview_resumes_failed_tts_from_rendered_segments(tmp_pat
     recording_tts = RecordingTtsAdapter()
     result = run_local_command_preview(
         project,
-        source_video=source_video,
+        source_media=source_video,
         profiles=_mock_profiles(tmp_path),
         asr_adapter=TwoSegmentAsrAdapter(),
         tts_adapter=recording_tts,
@@ -664,7 +664,7 @@ def test_local_command_preview_resumes_failed_tts_from_rendered_segments(tmp_pat
     )
 
     assert recording_tts.texts == ["第二句。"]
-    assert result.final_video.is_file()
+    assert result.final_output.is_file()
     assert project.timeline.get_segment("seg-001").status == "rendered"
     assert project.timeline.get_segment("seg-002").status == "rendered"
 
@@ -732,7 +732,7 @@ def test_local_command_preview_can_use_custom_asr_adapter(tmp_path) -> None:
 
     run_local_command_preview(
         project,
-        source_video=source_video,
+        source_media=source_video,
         profiles=_mock_profiles(tmp_path),
         asr_adapter=asr_adapter,
         translation_overrides={"seg-001": "\u4f60\u597d\u3002"},
@@ -801,7 +801,7 @@ def test_local_command_preview_can_use_custom_separation_adapter(tmp_path) -> No
 
     run_local_command_preview(
         project,
-        source_video=source_video,
+        source_media=source_video,
         profiles=_mock_profiles(tmp_path),
         separation_adapter=separation_adapter,
         translation_overrides={"seg-001": "\u4f60\u597d\u3002"},
@@ -868,7 +868,7 @@ def test_local_command_preview_can_use_custom_diarization_adapter(tmp_path) -> N
 
     run_local_command_preview(
         project,
-        source_video=source_video,
+        source_media=source_video,
         profiles=_mock_profiles(tmp_path),
         diarization_adapter=diarization_adapter,
         translation_overrides={"seg-001": "\u4f60\u597d\u3002"},

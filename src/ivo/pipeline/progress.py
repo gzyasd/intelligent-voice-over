@@ -19,14 +19,14 @@ PipelineStage = Literal[
 PipelineProgressStatus = Literal["started", "progress", "completed", "failed", "skipped"]
 
 STAGE_LABELS: dict[PipelineStage, str] = {
-    "import": "导入视频",
+    "import": "导入素材",
     "audio_extract": "提取音频",
     "separation": "分离人声/背景",
     "asr": "识别字幕",
     "diarization": "识别角色",
     "translation": "翻译改写",
     "tts": "生成配音",
-    "export": "合成视频",
+    "export": "合成输出",
 }
 
 STAGE_ORDER: tuple[PipelineStage, ...] = (

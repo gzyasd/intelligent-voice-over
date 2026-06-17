@@ -33,7 +33,6 @@ from ivo.model_smoke import (
     run_asr_smoke_probe,
     run_local_adapter_smoke_probe,
 )
-from ivo.models.manager import ModelManager
 from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles, run_local_command_preview
 from ivo.pipeline.mock_pipeline import run_mock_dubbing_pipeline
 from ivo.pipeline.separate_audio import HttpSeparationAdapter
@@ -130,7 +129,7 @@ def doctor_models(
 
 @app.command("mock-preview")
 def mock_preview(
-    source_video: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    source_media: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
     output_dir: Annotated[Path | None, typer.Argument(file_okay=False)] = None,
     project_name: Annotated[str, typer.Option()] = "Mock Preview",
     source_language: Annotated[SourceLanguage, typer.Option()] = "en",
@@ -138,14 +137,17 @@ def mock_preview(
     """Create a project and run the built-in mock dubbing pipeline."""
     output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
+    ct = _detect_content_type(source_media)
     project = DubbingProject.create(
         output_dir / f"{project_name}.ivoproj",
         name=project_name,
         source_language=source_language,
         target_language="zh",
+        content_type=ct,
+        source_media=source_media,
     )
-    result = run_mock_dubbing_pipeline(project, source_video=source_video)
-    typer.echo(f"Mock preview created: {result.final_video}")
+    result = run_mock_dubbing_pipeline(project, source_media=source_media)
+    typer.echo(f"Mock preview created: {result.final_output}")
 
 
 @app.command("batch-mock-preview")
@@ -155,29 +157,27 @@ def batch_mock_preview(
     source_language: Annotated[SourceLanguage, typer.Option()] = "en",
     watermark: Annotated[bool, typer.Option("--watermark/--no-watermark")] = True,
 ) -> None:
-    """Run mock preview for every video file in a directory."""
+    """Run mock preview for every media file in a directory."""
     output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
-    video_paths = [
-        path
-        for path in sorted(input_dir.iterdir())
-        if path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".mov", ".avi"}
-    ]
-    for source_video in video_paths:
+    media_paths = _iter_media_paths(input_dir)
+    for source_media in media_paths:
+        ct = _detect_content_type(source_media)
         project = DubbingProject.create(
-            output_dir / f"{source_video.stem}.ivoproj",
-            name=source_video.stem,
+            output_dir / f"{source_media.stem}.ivoproj",
+            name=source_media.stem,
             source_language=source_language,
             target_language="zh",
-            source_video=source_video,
+            content_type=ct,
+            source_media=source_media,
         )
         result = run_mock_dubbing_pipeline(
             project,
-            source_video=source_video,
+            source_media=source_media,
             watermark_text="AI Dubbed" if watermark else "",
         )
-        typer.echo(f"{source_video.name}: {result.final_video}")
-    typer.echo(f"Processed {len(video_paths)} videos")
+        typer.echo(f"{source_media.name}: {result.final_output}")
+    typer.echo(f"Processed {len(media_paths)} items")
 
 
 @app.command("batch-local-preview")
@@ -220,7 +220,7 @@ def batch_local_preview(
         ),
     ] = False,
 ) -> None:
-    """Run local command preview for every video file in a directory."""
+    """Run local command preview for every media file in a directory."""
     resolved_profiles_path = profiles_path or default_local_command_profiles_path()
     if resolved_profiles_path is None:
         raise typer.BadParameter(
@@ -243,83 +243,86 @@ def batch_local_preview(
 
     output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
-    video_paths = _iter_video_paths(input_dir)
+    media_paths = _iter_media_paths(input_dir)
     failures: list[str] = []
     report_items: list[dict[str, object]] = []
-    for source_video in video_paths:
-        project_path = output_dir / f"{source_video.stem}.ivoproj"
-        final_video = project_path / "renders" / "local-preview.mp4"
-        if skip_existing and final_video.is_file():
+    for source_media in media_paths:
+        project_path = output_dir / f"{source_media.stem}.ivoproj"
+        ct = _detect_content_type(source_media)
+        output_suffix = ".mp4" if ct == "video" else ".wav"
+        final_output = project_path / "renders" / f"local-preview{output_suffix}"
+        if skip_existing and final_output.is_file():
             report_items.append(
                 _build_batch_report_item(
-                    source_video=source_video,
+                    source_media=source_media,
                     project_path=project_path,
                     status="skipped",
-                    final_video=final_video,
+                    final_output=final_output,
                 )
             )
-            typer.echo(f"{source_video.name}: SKIPPED existing output")
+            typer.echo(f"{source_media.name}: SKIPPED existing output")
             continue
         if project_path.exists() and not resume_existing:
             message = (
                 f"Project already exists: {project_path}. "
                 "Use --resume-existing to continue it."
             )
-            failures.append(source_video.name)
+            failures.append(source_media.name)
             report_items.append(
                 _build_batch_report_item(
-                    source_video=source_video,
+                    source_media=source_media,
                     project_path=project_path,
                     status="failed",
                     error=message,
                 )
             )
-            typer.echo(f"{source_video.name}: FAILED: {message}")
+            typer.echo(f"{source_media.name}: FAILED: {message}")
             continue
         if resume_existing and project_path.is_dir():
             project = DubbingProject.load(project_path)
         else:
             project = DubbingProject.create(
                 project_path,
-                name=source_video.stem,
+                name=source_media.stem,
                 source_language=source_language,
                 target_language=target_language,
-                source_video=source_video,
+                content_type=ct,
+                source_media=source_media,
             )
         try:
             result = run_local_command_preview(
                 project,
-                source_video=source_video,
+                source_media=source_media,
                 profiles=profiles,
                 watermark_text="AI Dubbed" if watermark else None,
             )
         except Exception as exc:
-            failures.append(source_video.name)
+            failures.append(source_media.name)
             report_items.append(
                 _build_batch_report_item(
-                    source_video=source_video,
+                    source_media=source_media,
                     project_path=project.path,
                     status="failed",
                     error=str(exc),
                     failed_stage=_latest_failed_stage(project),
                 )
             )
-            typer.echo(f"{source_video.name}: FAILED: {exc}")
+            typer.echo(f"{source_media.name}: FAILED: {exc}")
             continue
         report_items.append(
             _build_batch_report_item(
-                source_video=source_video,
+                source_media=source_media,
                 project_path=project.path,
                 status="passed",
-                final_video=result.final_video,
+                final_output=result.final_output,
             )
         )
-        typer.echo(f"{source_video.name}: {result.final_video}")
-    typer.echo(f"Processed {len(video_paths)} videos")
+        typer.echo(f"{source_media.name}: {result.final_output}")
+    typer.echo(f"Processed {len(media_paths)} items")
     if report is not None:
         _write_batch_report(report, report_items)
     if failures:
-        typer.echo(f"Failed {len(failures)} of {len(video_paths)} videos")
+        typer.echo(f"Failed {len(failures)} of {len(media_paths)} items")
         raise typer.Exit(1)
 
 
@@ -485,7 +488,7 @@ def validate_http_profile_command(
 
 @app.command("local-preview")
 def local_preview(
-    source_video: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    source_media: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
     output_dir: Annotated[Path | None, typer.Argument(file_okay=False)] = None,
     profiles_path: Annotated[
         Path | None,
@@ -567,6 +570,7 @@ def local_preview(
     output_dir = output_dir or default_runs_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     project_path = output_dir / f"{project_name}.ivoproj"
+    ct = _detect_content_type(source_media)
     if resume_existing and project_path.is_dir():
         project = DubbingProject.load(project_path)
     else:
@@ -581,7 +585,8 @@ def local_preview(
             name=project_name,
             source_language=source_language,
             target_language=target_language,
-            source_video=source_video,
+            content_type=ct,
+            source_media=source_media,
         )
     separation_extra: dict[str, object] = {
         key: value for key, value in _parse_key_value_options(separation_var or []).items()
@@ -652,7 +657,7 @@ def local_preview(
     )
     result = run_local_command_preview(
         project,
-        source_video=source_video,
+        source_media=source_media,
         profiles=profiles,
         translation_overrides=_parse_key_value_options(target_text or []),
         separation_adapter=separation_adapter,
@@ -663,7 +668,7 @@ def local_preview(
         ffmpeg_path=str(ffmpeg_path) if ffmpeg_path is not None else None,
         watermark_text="AI Dubbed" if watermark else None,
     )
-    typer.echo(f"Local preview created: {result.final_video}")
+    typer.echo(f"Local preview created: {result.final_output}")
 
 
 @adapter_app.command("add-http")
@@ -715,7 +720,7 @@ def adapter_list(store_path: Annotated[Path, typer.Argument(dir_okay=False)]) ->
         typer.echo(f"{profile.id}\t{profile.stage}\t{profile.method}\t{profile.url}")
 
 
-@model_app.command("add-local")
+@model_app.command("add-local", deprecated=True)
 def model_add_local(
     store_path: Annotated[Path, typer.Argument(dir_okay=False)],
     model_id: Annotated[str, typer.Option("--id")],
@@ -725,32 +730,28 @@ def model_add_local(
     language: Annotated[list[str] | None, typer.Option("--language")] = None,
     confirm_license: Annotated[bool, typer.Option()] = False,
 ) -> None:
-    """Register a local model path without bundling model weights."""
-    manager = ModelManager.from_store(store_path)
-    manager.register_local_model(
-        model_id=model_id,
-        stage=stage,
-        name=name,
-        path=path,
-        languages=language or [],
+    """[DEPRECATED] Use model scheme profiles instead. See 'ivo model setup-plan'."""
+    typer.echo(
+        "This command is deprecated. "
+        "Local model registration has been replaced by model scheme profiles. "
+        "Use 'ivo model setup-plan' to inspect available models, "
+        "or configure adapters directly in the UI Model Center.",
+        err=True,
     )
-    if confirm_license:
-        manager.licenses.confirm(model_id)
-    manager.save()
-    typer.echo(f"Saved local model profile: {model_id}")
+    raise typer.Exit(code=1)
 
 
-@model_app.command("list")
+@model_app.command("list", deprecated=True)
 def model_list(store_path: Annotated[Path, typer.Argument(dir_okay=False)]) -> None:
-    """List local and configured model profiles."""
-    manager = ModelManager.from_store(store_path)
-    profiles = manager.registry.list_all()
-    if not profiles:
-        typer.echo("No model profiles configured.")
-        return
-    for profile in profiles:
-        license_status = "yes" if manager.can_use(profile.id) else "no"
-        typer.echo(f"{profile.id}\t{profile.stage}\t{profile.backend}\tlicense: {license_status}")
+    """[DEPRECATED] Use model scheme profiles instead. See 'ivo model setup-plan'."""
+    typer.echo(
+        "This command is deprecated. "
+        "Model listing has been replaced by model scheme profiles. "
+        "Use 'ivo model setup-plan' to inspect available models, "
+        "or view configured adapters in the UI Model Center.",
+        err=True,
+    )
+    raise typer.Exit(code=1)
 
 
 @model_app.command("setup-plan")
@@ -872,36 +873,43 @@ def _parse_key_value_options(options: list[str]) -> dict[str, str]:
     return parsed
 
 
-def _iter_video_paths(input_dir: Path) -> list[Path]:
+def _iter_media_paths(input_dir: Path) -> list[Path]:
     return [
         path
         for path in sorted(input_dir.iterdir())
-        if path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".mov", ".avi"}
+        if path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".mov", ".avi", ".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg"}
     ]
+
+
+def _detect_content_type(path: Path) -> Literal["video", "audio"]:
+    suffix = path.suffix.lower()
+    if suffix in {".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg"}:
+        return "audio"
+    return "video"
 
 
 def _build_batch_report_item(
     *,
-    source_video: Path,
+    source_media: Path,
     project_path: Path,
     status: str,
-    final_video: Path | None = None,
+    final_output: Path | None = None,
     error: str | None = None,
     failed_stage: str | None = None,
 ) -> dict[str, object]:
     return {
-        "source_video": str(source_video),
-        "video": str(source_video),
+        "source_media": str(source_media),
+        "media": str(source_media),
         "project_path": str(project_path),
         "status": status,
         "failed_stage": failed_stage,
-        "final_video": str(final_video) if final_video is not None else None,
-        "duration_seconds": _probe_duration_seconds(source_video),
+        "final_output": str(final_output) if final_output is not None else None,
+        "duration_seconds": _probe_duration_seconds(source_media),
         "error": error,
     }
 
 
-def _probe_duration_seconds(source_video: Path) -> int | None:
+def _probe_duration_seconds(source_media: Path) -> int | None:
     ffprobe = resolve_executable("ffprobe", env_var="IVO_FFPROBE_PATH")
     if ffprobe is None:
         return None
@@ -915,7 +923,7 @@ def _probe_duration_seconds(source_video: Path) -> int | None:
                 "format=duration",
                 "-of",
                 "default=noprint_wrappers=1:nokey=1",
-                str(source_video),
+                str(source_media),
             ],
             check=True,
             capture_output=True,
@@ -952,19 +960,19 @@ def _latest_failed_stage(project: DubbingProject) -> str | None:
     return next(iter(sorted(failed_stages)), None)
 
 
-def _write_batch_report(report_path: Path, videos: list[dict[str, object]]) -> None:
-    failed = sum(1 for item in videos if item["status"] == "failed")
-    skipped = sum(1 for item in videos if item["status"] == "skipped")
-    passed = sum(1 for item in videos if item["status"] in {"passed", "completed"})
+def _write_batch_report(report_path: Path, items: list[dict[str, object]]) -> None:
+    failed = sum(1 for item in items if item["status"] == "failed")
+    skipped = sum(1 for item in items if item["status"] == "skipped")
+    passed = sum(1 for item in items if item["status"] in {"passed", "completed"})
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(
             {
-                "processed": len(videos),
+                "processed": len(items),
                 "completed": passed,
                 "skipped": skipped,
                 "failed": failed,
-                "videos": videos,
+                "items": items,
             },
             ensure_ascii=False,
             indent=2,

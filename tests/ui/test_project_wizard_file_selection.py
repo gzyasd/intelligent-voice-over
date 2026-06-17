@@ -25,10 +25,10 @@ def test_project_wizard_browse_buttons_fill_video_and_output_paths(
     wizard = ProjectWizard()
     qtbot.addWidget(wizard)
 
-    wizard.browse_video_file()
+    wizard.browse_media_file()
     wizard.browse_output_dir()
 
-    assert wizard.video_path_edit.text() == str(source_video)
+    assert wizard.media_path_edit.text() == str(source_video)
     assert wizard.output_dir_edit.text() == str(output_dir)
 
 
@@ -56,7 +56,7 @@ def test_project_wizard_has_create_button_and_chinese_choices(qtbot, tmp_path) -
     assert wizard.series_type_combo.itemText(0) == "美剧"
 
     wizard.project_name_edit.setText("Episode 01")
-    wizard.video_path_edit.setText(str(tmp_path / "episode.mp4"))
+    wizard.media_path_edit.setText(str(tmp_path / "episode.mp4"))
     wizard.output_dir_edit.setText(str(tmp_path))
 
     assert wizard.create_project_button.isEnabled() is True
@@ -71,7 +71,7 @@ def test_project_wizard_collects_translation_style_inputs(qtbot, tmp_path) -> No
     wizard = ProjectWizard()
     qtbot.addWidget(wizard)
     wizard.project_name_edit.setText("Episode 01")
-    wizard.video_path_edit.setText(str(tmp_path / "episode.mp4"))
+    wizard.media_path_edit.setText(str(tmp_path / "episode.mp4"))
     wizard.output_dir_edit.setText(str(tmp_path))
     wizard.set_source_language("ja")
     wizard.set_series_type("japanese_drama")
@@ -98,7 +98,7 @@ def test_main_window_creates_project_from_wizard_inputs(qtbot, tmp_path) -> None
     wizard = ProjectWizard()
     qtbot.addWidget(wizard)
     wizard.project_name_edit.setText("Episode 01")
-    wizard.video_path_edit.setText(str(source_video))
+    wizard.media_path_edit.setText(str(source_video))
     wizard.output_dir_edit.setText(str(output_dir))
     wizard.set_source_language("ja")
     wizard.set_series_type("japanese_drama")
@@ -113,7 +113,7 @@ def test_main_window_creates_project_from_wizard_inputs(qtbot, tmp_path) -> None
     assert project.source_language == "ja"
     assert project.settings.load().translation.series_type == "japanese_drama"
     assert project.settings.load().translation.translation_style_notes == "日剧口吻"
-    assert window.source_video_path == source_video
+    assert window.source_media_path == source_video
     assert window.progress_label.text() == "项目已创建。下一步：点击“开始生成配音（完整流程）”。"
 
 
@@ -123,8 +123,8 @@ def test_project_wizard_uses_four_step_flow(qtbot) -> None:
     wizard = ProjectWizard()
     qtbot.addWidget(wizard)
 
-    assert wizard.step_titles() == ["选择视频", "内容与语言", "选择方案", "确认创建"]
-    assert wizard.current_step_title() == "选择视频"
+    assert wizard.step_titles() == ["选择素材", "内容与语言", "选择方案", "确认创建"]
+    assert wizard.current_step_title() == "选择素材"
 
     wizard.next_step_button.click()
 
@@ -132,7 +132,7 @@ def test_project_wizard_uses_four_step_flow(qtbot) -> None:
 
     wizard.back_step_button.click()
 
-    assert wizard.current_step_title() == "选择视频"
+    assert wizard.current_step_title() == "选择素材"
 
 
 def test_project_wizard_glossary_button_hides_json_word(qtbot) -> None:
@@ -155,7 +155,7 @@ def test_project_wizard_can_request_start_immediately(qtbot, tmp_path) -> None:
     wizard = ProjectWizard()
     qtbot.addWidget(wizard)
     wizard.project_name_edit.setText("Episode 01")
-    wizard.video_path_edit.setText(str(source))
+    wizard.media_path_edit.setText(str(source))
     wizard.output_dir_edit.setText(str(output_dir))
 
     wizard.create_and_start_button.click()

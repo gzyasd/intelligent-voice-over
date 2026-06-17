@@ -127,6 +127,8 @@ def build_local_readiness_report(
                 )
             )
 
+    ui_results.extend(check_optional_runtime_warning(dependencies))
+
     return LocalReadinessReport(
         ok=not missing,
         checked_profiles=checked_profiles,
@@ -294,3 +296,56 @@ def _resolve_runtime_path(path: Path, base_dir: Path | None) -> Path:
     if path.is_absolute() or base_dir is None:
         return path
     return base_dir / path
+
+
+def check_optional_runtime_warning(
+    dependencies: list[OptionalDependencyStatus],
+) -> list[ReadinessResult]:
+    """Check for known runtime warnings in installed optional dependencies.
+
+    Returns a list of ReadinessResult with status='warning' for each
+    known runtime issue that does not block the pipeline but should be
+    surfaced to the user.
+    """
+    results: list[ReadinessResult] = []
+    for dep in dependencies:
+        if not dep.installed:
+            continue
+        # Check for torchcodec DLL issues in pyannote venv
+        if dep.venv_name == ".venv-pyannote" and dep.stage == "diarization":
+            torchcodec_ok = _check_torchcodec_in_venv(dep.venv_name)
+            if not torchcodec_ok:
+                results.append(
+                    ReadinessResult(
+                        stage="diarization",
+                        provider=dep.name,
+                        status="warning",
+                        message=(
+                            "torchcodec/FFmpeg DLL 不完整，内置音频解码可能不可用。"
+                            "当前流程已使用 soundfile 预加载音频，通常不影响说话人识别。"
+                            "如后续说话人识别失败，请检查 .venv-pyannote 中 torchcodec 与 FFmpeg 的兼容性。"
+                        ),
+                    )
+                )
+    return results
+
+
+def _check_torchcodec_in_venv(venv_name: str) -> bool:
+    """Return True if torchcodec imports successfully in the given venv."""
+    import subprocess
+
+    for base in (Path.cwd(), Path(__file__).resolve().parents[3]):
+        python = base / venv_name / "Scripts" / "python.exe"
+        if not python.is_file():
+            continue
+        try:
+            result = subprocess.run(
+                [str(python), "-c", "import torchcodec"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, OSError):
+            return False
+    return True

@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from ivo.core.jobs import JobStore
 from ivo.core.settings import ProjectSettingsStore
@@ -16,11 +17,20 @@ class ProjectMetadata(BaseModel):
     name: str
     source_language: SourceLanguage
     target_language: TargetLanguage
+    content_type: Literal["video", "audio"] = "video"
+    source_media_path: Path | None = None
+    # Backward compatibility: read old source_video_path if source_media_path is None
     source_video_path: Path | None = None
     generation_status: str = "not_started"
     generation_started_at: float | None = None
     generation_completed_at: float | None = None
     generation_elapsed_seconds: int | None = None
+
+    @model_validator(mode="after")
+    def _compatibility_source_media_path(self) -> ProjectMetadata:
+        if self.source_media_path is None and self.source_video_path is not None:
+            self.source_media_path = self.source_video_path
+        return self
 
 
 class DubbingProject:
@@ -30,7 +40,8 @@ class DubbingProject:
         self.name = metadata.name
         self.source_language = metadata.source_language
         self.target_language = metadata.target_language
-        self.source_video_path = metadata.source_video_path
+        self.content_type = metadata.content_type
+        self.source_media_path = metadata.source_media_path
         self.timeline = TimelineStore(path / "segments.sqlite")
         self.speakers = SpeakerProfileStore(path / "speakers.json")
         self.settings = ProjectSettingsStore(path / "settings.json")
@@ -44,7 +55,8 @@ class DubbingProject:
         name: str,
         source_language: SourceLanguage,
         target_language: TargetLanguage,
-        source_video: Path | None = None,
+        content_type: Literal["video", "audio"] = "video",
+        source_media: Path | None = None,
     ) -> DubbingProject:
         path.mkdir(parents=True, exist_ok=False)
         for directory_name in ("assets", "work", "renders"):
@@ -54,10 +66,11 @@ class DubbingProject:
             name=name,
             source_language=source_language,
             target_language=target_language,
-            source_video_path=source_video,
+            content_type=content_type,
+            source_media_path=source_media,
         )
         (path / "project.json").write_text(
-            metadata.model_dump_json(indent=2),
+            metadata.model_dump_json(indent=2, exclude_none=True),
             encoding="utf-8",
         )
         return cls(path, metadata)
@@ -111,6 +124,6 @@ class DubbingProject:
 
     def _save_metadata(self) -> None:
         (self.path / "project.json").write_text(
-            self.metadata.model_dump_json(indent=2),
+            self.metadata.model_dump_json(indent=2, exclude_none=True),
             encoding="utf-8",
         )

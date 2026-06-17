@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 from PySide6.QtWidgets import (
@@ -29,7 +30,8 @@ from ivo.ui.theme import mark_caption_text, mark_heading2, mark_scheme_detail_fr
 
 class ProjectWizardValues(BaseModel):
     project_name: str
-    source_video: Path
+    source_media: Path
+    content_type: Literal["video", "audio"]
     output_dir: Path
     source_language: SourceLanguage
     scheme_id: str | None = None
@@ -40,7 +42,7 @@ class ProjectWizardValues(BaseModel):
 
 
 class ProjectWizard(QDialog):
-    STEP_TITLES = ["选择视频", "内容与语言", "选择方案", "确认创建"]
+    STEP_TITLES = ["选择素材", "内容与语言", "选择方案", "确认创建"]
 
     def __init__(
         self,
@@ -54,8 +56,8 @@ class ProjectWizard(QDialog):
         self._store = store
 
         self.project_name_edit = QLineEdit()
-        self.video_path_edit = QLineEdit()
-        self.video_browse_button = QPushButton("浏览视频")
+        self.media_path_edit = QLineEdit()
+        self.media_browse_button = QPushButton("浏览素材")
         self.output_dir_edit = QLineEdit(str(default_runs_dir()))
         self.output_dir_browse_button = QPushButton("浏览输出目录")
         self.source_language_combo = QComboBox()
@@ -89,7 +91,7 @@ class ProjectWizard(QDialog):
 
         self._load_schemes()
 
-        self.video_browse_button.clicked.connect(self.browse_video_file)
+        self.media_browse_button.clicked.connect(self.browse_media_file)
         self.output_dir_browse_button.clicked.connect(self.browse_output_dir)
         self.glossary_browse_button.clicked.connect(self.browse_glossary_file)
         self.create_project_button.clicked.connect(self.accept)
@@ -98,11 +100,11 @@ class ProjectWizard(QDialog):
         self.back_step_button.clicked.connect(self.previous_step)
         self.next_step_button.clicked.connect(self.next_step)
         self.project_name_edit.textChanged.connect(self._refresh_create_button)
-        self.video_path_edit.textChanged.connect(self._refresh_create_button)
+        self.media_path_edit.textChanged.connect(self._refresh_create_button)
         self.output_dir_edit.textChanged.connect(self._refresh_create_button)
         self.scheme_combo.currentIndexChanged.connect(self._on_scheme_changed)
 
-        self.step_stack.addWidget(self._build_video_step())
+        self.step_stack.addWidget(self._build_media_step())
         self.step_stack.addWidget(self._build_content_step())
         self.step_stack.addWidget(self._build_scheme_step())
         self.step_stack.addWidget(self._build_confirm_step())
@@ -180,12 +182,12 @@ class ProjectWizard(QDialog):
         lines.append(f"内容类型：{content_types}")
         self._scheme_detail_label.setText("\n".join(lines))
 
-    def _build_video_step(self) -> QWidget:
+    def _build_media_step(self) -> QWidget:
         page = QWidget()
         form = QFormLayout()
         form.addRow("项目名称", self.project_name_edit)
-        form.addRow("源视频", self.video_path_edit)
-        form.addRow("", self.video_browse_button)
+        form.addRow("源素材", self.media_path_edit)
+        form.addRow("", self.media_browse_button)
         form.addRow("输出目录", self.output_dir_edit)
         form.addRow("", self.output_dir_browse_button)
         page.setLayout(form)
@@ -238,19 +240,19 @@ class ProjectWizard(QDialog):
     def is_valid(self) -> bool:
         return bool(
             self.project_name_edit.text().strip()
-            and self.video_path_edit.text().strip()
+            and self.media_path_edit.text().strip()
             and self.output_dir_edit.text().strip()
         )
 
-    def browse_video_file(self) -> None:
+    def browse_media_file(self) -> None:
         path, _selected_filter = QFileDialog.getOpenFileName(
             self,
-            "选择源视频",
+            "选择源素材",
             "",
-            "视频文件 (*.mp4 *.mkv *.mov *.avi);;所有文件 (*)",
+            "视频文件 (*.mp4 *.mkv *.mov *.avi);;音频文件 (*.wav *.mp3 *.m4a *.flac *.aac *.ogg);;所有文件 (*)",
         )
         if path:
-            self.video_path_edit.setText(path)
+            self.media_path_edit.setText(path)
 
     def browse_output_dir(self) -> None:
         path = QFileDialog.getExistingDirectory(
@@ -280,9 +282,18 @@ class ProjectWizard(QDialog):
     def values(self) -> ProjectWizardValues:
         raw_glossary_path = self.glossary_path_edit.text().strip()
         scheme_id = self.scheme_combo.currentData()
+        raw_path = self.media_path_edit.text().strip()
+        source_path = Path(raw_path)
+        # Auto-detect content type by file extension
+        suffix = source_path.suffix.lower()
+        if suffix in (".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg"):
+            content_type: Literal["video", "audio"] = "audio"
+        else:
+            content_type = "video"
         return ProjectWizardValues(
             project_name=self.project_name_edit.text().strip(),
-            source_video=Path(self.video_path_edit.text().strip()),
+            source_media=source_path,
+            content_type=content_type,
             output_dir=Path(self.output_dir_edit.text().strip()),
             source_language=self.source_language_combo.currentData(),
             scheme_id=scheme_id if isinstance(scheme_id, str) else None,

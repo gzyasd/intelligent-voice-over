@@ -13,11 +13,11 @@ def test_scan_project_library_reads_project_status_and_final_video(tmp_path: Pat
         name="Episode 01",
         source_language="ja",
         target_language="zh",
-        source_video=tmp_path / "episode01.mp4",
+        source_media=tmp_path / "episode01.mp4",
     )
     completed.jobs.mark_completed("export", "completed")
-    final_video = completed.path / "renders" / "local-preview.mp4"
-    final_video.write_bytes(b"video")
+    final_output = completed.path / "renders" / "local-preview.mp4"
+    final_output.write_bytes(b"video")
     failed = DubbingProject.create(
         runs_dir / "Episode 02.ivoproj",
         name="Episode 02",
@@ -31,8 +31,8 @@ def test_scan_project_library_reads_project_status_and_final_video(tmp_path: Pat
     assert [item.name for item in items] == ["Episode 02", "Episode 01"]
     by_name = {item.name: item for item in items}
     assert by_name["Episode 01"].status == "已完成"
-    assert by_name["Episode 01"].final_video_path == final_video
-    assert by_name["Episode 02"].status == "失败"
+    assert by_name["Episode 01"].final_output_path == final_output
+    assert by_name["Episode 02"].status == "生成失败"
     assert by_name["Episode 02"].status_detail == "tts: model missing"
 
 
@@ -87,3 +87,17 @@ def test_scan_project_library_keeps_unreadable_projects_visible(tmp_path: Path) 
     assert items[0].name == "Broken"
     assert items[0].status == "无法读取"
     assert items[0].status_detail
+
+
+def test_project_library_detects_final_mp3(tmp_path: Path) -> None:
+    """_final_output_path finds final.mp3 when it exists."""
+    from ivo.core.project_library import _final_output_path
+
+    project_path = tmp_path / "audio_lib.ivoproj"
+    renders = project_path / "renders"
+    renders.mkdir(parents=True)
+    (renders / "final.mp3").write_text("mock mp3")
+
+    result = _final_output_path(project_path)
+    assert result is not None
+    assert result.name == "final.mp3"

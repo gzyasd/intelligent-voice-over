@@ -22,7 +22,7 @@ def test_project_overview_page_shows_project_summary(qtbot, tmp_path) -> None:
         name="Episode 01",
         source_language="ja",
         target_language="zh",
-        source_video=source,
+        source_media=source,
     )
 
     page = ProjectOverviewPage()
@@ -30,7 +30,7 @@ def test_project_overview_page_shows_project_summary(qtbot, tmp_path) -> None:
     page.set_project(project)
 
     assert page.project_name_label.text() == "Episode 01"
-    assert page.source_video_label.text().endswith("episode.mp4")
+    assert page.source_media_label.text().endswith("episode.mp4")
     assert page.language_label.text() == "日语 -> 中文"
     assert page.status_label.text() == "未开始"
     assert page.primary_action_button.text() == "开始生成"
@@ -53,7 +53,7 @@ def test_project_overview_page_marks_failed_project(qtbot, tmp_path) -> None:
     page.set_project(project)
 
     assert page.status_label.text() == "生成失败"
-    assert page.primary_action_button.text() == "重试失败阶段"
+    assert page.primary_action_button.text() == "继续/重试生成"
 
 
 def test_main_window_updates_project_overview_after_project_creation(
@@ -72,7 +72,7 @@ def test_main_window_updates_project_overview_after_project_creation(
 
     window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="ko",
     )
@@ -109,7 +109,7 @@ def test_main_window_project_overview_open_buttons_use_shell(
 
     window.open_project_path(project.path)
     window.project_overview.open_folder_button.click()
-    window.project_overview.open_video_button.click()
+    window.project_overview.open_output_button.click()
     window.project_overview.primary_action_button.click()
 
     assert opened == [project.path, final_video, final_video]
@@ -125,10 +125,14 @@ def test_project_overview_running_primary_action_shows_progress(qtbot, tmp_path)
         source_language="en",
         target_language="zh",
     )
+    project.mark_generation_started(now=100.0)
     project.jobs.mark_running("tts")
     window = MainWindow()
     qtbot.addWidget(window)
     window.open_project_path(project.path)
+    # Simulate the project being in the active generation set
+    window._active_generation_project_paths.add(project.path.resolve())
+    window._refresh_current_project_view()
 
     window.project_overview.primary_action_button.click()
 

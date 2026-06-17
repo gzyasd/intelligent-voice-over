@@ -54,7 +54,7 @@ def test_main_window_opens_export_dialog_and_starts_background_export(
         name="Episode 01",
         source_language="en",
         target_language="zh",
-        source_video=source_video,
+        source_media=source_video,
     )
     (project.path / "work" / "background.wav").write_bytes(b"background")
 
@@ -75,7 +75,7 @@ def test_main_window_opens_export_dialog_and_starts_background_export(
     window = MainWindow()
     qtbot.addWidget(window)
     window.current_project = project
-    window.source_video_path = source_video
+    window.source_media_path = source_video
 
     def fake_start_final_export_background(dialog):
         captured["dialog"] = dialog
@@ -111,7 +111,7 @@ def test_main_window_prefills_final_export_path_in_project_renders(
         name="Episode 01",
         source_language="ja",
         target_language="zh",
-        source_video=source_video,
+        source_media=source_video,
     )
 
     captured: dict[str, object] = {}
@@ -126,7 +126,7 @@ def test_main_window_prefills_final_export_path_in_project_renders(
     window = MainWindow()
     qtbot.addWidget(window)
     window.current_project = project
-    window.source_video_path = source_video
+    window.source_media_path = source_video
 
     assert window.open_export_dialog() is None
     assert captured["output_path"] == project.path / "renders" / "final.mp4"
@@ -160,10 +160,10 @@ def test_main_window_warns_when_export_dialog_is_incomplete(monkeypatch, qtbot, 
         name="Episode 01",
         source_language="en",
         target_language="zh",
-        source_video=source_video,
+        source_media=source_video,
     )
     window.current_project = project
-    window.source_video_path = source_video
+    window.source_media_path = source_video
 
     output = window.open_export_dialog()
 

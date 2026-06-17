@@ -102,3 +102,47 @@ def test_export_hides_ffmpeg_command_window_on_windows(monkeypatch, tmp_path) ->
     if sys.platform == "win32":
         assert calls[0]["creationflags"] & subprocess.CREATE_NO_WINDOW
         assert calls[0]["startupinfo"] is not None
+
+
+def test_audio_export_request_uses_selected_format() -> None:
+    """AudioExportRequest stores format and build_audio_export_command uses it."""
+    from ivo.pipeline.mix_export import (
+        AudioExportRequest,
+        build_audio_export_command,
+    )
+
+    # WAV format
+    req_wav = AudioExportRequest(
+        background_audio=Path("bg.wav"),
+        segment_audio=[],
+        output_path=Path("out.wav"),
+        metadata={},
+        format="wav",
+    )
+    cmd_wav = build_audio_export_command("ffmpeg", req_wav)
+    assert "-c:a" in cmd_wav
+    wav_codec_idx = cmd_wav.index("-c:a")
+    assert cmd_wav[wav_codec_idx + 1] == "pcm_s16le"
+
+    # MP3 format
+    req_mp3 = AudioExportRequest(
+        background_audio=Path("bg.wav"),
+        segment_audio=[],
+        output_path=Path("out.mp3"),
+        metadata={},
+        format="mp3",
+    )
+    cmd_mp3 = build_audio_export_command("ffmpeg", req_mp3)
+    mp3_codec_idx = cmd_mp3.index("-c:a")
+    assert cmd_mp3[mp3_codec_idx + 1] == "libmp3lame"
+
+    # Format mismatch: output path suffix corrected
+    req_mismatch = AudioExportRequest(
+        background_audio=Path("bg.wav"),
+        segment_audio=[],
+        output_path=Path("out.wav"),
+        metadata={},
+        format="mp3",
+    )
+    cmd_mismatch = build_audio_export_command("ffmpeg", req_mismatch)
+    assert str(cmd_mismatch[-1]).endswith(".mp3")

@@ -746,3 +746,162 @@ def test_check_local_readiness_cli_reports_real_profile_gaps(tmp_path: Path) -> 
     payload = json.loads(result.output)
     assert payload["ok"] is False
     assert any(item.startswith("tts/CosyVoice:") for item in payload["missing"])
+
+
+def test_check_optional_runtime_warning_returns_warning_for_torchcodec_issue(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from ivo.environment import OptionalDependencyStatus
+    from ivo.local_readiness import check_optional_runtime_warning
+
+    dep = OptionalDependencyStatus(
+        name="pyannote.audio",
+        stage="diarization",
+        import_name="pyannote.audio",
+        installed=True,
+        install_hint="install",
+        download_hint="download",
+        license_hint="license",
+        model_dir=tmp_path / "models",
+        model_dir_exists=True,
+        verify_hint="verify",
+        venv_name=".venv-pyannote",
+    )
+
+    # Mock _check_torchcodec_in_venv to return False (torchcodec broken)
+    monkeypatch.setattr(
+        "ivo.local_readiness._check_torchcodec_in_venv",
+        lambda _venv: False,
+    )
+
+    results = check_optional_runtime_warning([dep])
+
+    assert len(results) == 1
+    assert results[0].status == "warning"
+    assert results[0].stage == "diarization"
+    assert "torchcodec" in results[0].message
+
+
+def test_check_optional_runtime_warning_returns_empty_when_torchcodec_ok(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from ivo.environment import OptionalDependencyStatus
+    from ivo.local_readiness import check_optional_runtime_warning
+
+    dep = OptionalDependencyStatus(
+        name="pyannote.audio",
+        stage="diarization",
+        import_name="pyannote.audio",
+        installed=True,
+        install_hint="install",
+        download_hint="download",
+        license_hint="license",
+        model_dir=tmp_path / "models",
+        model_dir_exists=True,
+        verify_hint="verify",
+        venv_name=".venv-pyannote",
+    )
+
+    # Mock _check_torchcodec_in_venv to return True (torchcodec OK)
+    monkeypatch.setattr(
+        "ivo.local_readiness._check_torchcodec_in_venv",
+        lambda _venv: True,
+    )
+
+    results = check_optional_runtime_warning([dep])
+
+    assert results == []
+
+
+def test_build_local_readiness_report_includes_optional_runtime_warnings(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from ivo.adapters.local import LocalCommandProfile
+    from ivo.environment import OptionalDependencyStatus
+    from ivo.local_readiness import build_local_readiness_report
+    from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+
+    profiles = LocalCommandPipelineProfiles(
+        separation=LocalCommandProfile(
+            id="demucs",
+            stage="separation",
+            command=["python", "demucs.py"],
+            output_json_path=str(tmp_path / "separation.json"),
+        ),
+        asr=LocalCommandProfile(
+            id="faster-whisper",
+            stage="asr",
+            command=["python", "asr.py"],
+            output_json_path=str(tmp_path / "asr.json"),
+        ),
+        diarization=LocalCommandProfile(
+            id="pyannote-community-1-local",
+            stage="diarization",
+            command=["python", "pyannote_diarization.py"],
+            output_json_path=str(tmp_path / "diarization.json"),
+        ),
+        tts=LocalCommandProfile(
+            id="f5",
+            stage="tts",
+            command=["python", "tts.py"],
+            output_json_path=str(tmp_path / "tts.json"),
+        ),
+    )
+    dependency = OptionalDependencyStatus(
+        name="pyannote.audio",
+        stage="diarization",
+        import_name="pyannote.audio",
+        installed=True,
+        install_hint="install",
+        download_hint="download",
+        license_hint="license",
+        model_dir=tmp_path / "models" / "diarization" / "pyannote-community-1",
+        model_dir_exists=True,
+        verify_hint="verify",
+        venv_name=".venv-pyannote",
+    )
+    monkeypatch.setattr(
+        "ivo.local_readiness._check_torchcodec_in_venv",
+        lambda _venv: False,
+    )
+
+    report = build_local_readiness_report(
+        profiles,
+        dependencies=[dependency],
+        nvidia_tool_available=True,
+        base_dir=tmp_path,
+    )
+
+    assert report.ok is True
+    assert report.missing == []
+    assert any(
+        result.status == "warning"
+        and result.stage == "diarization"
+        and "torchcodec" in result.message
+        for result in report.ui_results
+    )
+
+
+def test_check_optional_runtime_warning_skips_uninstalled_deps(
+    tmp_path: Path,
+) -> None:
+    from ivo.environment import OptionalDependencyStatus
+    from ivo.local_readiness import check_optional_runtime_warning
+
+    dep = OptionalDependencyStatus(
+        name="pyannote.audio",
+        stage="diarization",
+        import_name="pyannote.audio",
+        installed=False,
+        install_hint="install",
+        download_hint="download",
+        license_hint="license",
+        model_dir=tmp_path / "models",
+        model_dir_exists=False,
+        verify_hint="verify",
+        venv_name=".venv-pyannote",
+    )
+
+    results = check_optional_runtime_warning([dep])
+
+    assert results == []

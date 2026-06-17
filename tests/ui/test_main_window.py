@@ -7,7 +7,7 @@ def test_main_window_shows_project_controls(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert window.windowTitle() == "智能视频配音"
+    assert window.windowTitle() == "智能配音"
     assert window.app_shell.navigation_labels() == [
         "首页",
         "项目库",
@@ -95,7 +95,7 @@ def test_project_wizard_validates_required_video_path(qtbot) -> None:
     qtbot.addWidget(wizard)
 
     assert wizard.is_valid() is False
-    wizard.video_path_edit.setText("episode.mp4")
+    wizard.media_path_edit.setText("episode.mp4")
     wizard.project_name_edit.setText("Episode")
     wizard.output_dir_edit.setText("renders")
     assert wizard.is_valid() is True

@@ -28,7 +28,7 @@ def test_require_ffmpeg_accepts_explicit_environment_path(monkeypatch, tmp_path)
 
 def test_import_video_copies_source_into_project_assets(tmp_path) -> None:
     from ivo.core.project import DubbingProject
-    from ivo.pipeline.import_video import import_source_video
+    from ivo.pipeline.import_video import import_source_media
 
     source = tmp_path / "source.mp4"
     source.write_bytes(b"fake-video")
@@ -39,7 +39,7 @@ def test_import_video_copies_source_into_project_assets(tmp_path) -> None:
         target_language="zh",
     )
 
-    imported = import_source_video(project, source)
+    imported = import_source_media(project, source)
 
     assert imported == project.path / "assets" / "source_video.mp4"
     assert imported.read_bytes() == b"fake-video"
@@ -81,3 +81,52 @@ def test_extract_normalized_audio_invokes_ffmpeg_runner(tmp_path) -> None:
             str(output),
         ]
     ]
+
+
+def test_import_audio_uses_source_audio_prefix(tmp_path: Path) -> None:
+    """import_source_media with audio creates source_audio{ext} file."""
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.import_video import import_source_media
+
+    project_path = tmp_path / "audio_import.ivoproj"
+    source_audio = tmp_path / "music.mp3"
+    source_audio.write_bytes(b"fake mp3 data")
+
+    project = DubbingProject.create(
+        project_path,
+        name="Import Test",
+        source_language="en",
+        target_language="zh",
+        source_media=source_audio,
+        content_type="audio",
+    )
+    result = import_source_media(project, source_audio)
+    assert result.name == "source_audio.mp3"
+    assert (project_path / "assets" / "source_audio.mp3").is_file()
+
+
+def test_extract_audio_for_audio_input_omits_vn(tmp_path: Path) -> None:
+    """extract_normalized_audio with audio content_type uses ffmpeg without -vn."""
+    from ivo.core.project import DubbingProject
+    from ivo.pipeline.import_video import extract_normalized_audio, import_source_media
+
+    project_path = tmp_path / "audio_extract.ivoproj"
+    source_audio = tmp_path / "song.wav"
+    # Write a minimal WAV header so ffprobe can parse it
+    source_audio.write_bytes(
+        b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00"
+        b"\x80>\x00\x00\x00}\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+    )
+
+    project = DubbingProject.create(
+        project_path,
+        name="Extract Test",
+        source_language="en",
+        target_language="zh",
+        source_media=source_audio,
+        content_type="audio",
+    )
+    imported = import_source_media(project, source_audio)
+    result = extract_normalized_audio(project, imported)
+    assert result.is_file()
+    assert result.name == "extracted_audio.wav"

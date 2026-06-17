@@ -178,12 +178,14 @@ uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_
 
 ## 本地模型
 
-项目不默认打包模型权重。你可以先登记本地模型路径和许可证确认：
+项目不默认打包模型权重。推荐通过模型方案（scheme）配置本地模型：
 
 ```powershell
-uv run ivo model add-local .\models.json --id cosyvoice-local --stage tts --name "CosyVoice Local" --path .\models\cosyvoice --language zh --confirm-license
-uv run ivo model list .\models.json
+uv run ivo model setup-plan --models-dir .\models
+uv run ivo model write-setup-script --models-dir .\models
 ```
+
+也可以在桌面端"模型中心"直接选择模型目录并一键检查。
 
 真实本地模型可通过 `LocalCommandAdapter` 接入：把 ASR、人声分离、TTS/音色克隆模型包装成命令行脚本，输出标准 JSON 文件，流水线即可继续处理。示例脚本在 `examples/local_commands/`。
 

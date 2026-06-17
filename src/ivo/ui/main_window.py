@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 from PySide6.QtCore import QSize, QTimer, QUrl
 from PySide6.QtGui import QCloseEvent, QDesktopServices
@@ -30,7 +32,13 @@ from ivo.core.timeline import SourceLanguage
 from ivo.core.user_settings import UserSettings
 from ivo.evaluation import build_project_evaluation_report, render_evaluation_markdown
 from ivo.model_services.scheme_compiler import CompiledPipelineAdapters, SchemeRuntimeCompiler
-from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
+from ivo.pipeline.mix_export import (
+    AudioExportRequest,
+    ExportRequest,
+    SegmentAudio,
+    export_dubbed_audio,
+    export_dubbed_video,
+)
 from ivo.pipeline.control import PipelineControl
 from ivo.pipeline.local_command_preview import (
     LocalCommandPipelineProfiles,
@@ -72,7 +80,6 @@ from ivo.ui.theme import (
 )
 from ivo.ui.timeline_editor import TimelineEditor
 from ivo.ui.workers import PipelineWorker
-from ivo.workspace_paths import default_runs_dir
 
 
 class MainWindow(QMainWindow):
@@ -81,7 +88,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("\u667a\u80fd\u89c6\u9891\u914d\u97f3")
+        self.setWindowTitle("\u667a\u80fd\u914d\u97f3")
 
         self.create_project_button = QPushButton("\u65b0\u5efa\u9879\u76ee")
         self.create_project_button.setAccessibleName("新建项目")
@@ -97,7 +104,7 @@ class MainWindow(QMainWindow):
         self.evaluation_report_button.setToolTip("查看评估报告")
         self.export_button = QPushButton("\u6700\u7ec8\u5bfc\u51fa")
         self.export_button.setAccessibleName("导出")
-        self.export_button.setToolTip("导出配音视频")
+        self.export_button.setToolTip("导出配音")
         self.create_project_button.setStyleSheet("")
         mark_primary_button(self.create_project_button)
         self.local_preview_button.setStyleSheet("")
@@ -125,8 +132,11 @@ class MainWindow(QMainWindow):
         self.generation_elapsed_timer.setInterval(1000)
         self.generation_elapsed_timer.timeout.connect(self._update_generation_elapsed_label)
         self.current_project: DubbingProject | None = None
-        self.source_video_path: Path | None = None
-        self._recent_project_paths: list[Path] = []
+        self.source_media_path: Path | None = None
+        self.current_project_path: Path | None = None
+        self._active_generation_project_paths: set[Path] = set()
+        self._user_settings = self.settings_page.store.load()
+        self._recent_project_paths: list[Path] = list(self._user_settings.recent_projects)
         self._generation_pause_started_at: float | None = None
         self._generation_paused_seconds = 0.0
         self.local_preview_worker: PipelineWorker | None = None
@@ -143,11 +153,13 @@ class MainWindow(QMainWindow):
         self.project_overview.start_requested.connect(self.request_local_preview)
         self.project_overview.progress_requested.connect(self.show_generation_progress)
         self.project_overview.open_folder_requested.connect(lambda path: self.open_path_in_shell(path))
-        self.project_overview.open_video_requested.connect(lambda path: self.open_path_in_shell(path))
+        self.project_overview.open_output_requested.connect(lambda path: self.open_path_in_shell(path))
         self.project_library_page.open_project_requested.connect(lambda path: self.open_project_path(path))
         self.project_library_page.open_folder_requested.connect(lambda path: self.open_path_in_shell(path))
+        self.project_library_page.open_output_requested.connect(lambda path: self.open_path_in_shell(path))
         self.project_library_page.create_project_requested.connect(lambda: self.open_project_wizard())
         self.project_library_page.open_existing_requested.connect(lambda: self.open_existing_project())
+        self.project_library_page.delete_project_requested.connect(lambda path: self.handle_delete_project(path))
         self.settings_page.saved.connect(self.handle_user_settings_saved)
         self.model_center.preset_applied.connect(self.handle_model_preset_applied)
         self.model_settings.settings_changed.connect(self._auto_save_model_settings)
@@ -169,6 +181,7 @@ class MainWindow(QMainWindow):
         self.app_shell.add_page("schemes", "方案管理", _scrollable(self.scheme_management_page))
         self.app_shell.add_page("model_services", "模型服务", self.model_services_page)
         self.app_shell.add_page("settings", "设置", _scrollable(self.settings_page))
+        self.app_shell.page_changed.connect(self._handle_page_changed)
         self.setCentralWidget(self.app_shell)
         self.resize(1120, 720)
 
@@ -181,9 +194,9 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(16)
 
-        title = QLabel("欢迎使用智能视频配音")
+        title = QLabel("欢迎使用智能配音")
         title.setObjectName("PageTitle")
-        subtitle = QLabel("从一个视频开始，选择模型方案，然后生成自然的中文配音。")
+        subtitle = QLabel("从一个视频或音频开始，选择模型方案，然后生成自然的中文配音。")
         subtitle.setObjectName("SecondaryText")
         card = QFrame()
         card.setStyleSheet("")
@@ -271,9 +284,10 @@ class MainWindow(QMainWindow):
         self,
         *,
         project_name: str,
-        source_video: Path,
+        source_media: Path,
         output_dir: Path,
         source_language: SourceLanguage,
+        content_type: Literal["video", "audio"] = "video",
     ) -> DubbingProject:
         project_path = output_dir / f"{project_name}.ivoproj"
         project = DubbingProject.create(
@@ -281,15 +295,12 @@ class MainWindow(QMainWindow):
             name=project_name,
             source_language=source_language,
             target_language="zh",
-            source_video=source_video,
+            source_media=source_media,
+            content_type=content_type,
         )
-        self.current_project = project
-        self.source_video_path = source_video
-        self._remember_project(project.path)
+        self._set_current_project(project, remember=True)
         self.refresh_project_library()
         self.progress_label.setText(self.NEXT_STEP_TEXT)
-        self.project_overview.set_project(project)
-        self.timeline_editor.set_project(project)
         self.app_shell.set_current_page("current")
         return project
 
@@ -297,9 +308,10 @@ class MainWindow(QMainWindow):
         values = wizard.values()
         project = self.create_project_from_inputs(
             project_name=values.project_name,
-            source_video=values.source_video,
+            source_media=values.source_media,
             output_dir=values.output_dir,
             source_language=values.source_language,
+            content_type=values.content_type,
         )
         project.settings.update_translation(
             TranslationSettings(
@@ -318,7 +330,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "\u65b0\u5efa\u9879\u76ee\u5931\u8d25",
-                "\u8bf7\u586b\u5199\u9879\u76ee\u540d\u79f0\u3001\u6e90\u89c6\u9891\u548c\u8f93\u51fa\u76ee\u5f55\u540e\u518d\u521b\u5efa\u9879\u76ee\u3002",
+                "\u8bf7\u586b\u5199\u9879\u76ee\u540d\u79f0\u3001\u6e90\u7d20\u6750\u548c\u8f93\u51fa\u76ee\u5f55\u540e\u518d\u521b\u5efa\u9879\u76ee\u3002",
             )
             return None
         project = self.create_project_from_wizard(wizard)
@@ -348,24 +360,115 @@ class MainWindow(QMainWindow):
             )
             return None
 
-        self.current_project = project
-        self.source_video_path = project.source_video_path
-        self._remember_project(project.path)
+        self._set_current_project(project, remember=True)
         self.refresh_project_library()
-        self.project_overview.set_project(project)
-        self.timeline_editor.set_project(project)
-        self.model_settings.restore_from_settings(project.settings.load().profiles)
-        self.progress_label.setText(f"项目已打开。下一步：点击“{self.START_DUBBING_TEXT}”。")
+        self.progress_label.setText(f"项目已打开。下一步：点击\u201c{self.START_DUBBING_TEXT}\u201d。")
         self.app_shell.set_current_page("current")
         return project
+
+    def _set_current_project(
+        self,
+        project: DubbingProject,
+        *,
+        remember: bool,
+    ) -> None:
+        self.current_project = project
+        self.current_project_path = project.path
+        self.source_media_path = project.source_media_path
+        if remember:
+            self._remember_project(project.path)
+        self._refresh_current_project_view()
+        self.timeline_editor.set_project(project)
+        self.model_settings.restore_from_settings(project.settings.load().profiles)
+
+    def _reload_current_project(self) -> DubbingProject | None:
+        if self.current_project_path is None:
+            self.current_project = None
+            self.source_media_path = None
+            return None
+        try:
+            project = DubbingProject.load(self.current_project_path)
+        except (OSError, ValueError, KeyError) as exc:
+            self.run_log_panel.append_stage_message("当前项目", f"重新读取失败: {exc}", level="error")
+            return None
+        self.current_project = project
+        self.source_media_path = project.source_media_path
+        return project
+
+    def _refresh_current_project_view(self) -> None:
+        if self.current_project_path is None:
+            self.project_overview.set_project_snapshot(None)
+            return
+        from ivo.core.project_status import read_project_status_snapshot
+
+        snapshot = read_project_status_snapshot(
+            self.current_project_path,
+            active_project_paths=self._active_generation_project_paths,
+        )
+        self.project_overview.set_project_snapshot(snapshot)
+
+    def _current_source_media_path(self) -> Path | None:
+        if self.current_project is not None:
+            return self.current_project.source_media_path
+        return self.source_media_path
+
+    def _handle_page_changed(self, page_id: str) -> None:
+        if page_id == "current":
+            self._reload_current_project()
+            self._refresh_current_project_view()
+        elif page_id == "projects":
+            self.refresh_project_library()
 
     def recent_project_paths(self) -> list[Path]:
         return list(self._recent_project_paths)
 
     def refresh_project_library(self) -> None:
         self.project_library_page.set_projects(
-            scan_project_library(default_runs_dir(), recent_projects=self._recent_project_paths)
+            scan_project_library(
+                self._user_settings.projects_dir,
+                recent_projects=self._recent_project_paths,
+                active_project_paths=self._active_generation_project_paths,
+            )
         )
+
+    def handle_delete_project(self, project_path: Path) -> None:
+        project_name = project_path.stem
+        reply = QMessageBox.question(
+            self,
+            "删除项目",
+            f"确定要删除项目「{project_name}」吗？\n\n"
+            f"项目路径：{project_path}\n"
+            "此操作将删除整个项目文件夹，包括所有素材、中间文件和输出，且不可恢复。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            shutil.rmtree(project_path)
+        except OSError as exc:
+            QMessageBox.warning(self, "删除失败", f"删除项目文件夹失败：{exc}")
+            return
+
+        # Clear current project if it was the one deleted
+        if (
+            self.current_project_path is not None
+            and self.current_project_path.resolve() == project_path.resolve()
+        ):
+            self.current_project = None
+            self.current_project_path = None
+            self.source_media_path = None
+            self._refresh_current_project_view()
+            self.timeline_editor.set_segments([])
+
+        # Remove from recent projects
+        resolved = project_path.resolve()
+        self._recent_project_paths = [
+            path for path in self._recent_project_paths if path.resolve() != resolved
+        ]
+
+        self.refresh_project_library()
 
     def _remember_project(self, project_path: Path) -> None:
         resolved = project_path.resolve()
@@ -373,6 +476,11 @@ class MainWindow(QMainWindow):
             path for path in self._recent_project_paths if path.resolve() != resolved
         ]
         self._recent_project_paths.insert(0, project_path)
+        try:
+            updated = self.settings_page.store.add_recent_project(project_path)
+            self._user_settings = updated
+        except OSError:
+            pass
 
     def open_path_in_shell(self, path: Path) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
@@ -380,13 +488,13 @@ class MainWindow(QMainWindow):
     def run_mock_preview(self) -> MockPipelineResult:
         if self.current_project is None:
             raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
-        if self.source_video_path is None:
-            raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u89c6\u9891")
+        if self.source_media_path is None:
+            raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u7d20\u6750")
 
         self.progress_label.setText("\u6b63\u5728\u751f\u6210 mock \u9884\u89c8")
         result = run_mock_dubbing_pipeline(
             self.current_project,
-            source_video=self.source_video_path,
+            source_media=self.source_media_path,
         )
         self.timeline_editor.set_project(self.current_project)
         self.progress_label.setText("mock \u9884\u89c8\u5df2\u5b8c\u6210")
@@ -406,8 +514,8 @@ class MainWindow(QMainWindow):
             self._mark_generation_failed()
             raise
         self._mark_generation_completed()
-        self.run_log_panel.append_stage_message("配音生成", f"输出：{result.final_video}")
-        self._refresh_after_local_preview(result.final_video)
+        self.run_log_panel.append_stage_message("配音生成", f"输出：{result.final_output}")
+        self._refresh_after_local_preview(result.final_output)
         return result
 
     def create_local_preview_worker(self) -> PipelineWorker:
@@ -440,8 +548,8 @@ class MainWindow(QMainWindow):
             self.progress_label.setText(message)
             QMessageBox.warning(self, "无法开始生成", message)
             return None
-        if self.source_video_path is None:
-            message = "当前项目缺少源视频，请重新选择或创建项目。"
+        if self.source_media_path is None:
+            message = "当前项目缺少源素材，请重新选择或创建项目。"
             self.progress_label.setText(message)
             QMessageBox.warning(self, "无法开始生成", message)
             return None
@@ -449,13 +557,13 @@ class MainWindow(QMainWindow):
 
     def handle_local_preview_succeeded(self) -> None:
         self._mark_generation_completed()
-        final_video: Path | None = None
+        final_output: Path | None = None
         if self.local_preview_worker is not None and self.local_preview_worker.result is not None:
             result = self.local_preview_worker.result
-            final_video = getattr(result, "final_video", None)
-            if final_video is not None:
-                self.run_log_panel.append_stage_message("配音生成", f"输出：{final_video}")
-        self._refresh_after_local_preview(final_video)
+            final_output = getattr(result, "final_output", None)
+            if final_output is not None:
+                self.run_log_panel.append_stage_message("配音生成", f"输出：{final_output}")
+        self._refresh_after_local_preview(final_output)
         self.local_preview_button.setEnabled(True)
 
     def handle_local_preview_failed(self, message: str) -> None:
@@ -463,7 +571,7 @@ class MainWindow(QMainWindow):
         self.progress_label.setText(f"生成配音失败：{message}")
         self.run_log_panel.append_stage_message("配音生成", f"失败：{message}", level="error")
         if self.current_project is not None:
-            self.project_overview.set_project(self.current_project)
+            self._refresh_current_project_view()
         self.local_preview_button.setEnabled(True)
         QMessageBox.warning(self, "生成配音失败", message)
 
@@ -553,7 +661,10 @@ class MainWindow(QMainWindow):
 
     def run_final_export(self, dialog: ExportDialog) -> Path:
         request, confirmation = self._build_export_request(dialog)
-        output = export_dubbed_video(request, confirmation)
+        if isinstance(request, AudioExportRequest):
+            output = export_dubbed_audio(request, confirmation)
+        else:
+            output = export_dubbed_video(request, confirmation)
         self.progress_label.setText("\u6700\u7ec8\u5bfc\u51fa\u5df2\u5b8c\u6210")
         return output
 
@@ -561,7 +672,10 @@ class MainWindow(QMainWindow):
         request, confirmation = self._build_export_request(dialog)
         self.progress_label.setText("\u6b63\u5728\u6700\u7ec8\u5bfc\u51fa")
         self.export_button.setEnabled(False)
-        worker = PipelineWorker(lambda: export_dubbed_video(request, confirmation))
+        if isinstance(request, AudioExportRequest):
+            worker = PipelineWorker(lambda: export_dubbed_audio(request, confirmation))
+        else:
+            worker = PipelineWorker(lambda: export_dubbed_video(request, confirmation))
         worker.succeeded.connect(self.handle_final_export_succeeded)
         worker.failed.connect(self.handle_final_export_failed)
         self.final_export_worker = worker
@@ -575,33 +689,51 @@ class MainWindow(QMainWindow):
     def handle_final_export_succeeded(self) -> None:
         self.export_button.setEnabled(True)
         self.progress_label.setText("\u6700\u7ec8\u5bfc\u51fa\u5df2\u5b8c\u6210")
+        self._reload_current_project()
+        self._refresh_current_project_view()
+        self.refresh_project_library()
 
     def handle_final_export_failed(self, message: str) -> None:
         self.export_button.setEnabled(True)
         self.progress_label.setText(f"\u6700\u7ec8\u5bfc\u51fa\u5931\u8d25: {message}")
         QMessageBox.warning(self, "\u6700\u7ec8\u5bfc\u51fa\u5931\u8d25", message)
 
-    def _build_export_request(self, dialog: ExportDialog) -> tuple[ExportRequest, ExportConfirmation]:
+    def _build_export_request(
+        self, dialog: ExportDialog
+    ) -> tuple[ExportRequest | AudioExportRequest, ExportConfirmation]:
         if self.current_project is None:
             raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
-        if self.source_video_path is None:
-            raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u89c6\u9891")
+        if self.source_media_path is None:
+            raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u7d20\u6750")
         if not dialog.output_path_edit.text().strip():
             raise ValueError("请先填写导出路径。")
 
-        watermark_options = dialog.watermark_options()
-        request = ExportRequest(
-            source_video=self.source_video_path,
-            background_audio=self.current_project.path / "work" / "background.wav",
-            segment_audio=self._collect_rendered_segment_audio(),
-            output_path=dialog.output_path(),
-            metadata=build_ai_dubbing_metadata(
-                source_language=self.current_project.source_language,
-                target_language=self.current_project.target_language,
-            ),
-            watermark_text=watermark_options.text if watermark_options.enabled else None,
-        )
-        return request, dialog.confirmation()
+        if self.current_project.content_type == "audio":
+            audio_request: AudioExportRequest = AudioExportRequest(
+                background_audio=self.current_project.path / "work" / "background.wav",
+                segment_audio=self._collect_rendered_segment_audio(),
+                output_path=dialog.output_path(),
+                metadata=build_ai_dubbing_metadata(
+                    source_language=self.current_project.source_language,
+                    target_language=self.current_project.target_language,
+                ),
+                format=dialog.audio_format(),
+            )
+            return audio_request, dialog.confirmation()
+        else:
+            watermark_options = dialog.watermark_options()
+            video_request: ExportRequest = ExportRequest(
+                source_video=self.source_media_path,
+                background_audio=self.current_project.path / "work" / "background.wav",
+                segment_audio=self._collect_rendered_segment_audio(),
+                output_path=dialog.output_path(),
+                metadata=build_ai_dubbing_metadata(
+                    source_language=self.current_project.source_language,
+                    target_language=self.current_project.target_language,
+                ),
+                watermark_text=watermark_options.text if watermark_options.enabled else None,
+            )
+            return video_request, dialog.confirmation()
 
     def open_export_dialog(self) -> PipelineWorker | None:
         if self.current_project is None:
@@ -609,16 +741,17 @@ class MainWindow(QMainWindow):
             self.progress_label.setText(message)
             QMessageBox.warning(self, "无法导出", message)
             return None
-        if self.source_video_path is None:
-            message = "当前项目缺少源视频，请重新选择或创建项目。"
+        if self.source_media_path is None:
+            message = "当前项目缺少源素材，请重新选择或创建项目。"
             self.progress_label.setText(message)
             QMessageBox.warning(self, "无法导出", message)
             return None
 
         dialog = ExportDialog(self)
+        dialog.set_content_type(self.current_project.content_type)
         if self.current_project is not None and not dialog.output_path_edit.text().strip():
             dialog.output_path_edit.setText(
-                str(self.current_project.path / "renders" / "final.mp4")
+                str(self.current_project.path / "renders" / dialog.default_suffix())
             )
         if dialog.exec() != ExportDialog.DialogCode.Accepted:
             return None
@@ -744,8 +877,8 @@ class MainWindow(QMainWindow):
     ) -> LocalCommandPreviewResult:
         if self.current_project is None:
             raise RuntimeError("\u8bf7\u5148\u521b\u5efa\u6216\u6253\u5f00\u9879\u76ee")
-        if self.source_video_path is None:
-            raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u89c6\u9891")
+        if self.source_media_path is None:
+            raise RuntimeError("\u8bf7\u5148\u9009\u62e9\u6e90\u7d20\u6750")
 
         self._save_model_profile_settings()
 
@@ -756,7 +889,7 @@ class MainWindow(QMainWindow):
             # Do NOT silently fall back to legacy JSON profiles for bound stages.
             return run_local_command_preview(
                 self.current_project,
-                source_video=self.source_video_path,
+                source_media=self.source_media_path,
                 profiles=compiled.local_profiles,
                 separation_adapter=compiled.separation,
                 asr_adapter=compiled.asr,
@@ -771,7 +904,7 @@ class MainWindow(QMainWindow):
         # No scheme applied — use legacy JSON profile paths
         return run_local_command_preview(
             self.current_project,
-            source_video=self.source_video_path,
+            source_media=self.source_media_path,
             profiles=self._load_local_command_profiles(),
             separation_adapter=self._build_http_separation_adapter(),
             asr_adapter=self._build_http_asr_adapter(),
@@ -798,13 +931,15 @@ class MainWindow(QMainWindow):
             )
         )
 
-    def _refresh_after_local_preview(self, final_video: Path | None = None) -> None:
+    def _refresh_after_local_preview(self, final_output: Path | None = None) -> None:
         if self.current_project is not None:
-            self.project_overview.set_project(self.current_project)
-            self.timeline_editor.set_project(self.current_project)
+            reloaded = self._reload_current_project()
+            if reloaded is not None:
+                self.timeline_editor.set_project(reloaded)
+            self._refresh_current_project_view()
             self.refresh_project_library()
-        if final_video is not None:
-            self.progress_label.setText(f"配音生成已完成：{final_video}")
+        if final_output is not None:
+            self.progress_label.setText(f"配音生成已完成：{final_output}")
         else:
             self.progress_label.setText("配音生成已完成")
 
@@ -813,36 +948,42 @@ class MainWindow(QMainWindow):
             return
         self.pipeline_control = PipelineControl()
         self.current_project.mark_generation_started()
+        self._active_generation_project_paths.add(self.current_project.path.resolve())
         self._generation_pause_started_at = None
         self._generation_paused_seconds = 0.0
         self.generation_progress.set_elapsed_seconds(0)
         self.generation_progress.set_running_controls()
         self.generation_elapsed_timer.start()
         self.refresh_project_library()
+        self._refresh_current_project_view()
 
     def _mark_generation_completed(self) -> None:
         if self.current_project is None:
             return
         elapsed_seconds = self._current_generation_elapsed_seconds()
         self.current_project.mark_generation_completed(elapsed_seconds=elapsed_seconds)
+        self._active_generation_project_paths.discard(self.current_project.path.resolve())
         self._generation_pause_started_at = None
         self._generation_paused_seconds = 0.0
         self._update_generation_elapsed_label()
         self.generation_elapsed_timer.stop()
         self.generation_progress.set_finished_controls()
         self.refresh_project_library()
+        self._refresh_current_project_view()
 
     def _mark_generation_failed(self) -> None:
         if self.current_project is None:
             return
         elapsed_seconds = self._current_generation_elapsed_seconds()
         self.current_project.mark_generation_failed(elapsed_seconds=elapsed_seconds)
+        self._active_generation_project_paths.discard(self.current_project.path.resolve())
         self._generation_pause_started_at = None
         self._generation_paused_seconds = 0.0
         self._update_generation_elapsed_label()
         self.generation_elapsed_timer.stop()
         self.generation_progress.set_finished_controls()
         self.refresh_project_library()
+        self._refresh_current_project_view()
 
     def _update_generation_elapsed_label(self) -> None:
         elapsed = self._current_generation_elapsed_seconds()

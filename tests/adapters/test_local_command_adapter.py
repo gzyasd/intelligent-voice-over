@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
+from typing import Any
 
 
 def test_local_command_adapter_renders_command_and_reads_json_output(tmp_path) -> None:
@@ -124,6 +126,51 @@ def test_local_command_adapter_honors_configured_python_and_working_dir(tmp_path
     assert result.ok is True
     assert commands == [["F:/runtime/.venv/Scripts/python.exe", "examples/local_commands/asr.py"]]
     assert cwd_values == [str(working_dir)]
+
+
+def test_local_command_adapter_adds_bundled_ffmpeg_to_subprocess_path(
+    tmp_path, monkeypatch
+) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
+
+    runtime_root = tmp_path / "runtime"
+    ffmpeg_bin = runtime_root / "_internal" / "ffmpeg" / "bin"
+    ffmpeg_bin.mkdir(parents=True)
+    (ffmpeg_bin / "ffmpeg.exe").write_text("", encoding="utf-8")
+    output = tmp_path / "result.json"
+    captured_env: dict[str, str] = {}
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        del command
+        captured_env.update(kwargs["env"])
+        output.write_text("{}", encoding="utf-8")
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    adapter = LocalCommandAdapter(
+        LocalCommandProfile(
+            id="local-separation",
+            stage="separation",
+            command=["python", "sep.py", "--out", "{{ output_json_path }}"],
+            output_json_path=str(output),
+            extra={"working_dir": str(runtime_root)},
+        )
+    )
+
+    result = adapter.run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="",
+            source_language="ja",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is True
+    path_entries = captured_env["PATH"].split(";")
+    assert str(Path(ffmpeg_bin)) in path_entries
 
 
 def test_local_command_adapter_returns_error_when_output_missing(tmp_path) -> None:

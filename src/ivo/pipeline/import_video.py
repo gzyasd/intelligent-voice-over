@@ -22,30 +22,40 @@ def require_ffmpeg() -> str:
     return ffmpeg_path
 
 
-def import_source_video(project: DubbingProject, source_video: Path) -> Path:
-    if not source_video.is_file():
-        raise FileNotFoundError(source_video)
+def import_source_media(
+    project: DubbingProject, source_media: Path, content_type: str | None = None
+) -> Path:
+    if not source_media.is_file():
+        raise FileNotFoundError(source_media)
 
-    destination = project.path / "assets" / f"source_video{source_video.suffix}"
-    shutil.copy2(source_video, destination)
+    ct = content_type or project.content_type
+    prefix = "source_video" if ct == "video" else "source_audio"
+    destination = project.path / "assets" / f"{prefix}{source_media.suffix}"
+    shutil.copy2(source_media, destination)
     return destination
 
 
 def extract_normalized_audio(
     project: DubbingProject,
-    source_video: Path,
+    source_media: Path,
     *,
     ffmpeg_path: str | None = None,
     runner: CommandRunner | None = None,
+    content_type: str | None = None,
 ) -> Path:
     executable = ffmpeg_path or require_ffmpeg()
     output_path = project.path / "assets" / "extracted_audio.wav"
+    ct = content_type or project.content_type
     command = [
         executable,
         "-y",
         "-i",
-        str(source_video),
-        "-vn",
+        str(source_media),
+    ]
+    # Video needs -vn to drop video track; audio has no video track
+    if ct == "video":
+        command.append("-vn")
+    command += [
         "-ac",
         "1",
         "-ar",

@@ -8,6 +8,15 @@ from typing import Any
 
 
 def main() -> int:
+    # Suppress known harmless warnings from torchcodec / FFmpeg DLL loading
+    import warnings
+
+    warnings.filterwarnings(
+        "ignore",
+        message="torchcodec is not installed correctly",
+        category=UserWarning,
+    )
+
     parser = argparse.ArgumentParser(description="Speaker diarization adapter for pyannote.audio.")
     parser.add_argument("--audio", required=True)
     parser.add_argument("--model", default="pyannote/speaker-diarization-community-1")

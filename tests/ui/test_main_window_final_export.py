@@ -35,7 +35,7 @@ def test_main_window_runs_final_export_from_dialog(monkeypatch, qtbot, tmp_path)
     window = MainWindow()
     qtbot.addWidget(window)
     window.current_project = project
-    window.source_video_path = source_video
+    window.source_media_path = source_video
     dialog = ExportDialog()
     qtbot.addWidget(dialog)
     dialog.confirmation_checkbox.setChecked(True)
@@ -76,7 +76,7 @@ def test_main_window_builds_background_worker_for_final_export(monkeypatch, qtbo
     window = MainWindow()
     qtbot.addWidget(window)
     window.current_project = project
-    window.source_video_path = source_video
+    window.source_media_path = source_video
     dialog = ExportDialog()
     qtbot.addWidget(dialog)
     dialog.confirmation_checkbox.setChecked(True)
@@ -110,7 +110,7 @@ def _create_exportable_project(tmp_path):
         name="Episode 01",
         source_language="en",
         target_language="zh",
-        source_video=source_video,
+        source_media=source_video,
     )
     background = project.path / "work" / "background.wav"
     background.write_bytes(b"background")

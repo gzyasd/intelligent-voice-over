@@ -54,7 +54,7 @@ def test_main_window_regenerates_timeline_segment_from_local_tts_profile(
     qtbot.addWidget(window)
     project = window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )
@@ -129,7 +129,7 @@ def test_main_window_builds_background_worker_for_segment_regeneration(
     qtbot.addWidget(window)
     project = window.create_project_from_inputs(
         project_name="Episode 01",
-        source_video=source,
+        source_media=source,
         output_dir=tmp_path,
         source_language="en",
     )

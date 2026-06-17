@@ -13,7 +13,7 @@ def test_main_window_opens_existing_project_from_directory(monkeypatch, qtbot, t
         name="Episode 01",
         source_language="en",
         target_language="zh",
-        source_video=source,
+        source_media=source,
     )
     project.timeline.add_segment(
         DubbingSegment(
@@ -42,7 +42,7 @@ def test_main_window_opens_existing_project_from_directory(monkeypatch, qtbot, t
     assert loaded is not None
     assert loaded.path == project.path
     assert window.current_project.path == project.path
-    assert window.source_video_path == source
+    assert window.source_media_path == source
     assert window.timeline_editor.table.rowCount() == 1
     assert window.progress_label.text() == "项目已打开。下一步：点击“开始生成配音（完整流程）”。"
 

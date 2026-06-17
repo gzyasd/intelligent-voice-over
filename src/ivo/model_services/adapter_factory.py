@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+import sys
+from typing import TYPE_CHECKING, Any
 
 from ivo.model_services.provider_config import StageProviderConfig
 from ivo.model_services.provider_registry import ProviderRegistry
 from ivo.model_services.provider_store import ProviderStore
 from ivo.model_services.secret_store import SecretStore
+from ivo.profile_runtime import prepare_local_command_profiles, resolve_local_model_root
+
+if TYPE_CHECKING:
+    from ivo.adapters.local import LocalCommandProfile
 
 
 def _coerce_float(value: object, *, default: float) -> float:
@@ -24,6 +30,41 @@ def _coerce_int(value: object, *, default: int) -> int:
         return int(str(value))
     except (TypeError, ValueError):
         return default
+
+
+def _infer_runtime_root() -> Path:
+    """Infer the app runtime root used by built-in local command templates."""
+    candidates: list[Path] = []
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent)
+    candidates.append(Path.cwd().resolve())
+    candidates.append(Path(__file__).resolve().parents[3])
+
+    for candidate in candidates:
+        if (candidate / "examples" / "local_commands").is_dir():
+            return candidate
+    return candidates[0]
+
+
+def _prepare_scheme_local_profile(
+    profile: "LocalCommandProfile",
+    runtime_root: Path,
+) -> "LocalCommandProfile":
+    """Apply the same runtime context used by legacy JSON local profiles."""
+    from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
+
+    profiles = LocalCommandPipelineProfiles(
+        separation=profile,
+        asr=profile,
+        diarization=None,
+        tts=profile,
+    )
+    prepare_local_command_profiles(
+        profiles,
+        profiles_path=runtime_root / "examples" / "scheme-local-profile.json",
+        models_dir=runtime_root / "models",
+    )
+    return profile
 
 
 # Built-in command templates for local model providers.
@@ -176,7 +217,6 @@ class ProviderAdapterFactory:
     def _create_local_adapter(self, config: StageProviderConfig) -> Any:
         """Create adapter for local model providers."""
         from ivo.adapters.local import LocalCommandProfile
-
         # Use command from config.extra, or fall back to built-in templates
         command = config.extra.get("command")
         output_json = config.extra.get("output_json_path", "")
@@ -194,8 +234,10 @@ class ProviderAdapterFactory:
                 f"or provide command in config.extra."
             )
 
+        runtime_root = _infer_runtime_root()
+        model_path = resolve_local_model_root(Path(config.local_model_path), runtime_root)
         extra_values = {
-            "model_path": config.local_model_path,
+            "model_path": str(model_path),
             "device": config.device,
             "precision": config.precision,
             **config.extra,
@@ -210,6 +252,7 @@ class ProviderAdapterFactory:
             output_json_path=str(output_json),
             extra=extra_values,
         )
+        profile = _prepare_scheme_local_profile(profile, runtime_root)
 
         if config.stage == "separation":
             from ivo.pipeline.separate_audio import LocalCommandSeparationAdapter

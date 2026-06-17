@@ -11,6 +11,15 @@ from typing import Any
 
 
 def main() -> int:
+    # Suppress known harmless Google API Python version FutureWarning
+    import warnings
+
+    warnings.filterwarnings(
+        "ignore",
+        message=".*Python version.*Google.*",
+        category=FutureWarning,
+    )
+
     parser = argparse.ArgumentParser(description="TTS command adapter skeleton for F5-TTS.")
     parser.add_argument("--text", required=True)
     parser.add_argument("--speaker", required=True)

@@ -24,7 +24,7 @@ def test_local_command_preview_emits_stage_and_tts_progress_events(monkeypatch, 
     source_video = tmp_path / "source.mp4"
     source_video.write_bytes(b"video")
 
-    def fake_import_source_video(project, source_video):
+    def fake_import_source_media(project, source_media):
         output = project.path / "assets" / "source_video.mp4"
         output.write_bytes(source_video.read_bytes())
         return output
@@ -98,7 +98,7 @@ def test_local_command_preview_emits_stage_and_tts_progress_events(monkeypatch, 
         request.output_path.write_bytes(b"mp4")
         return request.output_path
 
-    monkeypatch.setattr(module, "import_source_video", fake_import_source_video)
+    monkeypatch.setattr(module, "import_source_media", fake_import_source_media)
     monkeypatch.setattr(module, "extract_normalized_audio", fake_extract_normalized_audio)
     monkeypatch.setattr(module, "separate_audio", fake_separate_audio)
     monkeypatch.setattr(module, "transcribe_audio", fake_transcribe_audio)
@@ -110,13 +110,13 @@ def test_local_command_preview_emits_stage_and_tts_progress_events(monkeypatch, 
 
     result = run_local_command_preview(
         project,
-        source_video=source_video,
+        source_media=source_video,
         profiles=_profiles(tmp_path),
         progress_callback=events.append,
         watermark_text=None,
     )
 
-    assert result.final_video.is_file()
+    assert result.final_output.is_file()
     stage_statuses = [(event.stage, event.status) for event in events]
     assert stage_statuses == [
         ("import", "started"),
@@ -138,7 +138,7 @@ def test_local_command_preview_emits_stage_and_tts_progress_events(monkeypatch, 
     ]
     assert [event.current_item for event in events if event.status == "progress"] == [1, 2]
     assert [event.total_items for event in events if event.status == "progress"] == [2, 2]
-    assert events[-1].output_path == result.final_video
+    assert events[-1].output_path == result.final_output
 
 
 def test_stage_percent_gives_tts_the_largest_progress_range() -> None:

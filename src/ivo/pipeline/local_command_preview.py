@@ -12,8 +12,14 @@ from ivo.compliance.metadata import build_ai_dubbing_metadata
 from ivo.core.project import DubbingProject
 from ivo.core.timeline import DubbingSegment
 from ivo.pipeline.control import PipelineControl
-from ivo.pipeline.import_video import extract_normalized_audio, import_source_video
-from ivo.pipeline.mix_export import ExportRequest, SegmentAudio, export_dubbed_video
+from ivo.pipeline.import_video import extract_normalized_audio, import_source_media
+from ivo.pipeline.mix_export import (
+    AudioExportRequest,
+    ExportRequest,
+    SegmentAudio,
+    export_dubbed_audio,
+    export_dubbed_video,
+)
 from ivo.pipeline.progress import PipelineProgressEvent, PipelineStage, STAGE_LABELS, stage_percent
 from ivo.pipeline.separate_audio import (
     LocalCommandSeparationAdapter,
@@ -48,7 +54,7 @@ class LocalCommandPipelineProfiles(BaseModel):
 
 
 class LocalCommandPreviewResult(BaseModel):
-    final_video: Path
+    final_output: Path
     metadata: dict[str, str]
     generated_segments: list[Path]
 
@@ -59,7 +65,7 @@ T = TypeVar("T")
 def run_local_command_preview(
     project: DubbingProject,
     *,
-    source_video: Path,
+    source_media: Path,
     profiles: LocalCommandPipelineProfiles | None = None,
     translation_overrides: dict[str, str] | None = None,
     separation_adapter: SeparationAdapter | None = None,
@@ -76,8 +82,12 @@ def run_local_command_preview(
     imported_video = _run_stage(
         project,
         "import",
-        lambda: import_source_video(project, source_video),
-        resume_from=lambda: _resume_file(project.path / "assets" / f"source_video{source_video.suffix}"),
+        lambda: import_source_media(project, source_media),
+        resume_from=lambda: _resume_file(
+            project.path
+            / "assets"
+            / f"source_{project.content_type}{source_media.suffix}"
+        ),
         progress_callback=progress_callback,
         control=control,
     )
@@ -197,27 +207,47 @@ def run_local_command_preview(
         source_language=project.source_language,
         target_language=project.target_language,
     )
-    final_video = _run_stage(
+    if project.content_type == "video":
+        output_path = project.path / "renders" / "local-preview.mp4"
+
+        def _export_action() -> Path:
+            return export_dubbed_video(
+                ExportRequest(
+                    source_video=imported_video,
+                    background_audio=separation.background_path,
+                    segment_audio=segment_audio,
+                    output_path=output_path,
+                    metadata=metadata,
+                    watermark_text=watermark_text,
+                ),
+                ExportConfirmation(accepted=True),
+                ffmpeg_path=ffmpeg_path,
+            )
+    else:
+        output_path = project.path / "renders" / "local-preview.wav"
+
+        def _export_action() -> Path:
+            return export_dubbed_audio(
+                AudioExportRequest(
+                    background_audio=separation.background_path,
+                    segment_audio=segment_audio,
+                    output_path=output_path,
+                    metadata=metadata,
+                    format="wav",
+                ),
+                ExportConfirmation(accepted=True),
+                ffmpeg_path=ffmpeg_path,
+            )
+    final_output = _run_stage(
         project,
         "export",
-        lambda: export_dubbed_video(
-            ExportRequest(
-                source_video=imported_video,
-                background_audio=separation.background_path,
-                segment_audio=segment_audio,
-                output_path=project.path / "renders" / "local-preview.mp4",
-                metadata=metadata,
-                watermark_text=watermark_text,
-            ),
-            ExportConfirmation(accepted=True),
-            ffmpeg_path=ffmpeg_path,
-        ),
-        resume_from=lambda: _resume_file(project.path / "renders" / "local-preview.mp4"),
+        _export_action,
+        resume_from=lambda: _resume_file(output_path),
         progress_callback=progress_callback,
         control=control,
     )
     return LocalCommandPreviewResult(
-        final_video=final_video,
+        final_output=final_output,
         metadata=metadata,
         generated_segments=generated_segments,
     )

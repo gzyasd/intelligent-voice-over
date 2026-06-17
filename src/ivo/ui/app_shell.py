@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -15,6 +15,8 @@ from ivo.ui.theme import mark_heading2, mark_nav_button, mark_sidebar
 
 
 class AppShell(QWidget):
+    page_changed = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("AppRoot")
@@ -83,3 +85,4 @@ class AppShell(QWidget):
         self.stack.setCurrentIndex(index)
         for candidate_page_id, button in self._button_by_page_id.items():
             button.setChecked(candidate_page_id == page_id)
+        self.page_changed.emit(page_id)

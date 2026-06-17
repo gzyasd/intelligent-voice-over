@@ -135,7 +135,6 @@ class _PipInstallWorker(QThread):
             cmd.append("--upgrade")
         if self._force_reinstall:
             cmd.append("--force-reinstall")
-            cmd.append("--no-deps")
         cmd.append(self._package_name)
         try:
             result = subprocess.run(
@@ -259,12 +258,14 @@ class _DepRowWidget(QFrame):
             if action == "升级":
                 mark_link_button(btn)
                 btn.clicked.connect(
-                    lambda: self.upgrade_requested.emit(status.package_name, status.venv_name)
+                    lambda _checked=False, s=status: self.upgrade_requested.emit(
+                        s.package_name, s.venv_name
+                    )
                 )
             else:
                 mark_primary_button(btn)
                 btn.clicked.connect(
-                    lambda s=status: self.install_requested.emit(
+                    lambda _checked=False, s=status: self.install_requested.emit(
                         s.package_name, s.venv_name, s.status
                     )
                 )
@@ -738,6 +739,8 @@ class ModelServicesPage(QWidget):
 
         # Track install workers
         self._install_workers: list[_PipInstallWorker] = []
+        self._active_install_package = ""
+        self._install_in_progress = False
         self._dep_worker: _DepStatusLoadWorker | None = None
 
         # Track async upgrade check workers to avoid duplicate refreshes
@@ -927,6 +930,12 @@ class ModelServicesPage(QWidget):
 
         self._dep_layout.addStretch()
 
+        # If an install is in progress, keep all action buttons disabled
+        if self._install_in_progress:
+            self._refresh_btn.setEnabled(False)
+            self._install_all_btn.setEnabled(False)
+            self._set_dep_row_buttons_enabled(False)
+
         # Start async upgrade checks (only if not already checking)
         if self._upgrade_check_pending == 0 and upgrade_results is None:
             checked: set[str] = set()
@@ -947,10 +956,23 @@ class ModelServicesPage(QWidget):
                     worker.result_ready.connect(self._on_upgrade_check_ready)
                     worker.start()
 
+    def _guard_install_not_running(self) -> bool:
+        """Return False and inform the user if an install task is already running."""
+        if not self._install_in_progress:
+            return True
+        QMessageBox.information(
+            self,
+            "提示",
+            "已有依赖安装任务正在进行，请等待完成后再操作。",
+        )
+        return False
+
     def _on_install_dep(
         self, package_name: str, venv_name: str, status: str = "missing"
     ) -> None:
         """Install a missing or broken dependency."""
+        if not self._guard_install_not_running():
+            return
         venv_python = self._resolve_venv_python(venv_name)
         if venv_python is None:
             QMessageBox.warning(
@@ -964,6 +986,8 @@ class ModelServicesPage(QWidget):
 
     def _on_upgrade_dep(self, package_name: str, venv_name: str) -> None:
         """Upgrade an installed dependency."""
+        if not self._guard_install_not_running():
+            return
         venv_python = self._resolve_venv_python(venv_name)
         if venv_python is None:
             QMessageBox.warning(self, "升级失败", f"找不到 {venv_name} 环境")
@@ -985,10 +1009,14 @@ class ModelServicesPage(QWidget):
 
     def _install_all_missing(self) -> None:
         """Install all missing/broken dependencies sequentially."""
+        if not self._guard_install_not_running():
+            return
         if not hasattr(self, "_last_statuses"):
+            QMessageBox.information(self, "提示", "依赖状态还在检测中，请稍后再试。")
             return
 
         missing: list[tuple[str, Path, str]] = []
+        unresolved: list[tuple[str, str]] = []
         seen: set[str] = set()
         for dep_status in self._last_statuses:
             if dep_status.status in ("missing", "broken") and dep_status.package_name not in seen:
@@ -996,6 +1024,17 @@ class ModelServicesPage(QWidget):
                 venv_python = self._resolve_venv_python(dep_status.venv_name)
                 if venv_python is not None:
                     missing.append((dep_status.package_name, venv_python, dep_status.status))
+                else:
+                    unresolved.append((dep_status.package_name, dep_status.venv_name))
+
+        if unresolved:
+            detail = "\n".join(f"{pkg}: {venv}" for pkg, venv in unresolved)
+            QMessageBox.warning(
+                self,
+                "安装失败",
+                f"以下依赖找不到目标 Python 环境，请先创建环境后重试：\n{detail}",
+            )
+            return
 
         if not missing:
             QMessageBox.information(self, "提示", "所有依赖已安装，无需操作。")
@@ -1014,8 +1053,17 @@ class ModelServicesPage(QWidget):
         force_reinstall: bool = False,
     ) -> None:
         """Run pip install in a background thread."""
+        self._install_in_progress = True
         self._refresh_btn.setEnabled(False)
         self._install_all_btn.setEnabled(False)
+        self._set_dep_row_buttons_enabled(False)
+
+        action = "升级" if upgrade else ("修复" if force_reinstall else "安装")
+        self._active_install_package = package_name
+        self._hint_label.setProperty("cssClass", "statusWarning")
+        self._hint_label.setText(f"正在{action} {package_name}，请勿关闭程序...")
+        self._hint_label.style().unpolish(self._hint_label)
+        self._hint_label.style().polish(self._hint_label)
 
         worker = _PipInstallWorker(
             package_name, venv_python, upgrade,
@@ -1029,23 +1077,42 @@ class ModelServicesPage(QWidget):
 
     def _on_install_finished(self, package_name: str, success: bool, output: str) -> None:
         """Handle pip install completion."""
-        self._refresh_btn.setEnabled(True)
-        self._install_all_btn.setEnabled(True)
-
         if success:
-            # Continue installing remaining missing packages
+            self._hint_label.setProperty("cssClass", "statusSuccess")
+            self._hint_label.setText(f"{package_name} 处理完成，正在刷新依赖状态...")
+            self._hint_label.style().unpolish(self._hint_label)
+            self._hint_label.style().polish(self._hint_label)
+
+            # Continue installing remaining missing packages without releasing the lock
             if hasattr(self, "_missing_queue") and self._missing_queue:
                 pkg, python, dep_st = self._missing_queue.pop(0)
-                self._run_pip_install(pkg, python, upgrade=False, force_reinstall=dep_st == "broken")
+                self._run_pip_install(
+                    pkg, python, upgrade=False, force_reinstall=dep_st == "broken"
+                )
                 return
-            # All done — refresh
+
+            # All done — release lock and restore buttons
+            self._install_in_progress = False
+            self._refresh_btn.setEnabled(True)
+            self._install_all_btn.setEnabled(True)
+            self._set_dep_row_buttons_enabled(True)
             self._refresh_dep_status()
-        else:
-            QMessageBox.warning(
-                self, "安装失败",
-                f"安装 {package_name} 失败：\n{output[:500]}",
-            )
-            self._missing_queue = []
+            return
+
+        # Failed — release lock and restore buttons
+        self._install_in_progress = False
+        self._missing_queue = []
+        self._refresh_btn.setEnabled(True)
+        self._install_all_btn.setEnabled(True)
+        self._set_dep_row_buttons_enabled(True)
+        self._hint_label.setProperty("cssClass", "statusDanger")
+        self._hint_label.setText(f"{package_name} 安装失败，请查看弹窗错误信息。")
+        self._hint_label.style().unpolish(self._hint_label)
+        self._hint_label.style().polish(self._hint_label)
+        QMessageBox.warning(
+            self, "安装失败",
+            f"安装 {package_name} 失败：\n{output[:500]}",
+        )
 
     @staticmethod
     def _resolve_venv_python(venv_name: str) -> Path | None:
@@ -1066,6 +1133,19 @@ class ModelServicesPage(QWidget):
             if python.is_file():
                 return python
         return None
+
+    def _set_dep_row_buttons_enabled(self, enabled: bool) -> None:
+        """Enable or disable all action buttons inside dependency row widgets."""
+        from PySide6.QtWidgets import QPushButton
+
+        for i in range(self._dep_layout.count()):
+            item = self._dep_layout.itemAt(i)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                for btn in w.findChildren(QPushButton):
+                    btn.setEnabled(enabled)
 
     def _on_provider_added(self, stage: str) -> None:
         configs = [
