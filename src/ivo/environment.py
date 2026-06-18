@@ -61,7 +61,10 @@ def collect_environment_diagnostics() -> EnvironmentDiagnostics:
         ffmpeg_hint=(
             "FFmpeg 可用。"
             if ffmpeg_path
-            else "未找到 FFmpeg；Windows 可尝试 winget install Gyan.FFmpeg 后重新打开终端。"
+            else (
+                "未找到 FFmpeg。可将 FFmpeg 解压到项目根目录的 ffmpeg/ 文件夹，"
+                "或通过 winget install Gyan.FFmpeg 安装后重新打开终端。"
+            )
         ),
         nvidia_hint=(
             "NVIDIA GPU 工具可用。"
@@ -116,7 +119,20 @@ def _runtime_roots() -> list[Path]:
     if getattr(sys, "frozen", False):
         executable_dir = Path(sys.executable).resolve().parent
         roots.extend([executable_dir / "_internal", executable_dir])
+    # Development mode: look for a bundled ffmpeg/ directory at the project root.
+    project_root = _project_root()
+    if project_root is not None:
+        roots.append(project_root)
     return roots
+
+
+def _project_root() -> Path | None:
+    """Return the project root directory in development mode, or None when running from an installed package."""
+    here = Path(__file__).resolve()
+    # src/ivo/environment.py -> project root is two parents up from the package.
+    if here.parent.name == "ivo" and here.parent.parent.name == "src":
+        return here.parent.parent.parent
+    return None
 
 
 def _executable_names(name: str) -> list[str]:

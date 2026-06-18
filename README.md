@@ -1,202 +1,262 @@
-# 智能视频配音
+# 智能视频配音 (Intelligent Voice Over)
 
-这是一个本地优先的 Windows 桌面端项目，目标是把英文、日文、韩文视频对白重新配成自然的中文配音，并支持本地模型与自定义线上模型 API 两种模式。
+> 本地优先的 Windows 桌面端 AI 视频配音工具 —— 将英文 / 日文 / 韩文视频对白重新配成自然的中文音频。
 
-当前状态：已完成 v1 的可测试工程骨架、mock 端到端流水线、本地命令 adapter、HTTP adapter、基础桌面 UI、时间线编辑/单句后台重生成、最终导出和导出合规闸门。详细计划见 `docs/superpowers/plans/2026-06-01-intelligent-video-dubbing-v1.md`。
+![Python](https://img.shields.io/badge/python-3.10-blue)
+![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-orange)
+![Platform](https://img.shields.io/badge/platform-Windows-blue)
+![UI](https://img.shields.io/badge/UI-PySide6%20%2F%20Qt%206-green)
 
-最新真实模型基线：已在本机授权日语样片上跑通 CPU、GPU 和完整质量优先三条本地链路。当前最高质量验收链路使用 Demucs `htdemucs_ft` GPU 分离、faster-whisper `large-v3` GPU/float16 ASR、pyannote community-1 本地说话人分离、LM Studio Qwen3.6 35B 本地翻译，以及 F5-TTS CUDA 真实生成；3 分 21 秒真实视频完整导出耗时约 701 秒，56 个片段全部 `rendered`。当前剩余完整实施计划见 `docs/superpowers/plans/2026-06-05-complete-remaining-implementation-plan.md`，验收矩阵见 `docs/evaluation/acceptance-matrix.md`，最终验收记录见 `docs/evaluation/runs/2026-06-final-acceptance.md`，完整 GPU 跑测记录见 `docs/evaluation/runs/2026-06-06-full-gpu-f5-diarization-lmstudio-full.md`。
+[English](./README_EN.md) | **中文**
 
-默认模型策略：CLI 和桌面 UI 在未手动指定本地命令 profile 时，会优先选择 `examples/local_command_profiles.real_separation_asr_tts_f5_gpu_small.json`；如果未检测到 NVIDIA 工具或 GPU profile 不存在，再回退到 `examples/local_command_profiles.real_separation_asr_tts_f5_cpu_small.json`。手动传入 `--profiles` 或在 UI 里选择 profile 时，会尊重用户选择。
+---
 
-默认输出策略：未显式指定输出目录时，项目默认写入程序当前工作目录下的 `runs/`；模型 smoke、探测音频和其他临时工作文件默认写入 `.ivo-work/`。真实项目内部的过程文件继续放在 `.ivoproj/assets`、`.ivoproj/work` 和 `.ivoproj/renders` 中，避免默认占用系统盘。用户仍可通过 CLI 参数或 UI 输出目录自定义存放位置。
+## 为什么选择 IVO
 
-默认释放策略：本地命令模型随子进程结束自动释放；LM Studio 这类常驻本地服务在 HTTP 翻译阶段结束后会调用 LM Studio unload 接口卸载本次使用的模型实例，只释放模型资源，不关闭 LM Studio 程序。
+- **本地优先**：核心流水线在本地运行，模型权重不上传云端，你的视频素材不离开电脑。
+- **双模式接入**：既支持本地模型（Demucs / faster-whisper / pyannote / F5-TTS / CosyVoice），也支持云端 API（OpenAI / Deepgram / ElevenLabs / 阿里云 / 讯飞 等）。
+- **可视化桌面端**：PySide6 单窗口应用，从项目创建到时间线审片全流程可视化操作，无需命令行。
+- **断点续跑**：每个阶段独立记录状态，中途失败后修复环境即可从断点继续，不浪费已完成的产物。
+- **合规内置**：导出时自动嵌入 AI 配音元数据，支持可见水印，确保 AI 生成内容透明标注。
+- **批量处理**：支持整季剧集批量跑，单集失败不影响后续，最终汇总报告。
 
-注意：F5-TTS 代码是 MIT，但默认预训练权重为 CC-BY-NC，商业用途前必须换用许可证合适的模型或服务。下一条优先评估的真实 TTS 路线是 CosyVoice。真实视频素材、生成音频/视频、模型权重、API key 和 token 都不要提交到 Git。
+## 流水线
 
-## 许可证
+```
+源视频
+  │
+  ├─ 1. 导入          复制源视频到项目
+  ├─ 2. 音频提取      FFmpeg 提取标准化 WAV
+  ├─ 3. 人声分离      Demucs / HTTP API → vocals.wav + background.wav
+  ├─ 4. 语音转写      faster-whisper / HTTP API → 带时间戳的片段
+  ├─ 5. 说话人分离    pyannote / HTTP API（可选）→ 分配说话人 ID
+  ├─ 6. 文本翻译      LM Studio / HTTP API → 中文文本
+  ├─ 7. 语音合成      F5-TTS / CosyVoice / HTTP API → 逐片段中文音频
+  └─ 8. 混合导出      FFmpeg 混合背景音 + 对齐片段 + 水印 → 最终 MP4
+```
 
-本项目源码可见，采用 PolyForm Noncommercial License 1.0.0。你可以在非商业用途下查看、学习、修改、运行和分发本项目代码，但未经作者书面授权，不得用于商业用途。
-
-商业使用包括但不限于付费产品、SaaS 服务、企业内部生产部署、付费交付、商业项目集成、收费部署/咨询/运维、商业内容生产流程或以商业获利为目的的再分发。商业授权说明见 `COMMERCIAL-LICENSE.md`。
-
-请注意：PolyForm Noncommercial License 不是 OSI 认证的开源许可证，因为它限制商业使用。本项目采用“源码开放 / 非商业使用许可”的发布方式。
-
-参与贡献前请阅读：
-
-- `CONTRIBUTING.md`
-- `COMMERCIAL-LICENSE.md`
-- `CODE_OF_CONDUCT.md`
-- `SECURITY.md`
-- `docs/compliance-and-licenses.md`
-
-请不要向仓库提交真实 API key、token、未授权视频/音频素材或模型权重。
-
-## 合规与贡献
-
-如何提交 issue：请提供系统、Python、FFmpeg 状态、复现命令或 UI 操作路径、期望结果和实际结果；不要上传未授权剧集片段、真实人声音频、API key 或 token。
-
-如何贡献 profile：优先提交不含密钥的 `examples/` 示例，使用 `{{ api_key }}`、`YOUR_API_KEY` 或 `KEY=VALUE` 变量占位；说明模型/服务许可证、输入输出 JSON 合约、最小验证命令和是否需要本地模型目录。
-
-不接受模型权重、真实影视片段或 API key。相关合规细节见 `docs/compliance-and-licenses.md`。
+每个阶段独立记录状态，支持 `--resume-existing` 断点续跑。
 
 ## 快速开始
 
-请在项目目录执行命令：
+### 前置要求
+
+- Windows 10/11
+- Python 3.10
+- [uv](https://docs.astral.sh/uv/) 包管理器
+
+> FFmpeg 已内置在仓库的 `ffmpeg/bin/` 目录中，克隆后即可使用，无需单独安装或配置环境变量。
+
+### 安装
 
 ```powershell
-cd F:\GZYproject\Intelligent-Voice-Over
+git clone <repo-url>
+cd Intelligent-Voice-Over
+uv sync --dev
+```
+
+### 环境诊断
+
+```powershell
 uv run ivo doctor
-uv run pytest
 ```
 
-生成不含真实影视素材的合成样片，用于验证导入、预览和导出流程：
-
-```powershell
-uv run python .\scripts\create_sample_media.py --output-dir .\sample_media
-```
-
-如果你在其他目录执行，可以显式指定项目：
-
-```powershell
-uv run --project F:\GZYproject\Intelligent-Voice-Over ivo doctor
-```
-
-## 常用开发命令
-
-```powershell
-uv run pytest
-uv run ruff check .
-uv run mypy src
-uv run ivo doctor
-uv run ivo doctor-models
-uv run ivo model smoke-asr --output .\scratch\asr-smoke.json --dry-run
-uv run ivo model smoke-adapters --output .\scratch\adapter-smoke.json
-```
-
-启动桌面 UI：
+### 启动桌面 UI
 
 ```powershell
 uv run python -m ivo.app
 ```
 
-运行 mock 端到端测试：
+### 生成测试样片（不含真实素材）
 
 ```powershell
-uv run pytest tests/test_e2e_mock_pipeline.py -v
+uv run python .\scripts\create_sample_media.py --output-dir .\sample_media
 ```
 
-## CLI 预览
+### FFmpeg 说明
 
-生成一个不依赖真实 AI 模型的 mock 预览项目：
+仓库已内置 FFmpeg 8.0.1 essentials build（位于 `ffmpeg/bin/`），覆盖音频提取、视频混合导出等全部流水线需求。程序会按以下优先级查找 FFmpeg：
+
+1. 项目内置的 `ffmpeg/bin/`（默认，开箱即用）
+2. `IVO_FFMPEG_PATH` 环境变量（完整路径）
+3. `IVO_FFMPEG_DIR` 环境变量（目录）
+4. 系统 PATH
+
+如需替换为其他 FFmpeg 版本，直接覆盖 `ffmpeg/bin/` 下的文件即可。打包便携版时也会自动包含此目录。
+
+## 桌面端使用
+
+桌面端采用左侧导航布局：
+
+| 页面 | 用途 |
+|------|------|
+| **首页** | 快速入口和最近项目 |
+| **项目库** | 管理所有 `.ivoproj` 项目，支持打开、查看文件夹、删除 |
+| **当前项目** | 生成进度、时间线审片、单句重生成、最终导出 |
+| **模型中心** | 选择模型目录、一键检查就绪状态、管理模型方案 |
+| **模型服务** | 配置云端 API 提供商（OpenAI / Deepgram / ElevenLabs 等） |
+| **设置** | 项目目录、最近项目等用户偏好 |
+
+推荐工作流：
+
+1. 在「模型中心」选择模型目录并一键检查就绪状态
+2. 通过 4 步向导新建项目（选择视频 → 选择语言 → 选择模型方案 → 确认）
+3. 在「当前项目 → 生成进度」查看阶段和句子级进度
+4. 完成后在「时间线」审片，可单句重生成
+5. 确认后执行最终导出（含合规水印）
+
+## CLI 使用
+
+### Mock 预览（不依赖真实模型）
 
 ```powershell
 uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" --source-language en
 ```
 
-使用本地命令 profile 跑预览链路：
+### 本地模型预览
 
 ```powershell
-uv run ivo local-preview .\sample.mp4 --profiles .\examples\local_command_profiles.mock.json --project-name "Episode 01" --source-language en --no-watermark
+# CPU 小预览
+uv run ivo local-preview .\sample.mp4 ^
+  --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_cpu_small.json ^
+  --project-name "Episode 01" --source-language ja ^
+  --require-readiness --models-dir .\models --resume-existing --no-watermark
+
+# GPU 完整质量
+uv run ivo local-preview .\sample.mp4 ^
+  --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json ^
+  --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json ^
+  --project-name "Full GPU Episode 01" --source-language ja ^
+  --require-readiness --models-dir .\models --resume-existing --no-watermark
 ```
 
-真实模型 profile 建议增加 `--require-readiness --models-dir .\models`，在包、模型目录或 engine command 文件缺失时提前退出，不创建半成品项目。快速真实预览优先使用已经验收过的 F5 GPU 小预览 profile：
+### 批量处理
 
 ```powershell
-uv run ivo local-preview .\sample.mp4 --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_gpu_small.json --project-name "Episode 01" --source-language ja --require-readiness --models-dir .\models --resume-existing --no-watermark
+uv run ivo batch-local-preview .\episodes ^
+  --profiles .\examples\local_command_profiles.real_dry_run.json ^
+  --source-language en --no-watermark ^
+  --report .\demo-output\batch-report.json --skip-existing
 ```
 
-正式质量优先流程使用完整 GPU + 说话人分离 + LM Studio 翻译 profile。运行前需要确认 `.venv-pyannote` 可用、LM Studio 已启动，并且 `http://127.0.0.1:1995/v1/models` 能看到 profile 中的模型 ID：
-
-```powershell
-uv run ivo local-preview .\sample.mp4 --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json --project-name "Full GPU Episode 01" --source-language ja --require-readiness --models-dir .\models --resume-existing --no-watermark
-```
-
-如果真实本地模型运行中途失败，保留同一个输出目录和项目名，修复模型环境或 profile 后可用 `--resume-existing` 复用已有 `.ivoproj`、job 状态和已完成的文件阶段产物：
-
-```powershell
-uv run ivo local-preview .\sample.mp4 --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --resume-existing --no-watermark
-```
-
-运行真实模型前，可以先静态校验本地命令 profiles：
+### Profile 校验
 
 ```powershell
 uv run ivo validate-local-profiles .\examples\local_command_profiles.real_dry_run.json --json
 uv run ivo check-local-readiness .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --models-dir .\models --json
 ```
 
-批量处理一个目录里的多集视频，并为每个视频生成独立 `.ivoproj`：
+## 两种接入模式
 
-```powershell
-uv run ivo batch-local-preview .\episodes --profiles .\examples\local_command_profiles.real_dry_run.json --source-language en --no-watermark
-```
+### 本地模型
 
-批处理可以加 `--report .\demo-output\batch-report.json` 写出机器可读结果；单个视频失败时会继续处理后续视频，最后用非零退出码汇总失败数。已经生成过 `renders/local-preview.mp4` 的项目可以用 `--skip-existing` 跳过；需要继续已有 `.ivoproj` 的阶段状态时使用 `--resume-existing`，适合长剧集续跑。
-
-使用真实模型接入脚本的 dry-run profile 验证命令合约：
-
-```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.real_dry_run.json --project-name "Episode 01" --source-language en --target-text "seg-001=嗯，你好。" --no-watermark
-```
-
-## 自定义线上 API
-
-自定义线上模型 API 通过 `ApiAdapterProfile` 描述，并可保存为 JSON profile。当前 CLI 支持添加和查看 HTTP adapter profile：
-
-```powershell
-uv run ivo adapter add-http .\adapters.json --id translator --stage translation --url https://api.example.test/translate --response target_text=$.text --optional-response style_prompt --file-upload audio=audio_path
-uv run ivo adapter list .\adapters.json
-uv run ivo validate-http-profile .\examples\http_translation_profile.example.json --json
-```
-
-本地命令预览也可以把翻译阶段切到 HTTP API：
-
-```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --translation-profile .\examples\http_translation_profile.example.json --translation-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
-```
-
-人声分离阶段也可以切到 HTTP API。示例 profile 使用 `vocals_base64` 和 `background_base64` 返回两路音频：
-```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --separation-profile .\examples\http_separation_profile.example.json --separation-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
-```
-
-也可以把 ASR / 转写阶段切到 HTTP API。ASR profile 需要返回 `segments` 列表，字段格式与本地 ASR 命令输出一致：
-```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --asr-profile .\examples\http_asr_profile.example.json --asr-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
-```
-
-说话人分离阶段也可以切到 HTTP API。该 profile 返回说话人时间范围，流水线会映射到 ASR 片段：
-```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --diarization-profile .\examples\http_diarization_profile.example.json --diarization-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
-```
-
-也可以把 TTS / 音色克隆阶段切到 HTTP API。TTS API profile 可以返回 `audio_base64`，也可以返回本地可读的 `audio_path`：
-
-```powershell
-uv run ivo local-preview .\sample.mp4 .\demo-output --profiles .\examples\local_command_profiles.mock.json --tts-profile .\examples\http_tts_profile.example.json --tts-var api_key=YOUR_API_KEY --project-name "Episode 01" --source-language en
-```
-
-## 本地模型
-
-项目不默认打包模型权重。推荐通过模型方案（scheme）配置本地模型：
+项目不打包模型权重。通过模型方案（scheme）配置本地模型：
 
 ```powershell
 uv run ivo model setup-plan --models-dir .\models
 uv run ivo model write-setup-script --models-dir .\models
 ```
 
-也可以在桌面端"模型中心"直接选择模型目录并一键检查。
+或在桌面端「模型中心」直接选择模型目录并一键检查。
 
-真实本地模型可通过 `LocalCommandAdapter` 接入：把 ASR、人声分离、TTS/音色克隆模型包装成命令行脚本，输出标准 JSON 文件，流水线即可继续处理。示例脚本在 `examples/local_commands/`。
+| 阶段 | 推荐模型 | 说明 |
+|------|----------|------|
+| 人声分离 | Demucs `htdemucs_ft` | GPU 优先 |
+| 语音转写 | faster-whisper `large-v3` | GPU/float16 |
+| 说话人分离 | pyannote community-1 | 需接受 HF 模型条款 |
+| 文本翻译 | LM Studio + Qwen3 | 本地 HTTP 服务 |
+| 语音合成 | F5-TTS / CosyVoice | F5 权重为 CC-BY-NC，商用需换权重 |
 
-更多说明见：
+### 云端 API
 
-- `docs/local-model-setup.md`
-- `docs/local-model-command-profiles.md`
-- `docs/evaluation/real-video-evaluation.md`
-- `docs/ui-local-preview.md`
-- `docs/windows-packaging.md`
+通过 `ApiAdapterProfile` 描述 HTTP API，所有阶段均可替换为云端服务：
 
-## 桌面客户端使用流程
+```powershell
+# 添加 HTTP adapter
+uv run ivo adapter add-http .\adapters.json ^
+  --id translator --stage translation ^
+  --url https://api.example.test/translate ^
+  --response target_text=$.text
 
-新版桌面端采用“首页 / 项目库 / 当前项目 / 模型中心 / 设置”的左侧导航。普通用户的推荐路径是：先在“模型中心”选择 `models/` 或其他模型目录并一键检查，再通过 4 步向导新建项目；生成时在“当前项目 -> 生成进度”查看阶段和当前句子进度；完成后在“时间线”审片，默认不显示 JSON、profile、片段 ID 等技术细节。以往项目可在“项目库”继续打开、查看文件夹或继续生成。
+# 使用 HTTP 翻译替换本地翻译
+uv run ivo local-preview .\sample.mp4 .\demo-output ^
+  --profiles .\examples\local_command_profiles.mock.json ^
+  --translation-profile .\examples\http_translation_profile.example.json ^
+  --translation-var api_key=YOUR_API_KEY ^
+  --project-name "HTTP Translation" --source-language ja
+```
+
+内置支持的云端提供商：
+
+| 提供商 | 支持阶段 |
+|--------|----------|
+| OpenAI | ASR + 说话人分离 + TTS |
+| Deepgram | ASR |
+| AudioShake | 人声分离 |
+| LALAL.AI | 人声分离 |
+| 阿里云百炼 | ASR |
+| 阿里云 Qwen-TTS | TTS |
+| ElevenLabs | TTS |
+| Anthropic | 翻译 |
+| OpenAI 兼容 | 翻译 |
+| 讯飞开放平台 | ASR + 说话人分离 |
+
+## 项目结构
+
+```
+{project}.ivoproj/
+  project.json       项目元数据
+  segments.sqlite    时间线片段存储
+  jobs.sqlite        阶段执行状态
+  speakers.json      说话人配置
+  settings.json      项目设置
+  assets/            源视频、提取的音频
+  work/              人声、背景音、生成的片段音频
+  renders/           最终输出视频
+```
+
+## 开发
+
+```powershell
+# 运行全部测试
+uv run pytest
+
+# 代码检查
+uv run ruff check .
+
+# 类型检查（严格模式）
+uv run mypy src
+
+# Windows 打包（空运行）
+uv run python scripts/build_windows_package.py --dry-run --output-dir dist
+```
+
+## 许可证
+
+本项目源码采用 **PolyForm Noncommercial License 1.0.0**。你可以在非商业用途下查看、学习、修改、运行和分发本项目代码，但**未经作者书面授权，不得用于商业用途**。
+
+> PolyForm Noncommercial License 不是 OSI 认证的开源许可证，因为它限制商业使用。本项目采用「源码开放 / 非商业使用许可」的发布方式。
+
+商业使用包括但不限于：付费产品、SaaS 服务、企业内部生产部署、付费交付、商业项目集成、收费部署/咨询/运维。商业授权说明见 [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md)。
+
+**第三方模型注意事项**：F5-TTS 代码是 MIT，但默认预训练权重为 CC-BY-NC，商业用途前必须换用许可证合适的模型或服务。第三方模型许可证彼此独立，不会因为本项目代码采用 PolyForm Noncommercial 而自动变成同一许可证。
+
+## 贡献
+
+参与贡献前请阅读：
+
+- [CONTRIBUTING.md](./CONTRIBUTING.md)
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- [SECURITY.md](./SECURITY.md)
+- [docs/compliance-and-licenses.md](./docs/compliance-and-licenses.md)
+
+请不要向仓库提交真实 API key、token、未授权视频/音频素材或模型权重。
+
+## 更多文档
+
+- [本地模型环境配置](./docs/local-model-setup.md)
+- [本地命令 Profile 指南](./docs/local-model-command-profiles.md)
+- [HTTP API Profile 指南](./docs/http-api-profiles.md)
+- [桌面端使用说明](./docs/ui-local-preview.md)
+- [Windows 打包说明](./docs/windows-packaging.md)
+- [合规与许可证](./docs/compliance-and-licenses.md)

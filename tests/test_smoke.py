@@ -30,12 +30,14 @@ def test_environment_diagnostics_reports_missing_tools(monkeypatch) -> None:
     from ivo.environment import collect_environment_diagnostics
 
     monkeypatch.setattr("shutil.which", lambda name: None)
+    # Simulate no bundled FFmpeg in the project directory.
+    monkeypatch.setattr("ivo.environment._project_root", lambda: None)
 
     diagnostics = collect_environment_diagnostics()
 
     assert diagnostics.ffmpeg_path is None
     assert diagnostics.nvidia_smi_path is None
-    assert "winget install" in diagnostics.ffmpeg_hint
+    assert "ffmpeg/" in diagnostics.ffmpeg_hint
 
 
 def test_environment_diagnostics_uses_explicit_ffmpeg_path(monkeypatch, tmp_path) -> None:
@@ -1521,9 +1523,8 @@ def test_readme_points_to_compliance_and_contribution_guidance() -> None:
     text = Path("README.md").read_text(encoding="utf-8")
 
     assert "docs/compliance-and-licenses.md" in text
-    assert "如何提交 issue" in text
-    assert "如何贡献 profile" in text
-    assert "不接受模型权重、真实影视片段或 API key" in text
+    assert "CONTRIBUTING.md" in text
+    assert "请不要向仓库提交真实 API key" in text
 
 
 def _write_smoke_local_profiles(tmp_path: Path) -> Path:
