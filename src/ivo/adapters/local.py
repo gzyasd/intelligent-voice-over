@@ -59,13 +59,25 @@ class LocalCommandAdapter:
     def run(self, context: AdapterContext) -> AdapterResult:
         values = context.template_values()
         values.update(self.profile.extra)
-        values.setdefault("python_executable", sys.executable)
+        if not getattr(sys, "frozen", False):
+            values.setdefault("python_executable", sys.executable)
+        missing_interpreter = _missing_interpreter_variable(self.profile.command, values)
+        if missing_interpreter is not None:
+            return self._error(
+                _missing_interpreter_message(missing_interpreter),
+            )
         values["output_json_path"] = self._render_string(self.profile.output_json_path, values)
         command = [self._render_string(part, values) for part in self.profile.command]
         output_path = Path(str(values["output_json_path"]))
         working_dir = str(values["working_dir"]) if values.get("working_dir") else None
         env = _build_subprocess_env(working_dir)
 
+        self._emit_command_output(
+            command,
+            stdout="",
+            stderr="",
+            exit_code=-1,
+        )
         try:
             if self.runner is None:
                 completed = subprocess.run(
@@ -262,6 +274,29 @@ def _find_bundled_ffmpeg_bin(runtime_root: Path) -> Path | None:
         if (candidate / "ffmpeg.exe").is_file() or (candidate / "ffmpeg").is_file():
             return candidate
     return None
+
+
+def _missing_interpreter_variable(
+    command: list[str],
+    values: dict[str, Any],
+) -> str | None:
+    for variable_name in ("python_executable", "pyannote_python_executable"):
+        marker = f"{{{{ {variable_name} }}}}"
+        if any(marker in part for part in command) and not values.get(variable_name):
+            return variable_name
+    return None
+
+
+def _missing_interpreter_message(variable_name: str) -> str:
+    if variable_name == "pyannote_python_executable":
+        return (
+            "pyannote Python interpreter is not configured. Configure the "
+            "custom pyannote Python path in Settings or set IVO_PYANNOTE_PYTHON."
+        )
+    return (
+        "local Python interpreter is not configured. Configure the custom "
+        "virtual-environment Python path in Settings or set IVO_LOCAL_PYTHON."
+    )
 
 
 __all__ = [

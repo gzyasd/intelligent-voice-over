@@ -98,6 +98,7 @@ class _ElevenLabsTtsPipelineAdapter:
         reference_audio_path: Path | None,
         reference_text: str,
         target_duration_ms: int,
+        speech_rate: float = 1.0,
     ) -> int:
         voice_id = self._provider._voice_id or speaker_id
         response = httpx.post(

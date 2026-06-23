@@ -113,7 +113,7 @@ def test_local_command_preview_runs_from_video_to_preview_export(tmp_path) -> No
     segment = project.timeline.get_segment("seg-001")
     assert result.final_output.is_file()
     assert result.final_output.stat().st_size > 0
-    assert result.metadata["ai_dubbing"] == "true"
+    assert "AI generated dubbing" in result.metadata["comment"]
     assert result.generated_segments[0].is_file()
     assert segment.status == "rendered"
     assert segment.target_text == "Well, hello."

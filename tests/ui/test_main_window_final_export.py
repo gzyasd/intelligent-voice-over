@@ -53,7 +53,7 @@ def test_main_window_runs_final_export_from_dialog(monkeypatch, qtbot, tmp_path)
     assert request.background_audio == background
     assert request.segment_audio[0].path == generated_audio
     assert request.segment_audio[0].start_ms == 250
-    assert request.metadata["ai_dubbing"] == "true"
+    assert "AI generated dubbing" in request.metadata["comment"]
     assert request.watermark_text == "AI 配音"
     assert window.progress_label.text() == "\u6700\u7ec8\u5bfc\u51fa\u5df2\u5b8c\u6210"
 

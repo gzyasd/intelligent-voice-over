@@ -118,7 +118,11 @@ def _runtime_roots() -> list[Path]:
         roots.append(Path(meipass))
     if getattr(sys, "frozen", False):
         executable_dir = Path(sys.executable).resolve().parent
-        roots.extend([executable_dir / "_internal", executable_dir])
+        roots.extend([
+            executable_dir / "_internal",
+            executable_dir,
+            executable_dir.parent,  # resources/ (Electron extraResources)
+        ])
     # Development mode: look for a bundled ffmpeg/ directory at the project root.
     project_root = _project_root()
     if project_root is not None:
@@ -287,7 +291,14 @@ def resolve_local_python(root: Path | str | None = None) -> Path | None:
     configured = getenv("IVO_LOCAL_PYTHON")
     if configured and Path(configured).is_file():
         return Path(configured)
-    search_roots = [Path(root)] if root is not None else []
+    search_roots: list[Path] = []
+    if root is not None:
+        search_roots.append(Path(root))
+    if getattr(sys, "frozen", False):
+        # Electron 打包后: resources/python/ivo-server.exe
+        # .venv 通过 extraResources 复制到 resources/.venv/
+        exe_dir = Path(sys.executable).resolve().parent
+        search_roots.append(exe_dir.parent)  # resources/
     search_roots.append(Path.cwd())
     for search_root in search_roots:
         for candidate in _local_python_candidates(search_root):

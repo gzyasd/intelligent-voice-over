@@ -4,7 +4,7 @@ import audioop
 import base64
 import wave
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 from pydantic import BaseModel
@@ -20,12 +20,22 @@ from ivo.adapters.local import (
 from ivo.core.project import DubbingProject
 from ivo.core.timeline import DubbingSegment, TimelineStore
 
+DEFAULT_CHINESE_TTS_SPEED = 0.9
+MIN_TTS_SPEED = 0.6
+MAX_TTS_SPEED = 1.4
+
 
 class SynthesisResult(BaseModel):
     segment_id: str
     audio_path: Path
     generated_duration_ms: int
     quality_flags: list[str]
+
+
+class ReferenceSample(BaseModel):
+    audio_path: Path
+    source_text: str
+    segment_id: str
 
 
 class TtsAdapter(Protocol):
@@ -39,6 +49,7 @@ class TtsAdapter(Protocol):
         reference_audio_path: Path | None,
         reference_text: str,
         target_duration_ms: int,
+        speech_rate: float,
     ) -> int: ...
 
 
@@ -56,6 +67,7 @@ class MockTtsAdapter:
         reference_audio_path: Path | None,
         reference_text: str,
         target_duration_ms: int,
+        speech_rate: float = DEFAULT_CHINESE_TTS_SPEED,
     ) -> int:
         duration_ms = self.generated_duration_ms or target_duration_ms
         _write_silent_wav(output_path, duration_ms=duration_ms)
@@ -70,9 +82,9 @@ class LocalCommandTtsAdapter:
         runner: CommandRunner | None = None,
         command_output_callback: CommandOutputCallback | None = None,
     ) -> None:
-        self.profile = profile
+        self.profile = _ensure_f5_tts_speed_argument(profile)
         self.adapter = LocalCommandAdapter(
-            profile,
+            self.profile,
             runner=runner,
             command_output_callback=command_output_callback,
         )
@@ -87,6 +99,7 @@ class LocalCommandTtsAdapter:
         reference_audio_path: Path | None,
         reference_text: str,
         target_duration_ms: int,
+        speech_rate: float = DEFAULT_CHINESE_TTS_SPEED,
     ) -> int:
         result = self.adapter.run(
             AdapterContext(
@@ -101,6 +114,8 @@ class LocalCommandTtsAdapter:
                     "output_audio_path": str(output_path),
                     "style_prompt": style_prompt or "",
                     "target_duration_ms": target_duration_ms,
+                    "speech_rate": speech_rate,
+                    "speed": speech_rate,
                 },
             )
         )
@@ -145,6 +160,7 @@ class HttpTtsAdapter:
         reference_audio_path: Path | None,
         reference_text: str,
         target_duration_ms: int,
+        speech_rate: float = DEFAULT_CHINESE_TTS_SPEED,
     ) -> int:
         result = self.adapter.run(
             AdapterContext(
@@ -159,6 +175,8 @@ class HttpTtsAdapter:
                     "output_audio_path": str(output_path),
                     "style_prompt": style_prompt or "",
                     "target_duration_ms": target_duration_ms,
+                    "speech_rate": speech_rate,
+                    "speed": speech_rate,
                     **self.extra,
                 },
             )
@@ -210,26 +228,34 @@ def synthesize_segment(
     *,
     tolerance_ms: int = 300,
     max_duration_retries: int = 1,
+    speech_rate: float = DEFAULT_CHINESE_TTS_SPEED,
 ) -> SynthesisResult:
     if max_duration_retries < 0:
         raise ValueError("max_duration_retries cannot be negative")
+    normalized_speech_rate = normalize_tts_speed(speech_rate)
 
     output_dir = project.path / "work" / "generated_segments"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{segment.id}.wav"
     target_duration_ms = segment.end_ms - segment.start_ms
-    reference_audio_path = extract_reference_audio(project, segment)
+    reference_sample = extract_reference_sample(project, segment)
+    reference_audio_path = reference_sample.audio_path if reference_sample is not None else None
+    reference_text = (
+        reference_sample.source_text if reference_sample is not None else segment.source_text
+    )
     style_prompt = segment.style_prompt
     retried = False
     for attempt in range(max_duration_retries + 1):
-        generated_duration_ms = adapter.synthesize(
+        generated_duration_ms = _call_tts_adapter(
+            adapter,
             text=segment.target_text,
             speaker_id=segment.speaker_id,
             output_path=output_path,
             style_prompt=style_prompt,
             reference_audio_path=reference_audio_path,
-            reference_text=segment.source_text,
+            reference_text=reference_text,
             target_duration_ms=target_duration_ms,
+            speech_rate=normalized_speech_rate,
         )
         duration_flag = _duration_quality_flag(
             generated_duration_ms,
@@ -261,6 +287,14 @@ def synthesize_segment(
 
 
 def extract_reference_audio(project: DubbingProject, segment: DubbingSegment) -> Path | None:
+    sample = extract_reference_sample(project, segment)
+    return sample.audio_path if sample is not None else None
+
+
+def extract_reference_sample(
+    project: DubbingProject,
+    segment: DubbingSegment,
+) -> ReferenceSample | None:
     source_audio = project.path / "assets" / "extracted_audio.wav"
     if not source_audio.is_file():
         return None
@@ -277,7 +311,11 @@ def extract_reference_audio(project: DubbingProject, segment: DubbingSegment) ->
         f"{_safe_filename(reference.speaker_id)}-{_safe_filename(reference.id)}.wav"
     )
     if output_path.is_file():
-        return output_path
+        return ReferenceSample(
+            audio_path=output_path,
+            source_text=reference.source_text,
+            segment_id=reference.id,
+        )
 
     try:
         _copy_wav_slice(
@@ -288,7 +326,11 @@ def extract_reference_audio(project: DubbingProject, segment: DubbingSegment) ->
         )
     except (EOFError, OSError, wave.Error):
         return None
-    return output_path
+    return ReferenceSample(
+        audio_path=output_path,
+        source_text=reference.source_text,
+        segment_id=reference.id,
+    )
 
 
 def _select_profile_reference_segments(
@@ -352,6 +394,48 @@ def _retry_style_prompt(style_prompt: str | None, duration_flag: str) -> str:
     }.get(duration_flag, "")
     parts = [part for part in [style_prompt, advice] if part]
     return "\n".join(parts)
+
+
+def normalize_tts_speed(value: float) -> float:
+    return min(max(float(value), MIN_TTS_SPEED), MAX_TTS_SPEED)
+
+
+def _ensure_f5_tts_speed_argument(profile: LocalCommandProfile) -> LocalCommandProfile:
+    command = list(profile.command)
+    if "--speed" in command:
+        return profile
+    if not any(Path(part).name == "f5_tts_command.py" for part in command):
+        return profile
+    return profile.model_copy(update={"command": [*command, "--speed", "{{ speech_rate }}"]})
+
+
+def _call_tts_adapter(
+    adapter: TtsAdapter,
+    *,
+    text: str,
+    speaker_id: str,
+    output_path: Path,
+    style_prompt: str | None,
+    reference_audio_path: Path | None,
+    reference_text: str,
+    target_duration_ms: int,
+    speech_rate: float,
+) -> int:
+    kwargs: dict[str, Any] = {
+        "text": text,
+        "speaker_id": speaker_id,
+        "output_path": output_path,
+        "style_prompt": style_prompt,
+        "reference_audio_path": reference_audio_path,
+        "reference_text": reference_text,
+        "target_duration_ms": target_duration_ms,
+    }
+    try:
+        return adapter.synthesize(**kwargs, speech_rate=speech_rate)
+    except TypeError as exc:
+        if "speech_rate" not in str(exc):
+            raise
+        return adapter.synthesize(**kwargs)
 
 
 def _merge_synthesis_quality_flags(

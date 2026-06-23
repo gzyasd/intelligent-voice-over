@@ -19,6 +19,7 @@ class ProjectMetadata(BaseModel):
     target_language: TargetLanguage
     content_type: Literal["video", "audio"] = "video"
     source_media_path: Path | None = None
+    scheme_id: str | None = None
     # Backward compatibility: read old source_video_path if source_media_path is None
     source_video_path: Path | None = None
     generation_status: str = "not_started"
@@ -57,6 +58,7 @@ class DubbingProject:
         target_language: TargetLanguage,
         content_type: Literal["video", "audio"] = "video",
         source_media: Path | None = None,
+        scheme_id: str | None = None,
     ) -> DubbingProject:
         path.mkdir(parents=True, exist_ok=False)
         for directory_name in ("assets", "work", "renders"):
@@ -68,6 +70,7 @@ class DubbingProject:
             target_language=target_language,
             content_type=content_type,
             source_media_path=source_media,
+            scheme_id=scheme_id,
         )
         (path / "project.json").write_text(
             metadata.model_dump_json(indent=2, exclude_none=True),

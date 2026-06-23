@@ -12,6 +12,8 @@
   "{audio_out_dir}",
   "--output_file",
   "{audio_out_name}",
+  "--speed",
+  "{speed}",
   "--device",
   "cuda"
 ]

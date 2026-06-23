@@ -198,6 +198,47 @@ def test_windows_packaging_documentation_mentions_build_command() -> None:
     assert "GitHub Release" in document
 
 
+def test_electron_builder_uses_current_build_artifacts() -> None:
+    document = Path("electron-builder.yml").read_text(encoding="utf-8")
+
+    assert "output: dist-installer" in document
+    assert "- dist/renderer/index.html" in document
+    assert "- dist/renderer/assets/**/*" in document
+    assert "- from: dist/python" in document
+    assert "dist3/" not in document
+
+
+def test_packaged_window_loads_renderer_build() -> None:
+    source = Path("electron/window-manager.ts").read_text(encoding="utf-8")
+
+    assert "'dist', 'renderer', 'index.html'" in source
+
+
+def test_frontend_can_recover_if_python_ready_event_was_sent_early() -> None:
+    main_source = Path("electron/main.ts").read_text(encoding="utf-8")
+    preload_source = Path("electron/preload.ts").read_text(encoding="utf-8")
+    app_source = Path("src/App.vue").read_text(encoding="utf-8")
+
+    assert "python-service:get-current" in main_source
+    assert "getPythonServiceCurrent" in preload_source
+    assert "getPythonServiceCurrent" in app_source
+
+
+def test_python_service_startup_timeout_allows_pyinstaller_cold_start() -> None:
+    source = Path("electron/python-service.ts").read_text(encoding="utf-8")
+
+    assert "DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 120000" in source
+    assert "IVO_PYTHON_HEALTH_TIMEOUT_MS" in source
+    assert "最后 stderr" in source
+
+
+def test_packaged_python_service_uses_persistent_user_data_root() -> None:
+    source = Path("electron/python-service.ts").read_text(encoding="utf-8")
+
+    assert "IVO_USER_DATA_DIR" in source
+    assert "app.getPath('userData')" in source
+
+
 def test_sample_media_script_dry_run_outputs_ffmpeg_commands() -> None:
     result = subprocess.run(
         [

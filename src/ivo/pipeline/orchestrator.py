@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 from ivo.core.project import DubbingProject
-from ivo.pipeline.synthesize import SynthesisResult, TtsAdapter, synthesize_segment
+from ivo.pipeline.synthesize import (
+    DEFAULT_CHINESE_TTS_SPEED,
+    SynthesisResult,
+    TtsAdapter,
+    normalize_tts_speed,
+    synthesize_segment,
+)
 
 
 class PipelineStageError(RuntimeError):
@@ -71,7 +77,20 @@ def regenerate_segment(
     adapter: TtsAdapter,
     **changes: object,
 ) -> SynthesisResult:
+    raw_speech_rate = changes.pop("speech_rate", None)
+    speech_rate = _parse_speech_rate(raw_speech_rate)
     if changes:
         project.timeline.update_segment(segment_id, **changes)
     segment = project.timeline.get_segment(segment_id)
-    return synthesize_segment(project, segment, adapter)
+    return synthesize_segment(project, segment, adapter, speech_rate=speech_rate)
+
+
+def _parse_speech_rate(value: object) -> float:
+    if value is None:
+        return DEFAULT_CHINESE_TTS_SPEED
+    if isinstance(value, (int, float, str)):
+        try:
+            return normalize_tts_speed(float(value))
+        except ValueError:
+            return DEFAULT_CHINESE_TTS_SPEED
+    return DEFAULT_CHINESE_TTS_SPEED

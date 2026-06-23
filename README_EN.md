@@ -2,10 +2,11 @@
 
 > A local-first Windows desktop app for AI-assisted video dubbing — re-dub English / Japanese / Korean video dialogue into natural Chinese audio.
 
+![Electron](https://img.shields.io/badge/Electron-31-blue)
+![Vue](https://img.shields.io/badge/Vue-3-42b883)
 ![Python](https://img.shields.io/badge/python-3.10-blue)
 ![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-orange)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
-![UI](https://img.shields.io/badge/UI-PySide6%20%2F%20Qt%206-green)
 
 **English** | [中文](./README.md)
 
@@ -13,85 +14,149 @@
 
 ## Why IVO
 
-- **Local-first**: The core pipeline runs locally. Model weights are never uploaded, and your video assets never leave your machine.
-- **Dual-mode integration**: Supports both local models (Demucs / faster-whisper / pyannote / F5-TTS / CosyVoice) and cloud APIs (OpenAI / Deepgram / ElevenLabs / Alibaba Cloud / iFlytek, etc.).
-- **Visual desktop app**: A PySide6 single-window application — from project creation to timeline review, the entire workflow is visual, no command line required.
-- **Resumable pipeline**: Each stage records its state independently. If a run fails mid-way, fix the environment and resume from the last checkpoint — no wasted work.
-- **Built-in compliance**: Exports automatically embed AI dubbing metadata and support visible watermarks, ensuring transparent labeling of AI-generated content.
-- **Batch processing**: Process an entire season of episodes in one run. Individual failures don't block the rest, with a final summary report.
+- **Local-first**: The core pipeline runs locally. Model weights never leave your machine, and neither do your video assets.
+- **Dual-mode access**: Supports both local models (Demucs / faster-whisper / pyannote / F5-TTS / CosyVoice) and cloud APIs (OpenAI / Deepgram / ElevenLabs / Alibaba Cloud / iFlytek, etc.).
+- **Modern desktop UI**: Electron + Vue 3 + FastAPI three-tier architecture with responsive UI. Full workflow from project creation to timeline review — no command line needed.
+- **Resumable pipeline**: Each stage records its state independently. If something fails mid-way, fix the environment and resume from the checkpoint without wasting completed work.
+- **Built-in compliance**: AI dubbing metadata is automatically embedded on export, with visible watermarks to ensure transparent labeling of AI-generated content.
+- **Batch processing**: Process entire seasons of episodes. A single episode failure doesn't block the rest, with a final summary report.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│            Electron Shell (Main)             │
+│   Window lifecycle, start/stop Python service│
+├─────────────────────────────────────────────┤
+│          Vue 3 Renderer (Frontend)           │
+│   Project mgmt / Timeline / Model config     │
+├─────────────────────────────────────────────┤
+│         FastAPI Python Service (Backend)     │
+│   Pipeline orchestration / Adapters / SQLite │
+├─────────────────────────────────────────────┤
+│            Local Models / HTTP API           │
+│   Demucs / faster-whisper / pyannote / F5-TTS│
+└─────────────────────────────────────────────┘
+```
+
+- **Frontend**: Vue 3 + Vite + Naive UI, TypeScript strict mode
+- **Backend**: FastAPI + uvicorn, packaged as standalone executable via PyInstaller
+- **Desktop shell**: Electron 31, manages windows and Python service lifecycle
+- **Communication**: Frontend calls local Python service via HTTP/WebSocket (127.0.0.1:17000-17999)
 
 ## Pipeline
 
 ```
-Source Video
+Source video
   │
-  ├─ 1. Import          Copy source video into project
-  ├─ 2. Audio Extract    FFmpeg extracts normalized WAV
+  ├─ 1. Import         Copy source video to project
+  ├─ 2. Audio extract   FFmpeg extracts normalized WAV
   ├─ 3. Separation      Demucs / HTTP API → vocals.wav + background.wav
-  ├─ 4. ASR              faster-whisper / HTTP API → timestamped segments
-  ├─ 5. Diarization      pyannote / HTTP API (optional) → speaker IDs
-  ├─ 6. Translation       LM Studio / HTTP API → Chinese text
-  ├─ 7. TTS              F5-TTS / CosyVoice / HTTP API → per-segment Chinese audio
-  └─ 8. Mix & Export     FFmpeg mixes background + aligned segments + watermark → final MP4
+  ├─ 4. ASR             faster-whisper / HTTP API → timestamped segments
+  ├─ 5. Diarization     pyannote / HTTP API (optional) → speaker IDs
+  ├─ 6. Translation     LM Studio / HTTP API → Chinese text
+  ├─ 7. TTS             F5-TTS / CosyVoice / HTTP API → per-segment Chinese audio
+  └─ 8. Export          FFmpeg mix background + aligned segments + watermark → final MP4
 ```
 
-Each stage records its state independently and supports `--resume-existing` for checkpoint recovery.
+Each stage records its state independently, supporting resumable execution.
 
 ## Quick Start
 
-### Prerequisites
+### Option 1: Download Installer (Recommended for Users)
+
+1. Download `IVO Setup x.x.x.exe`
+2. Double-click to run and follow the installer
+3. Launch IVO from Start Menu or desktop shortcut
+4. Configure local models before first use (see "Local Model Setup" below)
+
+> The installer includes FFmpeg and Python runtime — no additional installation required.
+
+### Option 2: Build from Source (Recommended for Developers)
+
+#### Prerequisites
 
 - Windows 10/11
-- Python 3.10
+- [Node.js](https://nodejs.org/) 20+
+- [pnpm](https://pnpm.io/) 10+
+- [Python](https://www.python.org/) 3.10
 - [uv](https://docs.astral.sh/uv/) package manager
 
-> FFmpeg is already bundled in the repository's `ffmpeg/bin/` directory — ready to use after cloning, no separate installation or environment variable configuration needed.
-
-### Installation
+#### Install Dependencies
 
 ```powershell
 git clone <repo-url>
 cd Intelligent-Voice-Over
+
+# Install frontend dependencies
+pnpm install
+
+# Install Python dependencies
 uv sync --dev
 ```
 
-### Environment Diagnostics
+#### Development Mode
 
 ```powershell
-uv run ivo doctor
+# Start frontend dev server and Electron together
+pnpm dev
 ```
 
-### Launch Desktop UI
+#### Build
 
 ```powershell
-uv run python -m ivo.app
+# 1. Build frontend
+pnpm run build:frontend
+
+# 2. Package Python backend (PyInstaller)
+pnpm run build:python
+
+# 3. Package Electron installer
+pnpm run build:win
 ```
 
-### Generate Test Sample (no real footage)
+Build artifacts are in `dist/`:
+- `IVO Setup x.x.x.exe` — NSIS installer
+- `win-unpacked/IVO.exe` — portable version
 
-```powershell
-uv run python .\scripts\create_sample_media.py --output-dir .\sample_media
+### Local Model Setup
+
+The project does not bundle model weights. Before using the local model pipeline for the first time, download the following models:
+
+| Stage | Recommended Model | Download Method |
+|-------|-------------------|-----------------|
+| Separation | Demucs `htdemucs_ft` | Auto-downloaded on first run |
+| ASR | faster-whisper `large-v3` | HuggingFace Hub |
+| Diarization | pyannote community-1 | Requires accepting HF model terms |
+| Translation | LM Studio + Qwen3 | Local HTTP service |
+| TTS | F5-TTS | HuggingFace Hub |
+
+Model directory structure:
+
+```
+models/
+  asr/
+    faster-whisper-large-v3/
+  diarization/
+    pyannote-community-1/
+  tts/
+    f5-tts/
 ```
 
-### About FFmpeg
+In the desktop app, go to "Model Center", select the model directory, and click "Check Readiness" to verify model integrity.
 
-The repository already bundles FFmpeg 8.0.1 essentials build (in `ffmpeg/bin/`), covering all pipeline needs including audio extraction and video mix/export. The program looks for FFmpeg in this priority order:
+### FFmpeg
 
-1. Project-bundled `ffmpeg/bin/` (default, works out of the box)
-2. `IVO_FFMPEG_PATH` environment variable (full path)
-3. `IVO_FFMPEG_DIR` environment variable (directory)
-4. System PATH
+The installer includes FFmpeg. When running from source, the repository's `ffmpeg/bin/` directory also contains FFmpeg — no separate installation needed.
 
-To use a different FFmpeg version, simply overwrite the files in `ffmpeg/bin/`. The portable build also automatically includes this directory.
+## Desktop App Usage
 
-## Desktop App
-
-The desktop app uses a left-sidebar navigation layout:
+The desktop app uses a left-side navigation layout:
 
 | Page | Purpose |
 |------|---------|
 | **Home** | Quick access and recent projects |
-| **Project Library** | Manage all `.ivoproj` projects — open, browse folder, delete |
+| **Project Library** | Manage all `.ivoproj` projects — open, view folder, delete |
 | **Current Project** | Generation progress, timeline review, per-segment regeneration, final export |
 | **Model Center** | Select model directory, one-click readiness check, manage model schemes |
 | **Model Services** | Configure cloud API providers (OpenAI / Deepgram / ElevenLabs, etc.) |
@@ -99,65 +164,17 @@ The desktop app uses a left-sidebar navigation layout:
 
 Recommended workflow:
 
-1. Select a model directory in **Model Center** and run a one-click readiness check
-2. Create a new project via the 4-step wizard (select video → choose language → choose model scheme → confirm)
-3. Monitor stage and sentence-level progress in **Current Project → Generation Progress**
-4. Review in the **Timeline** after generation — regenerate individual segments as needed
-5. Confirm and execute final export (includes compliance watermark)
+1. In "Model Center", select model directory and check readiness
+2. Create a new project via the 4-step wizard (select video → select language → select model scheme → confirm)
+3. View stage and segment-level progress in "Current Project → Generation Progress"
+4. Review in "Timeline" after completion, with per-segment regeneration
+5. Confirm and execute final export (with compliance watermark)
 
-## CLI Usage
-
-### Mock Preview (no real models required)
-
-```powershell
-uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" --source-language en
-```
-
-### Local Model Preview
-
-```powershell
-# CPU small preview
-uv run ivo local-preview .\sample.mp4 ^
-  --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_cpu_small.json ^
-  --project-name "Episode 01" --source-language ja ^
-  --require-readiness --models-dir .\models --resume-existing --no-watermark
-
-# GPU full quality
-uv run ivo local-preview .\sample.mp4 ^
-  --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json ^
-  --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json ^
-  --project-name "Full GPU Episode 01" --source-language ja ^
-  --require-readiness --models-dir .\models --resume-existing --no-watermark
-```
-
-### Batch Processing
-
-```powershell
-uv run ivo batch-local-preview .\episodes ^
-  --profiles .\examples\local_command_profiles.real_dry_run.json ^
-  --source-language en --no-watermark ^
-  --report .\demo-output\batch-report.json --skip-existing
-```
-
-### Profile Validation
-
-```powershell
-uv run ivo validate-local-profiles .\examples\local_command_profiles.real_dry_run.json --json
-uv run ivo check-local-readiness .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --models-dir .\models --json
-```
-
-## Two Integration Modes
+## Two Access Modes
 
 ### Local Models
 
-The project does not bundle model weights. Configure local models via model schemes:
-
-```powershell
-uv run ivo model setup-plan --models-dir .\models
-uv run ivo model write-setup-script --models-dir .\models
-```
-
-Or select a model directory directly in the desktop **Model Center** and run a one-click check.
+Configure local models via model schemes. All inference runs on local GPU/CPU:
 
 | Stage | Recommended Model | Notes |
 |-------|-------------------|-------|
@@ -165,28 +182,11 @@ Or select a model directory directly in the desktop **Model Center** and run a o
 | ASR | faster-whisper `large-v3` | GPU/float16 |
 | Diarization | pyannote community-1 | Requires accepting HF model terms |
 | Translation | LM Studio + Qwen3 | Local HTTP service |
-| TTS | F5-TTS / CosyVoice | F5 weights are CC-BY-NC; replace for commercial use |
+| TTS | F5-TTS / CosyVoice | F5 weights are CC-BY-NC, need alternative for commercial use |
 
 ### Cloud APIs
 
-Describe HTTP APIs via `ApiAdapterProfile`. Every stage can be replaced with a cloud service:
-
-```powershell
-# Add an HTTP adapter
-uv run ivo adapter add-http .\adapters.json ^
-  --id translator --stage translation ^
-  --url https://api.example.test/translate ^
-  --response target_text=$.text
-
-# Use HTTP translation instead of local
-uv run ivo local-preview .\sample.mp4 .\demo-output ^
-  --profiles .\examples\local_command_profiles.mock.json ^
-  --translation-profile .\examples\http_translation_profile.example.json ^
-  --translation-var api_key=YOUR_API_KEY ^
-  --project-name "HTTP Translation" --source-language ja
-```
-
-Built-in cloud provider support:
+Describe HTTP APIs via `ApiAdapterProfile`. Any stage can be replaced with a cloud service. Built-in cloud providers:
 
 | Provider | Supported Stages |
 |----------|-----------------|
@@ -194,12 +194,12 @@ Built-in cloud provider support:
 | Deepgram | ASR |
 | AudioShake | Separation |
 | LALAL.AI | Separation |
-| Alibaba Cloud (Bailian) | ASR |
+| Alibaba Cloud Bailian | ASR |
 | Alibaba Cloud Qwen-TTS | TTS |
 | ElevenLabs | TTS |
 | Anthropic | Translation |
 | OpenAI-compatible | Translation |
-| iFlytek | ASR + Diarization |
+| iFlytek Open Platform | ASR + Diarization |
 
 ## Project Structure
 
@@ -208,7 +208,7 @@ Built-in cloud provider support:
   project.json       Project metadata
   segments.sqlite    Timeline segment storage
   jobs.sqlite        Stage execution state
-  speakers.json      Speaker profiles
+  speakers.json      Speaker configuration
   settings.json      Project settings
   assets/            Source video, extracted audio
   work/              Vocals, background, generated segment audio
@@ -218,45 +218,58 @@ Built-in cloud provider support:
 ## Development
 
 ```powershell
-# Run all tests
-uv run pytest
+# Frontend type checking
+pnpm run typecheck
 
-# Lint
+# Frontend unit tests
+pnpm test
+
+# Python linting
 uv run ruff check .
 
-# Type check (strict mode)
+# Python type checking (strict mode)
 uv run mypy src
 
-# Windows packaging (dry run)
-uv run python scripts/build_windows_package.py --dry-run --output-dir dist
+# Python tests
+uv run pytest
 ```
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Desktop shell | Electron 31 |
+| Frontend | Vue 3 + Vite + Naive UI + TypeScript |
+| Backend | FastAPI + uvicorn + Pydantic v2 |
+| Storage | SQLite (native sqlite3, no ORM) |
+| Templating | Jinja2 (SandboxedEnvironment + StrictUndefined) |
+| HTTP | httpx |
+| Packaging | PyInstaller (Python) + electron-builder (Electron) |
 
 ## License
 
-This project is licensed under **PolyForm Noncommercial License 1.0.0**. You may view, study, modify, run, and distribute this project's code for noncommercial purposes, but **commercial use requires prior written authorization from the copyright holder**.
+This project's source code is licensed under **PolyForm Noncommercial License 1.0.0**. You may view, study, modify, run, and distribute this project's code for non-commercial purposes, but **commercial use requires written permission from the author**.
 
-> PolyForm Noncommercial License is not an OSI-approved open source license because it restricts commercial use. This project is released under a "source-available / noncommercial license" model.
+> PolyForm Noncommercial License is not an OSI-approved open source license because it restricts commercial use. This project adopts a "source-available / non-commercial license" distribution model.
 
-Commercial use includes but is not limited to: paid products, SaaS services, enterprise production deployment, paid delivery, commercial project integration, paid deployment/consulting/operations. See [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md) for commercial licensing details.
+Commercial use includes but is not limited to: paid products, SaaS services, enterprise internal production deployment, paid delivery, commercial project integration, paid deployment/consulting/operations. See [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md) for commercial licensing.
 
-**Third-party model notice**: F5-TTS code is MIT-licensed, but its default pretrained weights are CC-BY-NC. You must replace them with suitably licensed weights or services before commercial use. Third-party model licenses are independent and do not automatically inherit the PolyForm Noncommercial license of this project.
+**Third-party model notice**: F5-TTS code is MIT, but the default pretrained weights are CC-BY-NC. Commercial use requires switching to a model or service with an appropriate license. Third-party model licenses are independent and do not automatically adopt the same license as this project's PolyForm Noncommercial code.
 
 ## Contributing
 
-Please read the following before contributing:
+Before contributing, please read:
 
 - [CONTRIBUTING.md](./CONTRIBUTING.md)
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
 - [SECURITY.md](./SECURITY.md)
 - [docs/compliance-and-licenses.md](./docs/compliance-and-licenses.md)
 
-Do not submit real API keys, tokens, unauthorized video/audio footage, or model weights to the repository.
+Please do not commit real API keys, tokens, unauthorized video/audio assets, or model weights to the repository.
 
-## Further Documentation
+## More Documentation
 
 - [Local Model Setup](./docs/local-model-setup.md)
 - [Local Command Profile Guide](./docs/local-model-command-profiles.md)
 - [HTTP API Profile Guide](./docs/http-api-profiles.md)
-- [Desktop UI Guide](./docs/ui-local-preview.md)
-- [Windows Packaging](./docs/windows-packaging.md)
 - [Compliance & Licenses](./docs/compliance-and-licenses.md)

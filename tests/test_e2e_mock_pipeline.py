@@ -85,5 +85,6 @@ def test_mock_pipeline_creates_final_video_with_metadata(tmp_path) -> None:
     )
 
     assert final_video.read_bytes() == b"final-video"
-    assert metadata["ai_dubbing"] == "true"
+    assert "AI generated dubbing" in metadata["comment"]
+    assert "source_language=en" in metadata["comment"]
     assert project.timeline.get_segment("seg-001").status == "rendered"

@@ -84,6 +84,39 @@ def test_local_command_adapter_exposes_current_python_executable(tmp_path) -> No
     assert commands == [[sys.executable, "asr.py", "--out", str(output)]]
 
 
+def test_local_command_adapter_does_not_use_frozen_server_as_python(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from ivo.adapters.base import AdapterContext
+    from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
+
+    output = tmp_path / "output.json"
+    profile = LocalCommandProfile(
+        id="asr",
+        stage="asr",
+        command=["{{ python_executable }}", "asr.py", "--out", "{{ output_json_path }}"],
+        output_json_path=str(output),
+    )
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    result = LocalCommandAdapter(profile).run(
+        AdapterContext(
+            project_path=tmp_path,
+            segment_text="",
+            source_language="ja",
+            target_language="zh",
+            speaker_id="speaker-1",
+        )
+    )
+
+    assert result.ok is False
+    assert result.error is not None
+    assert "local Python interpreter is not configured" in result.error.message
+    assert "IVO_LOCAL_PYTHON" in result.error.message
+    assert result.error.command is None
+
+
 def test_local_command_adapter_honors_configured_python_and_working_dir(tmp_path) -> None:
     from ivo.adapters.base import AdapterContext
     from ivo.adapters.local import LocalCommandAdapter, LocalCommandProfile
@@ -309,5 +342,7 @@ def test_local_command_adapter_hides_windows_console_and_reports_command_output(
         assert calls[0]["creationflags"] & subprocess.CREATE_NO_WINDOW
         assert calls[0]["startupinfo"] is not None
     assert logs[0].stage == "tts"
-    assert logs[0].stdout == "loaded model"
-    assert logs[0].stderr == "warning"
+    assert logs[0].exit_code == -1
+    assert logs[1].stdout == "loaded model"
+    assert logs[1].stderr == "warning"
+    assert logs[1].exit_code == 0

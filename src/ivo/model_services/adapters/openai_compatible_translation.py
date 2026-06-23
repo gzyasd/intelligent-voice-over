@@ -14,6 +14,18 @@ from ivo.model_services.adapters.base import ConnectionValidationResult
 from ivo.pipeline.translate import HttpTranslationAdapter
 
 
+def _openai_url_from_endpoint(url: str, path: str) -> str:
+    """Resolve an OpenAI-compatible API URL from a base URL or request URL."""
+    root = url.rstrip("/")
+    for suffix in ("/v1/chat/completions", "/chat/completions", "/v1/models", "/models"):
+        if root.endswith(suffix):
+            root = root[: -len(suffix)]
+            break
+    if root.endswith("/v1"):
+        return f"{root}/{path}"
+    return f"{root}/v1/{path}"
+
+
 class OpenAICompatibleTranslationProvider:
     """Provider adapter for OpenAI-compatible Chat Completions translation."""
 
@@ -35,10 +47,14 @@ class OpenAICompatibleTranslationProvider:
 
     def validate_credentials(self) -> ConnectionValidationResult:
         """Validate by listing available models."""
+        # 空 api_key 时不发送 Authorization header（LM Studio 等本地服务无需 key）
+        headers: dict[str, str] = {}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
         try:
             response = httpx.get(
-                f"{self._base_url}/v1/models",
-                headers={"Authorization": f"Bearer {self._api_key}"},
+                _openai_url_from_endpoint(self._base_url, "models"),
+                headers=headers,
                 timeout=10.0,
             )
             if response.status_code == 200:
@@ -66,15 +82,16 @@ class OpenAICompatibleTranslationProvider:
 
     def to_pipeline_adapter(self, *, project_path: Path = Path(".")) -> HttpTranslationAdapter:
         """Build an HttpTranslationAdapter for the pipeline."""
+        # 空 api_key 时不发送 Authorization header，避免 httpx "Illegal header value"
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
         profile = ApiAdapterProfile(
             id=f"openai_compatible_{self._config_id}",
             stage="translation",
             method="POST",
-            url=f"{self._base_url}/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
+            url=_openai_url_from_endpoint(self._base_url, "chat/completions"),
+            headers=headers,
             request_template={
                 "model": self._model_name,
                 "messages": [

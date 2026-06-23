@@ -28,6 +28,9 @@ class UserSettings(BaseModel):
     recent_projects: list[Path] = Field(default_factory=list)
     theme: ThemeMode = "light"
     pip_mirror: PipMirrorKey = "official"
+    # 自定义 venv Python 解释器路径（绝对路径）。为 None 时使用默认搜索逻辑。
+    custom_venv_python: Path | None = None
+    custom_pyannote_python: Path | None = None
 
     @classmethod
     def with_defaults(cls, *, runtime_root: Path) -> UserSettings:
@@ -61,3 +64,9 @@ class UserSettingsStore:
         recent = [path for path in settings.recent_projects if path.resolve() != resolved]
         recent.insert(0, resolved)
         return self.save(settings.model_copy(update={"recent_projects": recent[:20]}))
+
+    def remove_recent_project(self, project_path: Path) -> UserSettings:
+        settings = self.load()
+        resolved = project_path.resolve()
+        recent = [path for path in settings.recent_projects if path.resolve() != resolved]
+        return self.save(settings.model_copy(update={"recent_projects": recent}))

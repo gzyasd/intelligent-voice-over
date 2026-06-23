@@ -1,0 +1,74 @@
+appId: com.ivo.desktop
+productName: IVO
+copyright: Copyright © 2026 IVO
+publish: null
+directories:
+  output: dist-installer
+  buildResources: build
+files:
+  # 白名单模式：只包含前端构建产物和 Electron main/preload
+  # IVO.exe 和 Electron 框架文件由 electron-builder 自动添加
+  - dist/renderer/index.html
+  - dist/renderer/assets/**/*
+  - dist-electron/**/*
+  - package.json
+  - '!**/*.{ts,tsx,vue,js.map}'
+  - '!src/**'
+  - '!electron/**'
+  - '!server/**'
+  - '!tests/**'
+  - '!scripts/**'
+  - '!docs/**'
+  - '!examples/**'
+  - '!ffmpeg/**'
+  - '!.venv/**'
+  - '!.venv-pyannote/**'
+  - '!models/**'
+  - '!runs/**'
+  - '!dist-installer/**'
+  - '!dist-installer2/**'
+  - '!dist/python/**'
+  - '!node_modules/**/*.{md,ts,tsx,map}'
+extraResources:
+  - from: dist/python
+    to: python
+    filter: ['**/*']
+  - from: ffmpeg/bin
+    to: ffmpeg/bin
+    filter: ['**/*']
+  - from: examples
+    to: examples
+    filter: ['**/*']
+  # .venv 和 .venv-pyannote 不打包进 NSIS 安装包（超过 NSIS 32 位内存限制）
+  # 改为单独提供，用户手动解压到安装目录的 resources/ 下
+  # 或由程序首次启动时检测并提示用户下载解压
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  # Code signing configuration (uncomment and configure for production):
+  # certificateFile: ''
+  # certificatePassword: ''
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: IVO
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: build/icon.icns
+  category: public.app-category.video
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: build/icon.png
+  category: AudioVideo

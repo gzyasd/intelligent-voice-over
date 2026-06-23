@@ -4,10 +4,22 @@ import json
 import importlib.util
 import subprocess
 import sys
+import types
 import wave
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
+
+
+def _write_test_wav(path: Path, *, duration_ms: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sample_rate = 16_000
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(b"\x00\x00" * int(sample_rate * duration_ms / 1000))
 
 
 def test_tts_engine_command_examples_are_valid_json_arrays() -> None:
@@ -186,12 +198,85 @@ def test_f5_tts_dry_run_writes_contract(tmp_path) -> None:
         assert wav_file.getframerate() == 16000
 
 
+def test_f5_tts_direct_inference_uses_local_checkpoint_and_reference(tmp_path, monkeypatch) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "f5_tts_command", "examples/local_commands/f5_tts_command.py"
+    )
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    model_dir = tmp_path / "F5-TTS"
+    base_dir = model_dir / "F5TTS_v1_Base"
+    base_dir.mkdir(parents=True)
+    checkpoint = base_dir / "model_1250000.safetensors"
+    vocab = base_dir / "vocab.txt"
+    checkpoint.write_bytes(b"checkpoint")
+    vocab.write_text("vocab", encoding="utf-8")
+    distractor_dir = model_dir / "F5TTS_v1_Base_no_zero_init"
+    distractor_dir.mkdir()
+    (distractor_dir / "model_1250000.safetensors").write_bytes(b"distractor")
+    vocoder_dir = tmp_path / "vocos-mel-24khz"
+    vocoder_dir.mkdir()
+    reference = tmp_path / "reference.wav"
+    _write_test_wav(reference, duration_ms=500)
+    output = tmp_path / "generated.wav"
+    captured: dict[str, object] = {}
+
+    class FakeF5TTS:
+        def __init__(self, **kwargs) -> None:
+            captured["init"] = kwargs
+
+        def infer(self, **kwargs) -> None:
+            captured["infer"] = kwargs
+            _write_test_wav(Path(str(kwargs["file_wave"])), duration_ms=750)
+
+    fake_api = types.ModuleType("f5_tts.api")
+    fake_api.F5TTS = FakeF5TTS
+    monkeypatch.setitem(sys.modules, "f5_tts.api", fake_api)
+    fake_runner = types.ModuleType("_f5_tts_runner")
+    fake_runner._mock_unneeded_training_modules = lambda: None
+    fake_runner._patch_torchaudio_load = lambda: None
+    monkeypatch.setitem(sys.modules, "_f5_tts_runner", fake_runner)
+
+    module.run_direct_inference(
+        Namespace(
+            model_dir=str(model_dir),
+            vocoder_dir=str(vocoder_dir),
+            device="cpu",
+            reference_audio=str(reference),
+            reference_text="Reference transcript.",
+            text="生成文本。",
+            audio_out=str(output),
+            duration_ms=750,
+            speed=0.85,
+        )
+    )
+
+    assert captured["init"] == {
+        "model": "F5TTS_v1_Base",
+        "ckpt_file": str(checkpoint),
+        "vocab_file": str(vocab),
+        "vocoder_local_path": str(vocoder_dir),
+        "device": "cpu",
+    }
+    assert captured["infer"] == {
+        "ref_file": str(reference),
+        "ref_text": "Reference transcript.",
+        "gen_text": "生成文本。",
+        "file_wave": str(output),
+        "speed": 0.85,
+    }
+    assert output.is_file()
+
+
 def test_f5_soundfile_load_returns_torchaudio_compatible_shape(tmp_path) -> None:
     pytest.importorskip("torch")
     pytest.importorskip("soundfile")
 
     spec = importlib.util.spec_from_file_location(
-        "f5_tts_command", "examples/local_commands/f5_tts_command.py"
+        "_f5_tts_runner", "examples/local_commands/_f5_tts_runner.py"
     )
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
@@ -252,6 +337,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--text", required=True)
 parser.add_argument("--speaker", required=True)
 parser.add_argument("--audio-out", required=True)
+parser.add_argument("--speed", required=True)
 args = parser.parse_args()
 
 with wave.open(args.audio_out, "wb") as wav_file:
@@ -290,8 +376,12 @@ with wave.open(args.audio_out, "wb") as wav_file:
                     "{speaker}",
                     "--audio-out",
                     "{audio_out}",
+                    "--speed",
+                    "{speed}",
                 ]
             ),
+            "--speed",
+            "0.8",
         ],
         check=True,
     )
@@ -300,6 +390,33 @@ with wave.open(args.audio_out, "wb") as wav_file:
     assert data == {"audio_path": str(audio), "duration_ms": 100}
     with wave.open(str(audio), "rb") as wav_file:
         assert wav_file.getframerate() == 16000
+
+
+def test_f5_tts_engine_command_renders_speed_placeholder(tmp_path) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "f5_tts_command", "examples/local_commands/f5_tts_command.py"
+    )
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    rendered = module.render_engine_command(
+        json.dumps(["engine", "--speed", "{speed}", "--text", "{text}"]),
+        Namespace(
+            text="hello",
+            speaker="speaker-1",
+            audio_out=str(tmp_path / "out.wav"),
+            json_out=str(tmp_path / "out.json"),
+            reference_audio=None,
+            reference_text="",
+            style_prompt="",
+            duration_ms=1000,
+            speed=0.82,
+        ),
+    )
+
+    assert rendered == ["engine", "--speed", "0.82", "--text", "hello"]
 
 
 def test_f5_tts_command_can_delegate_to_engine_command_json_file(tmp_path) -> None:

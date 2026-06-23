@@ -77,6 +77,8 @@
       "{{ output_audio_path }}",
       "--duration-ms",
       "{{ target_duration_ms }}",
+      "--speed",
+      "{{ speech_rate }}",
       "--style-prompt",
       "{{ style_prompt }}",
       "--reference-audio",

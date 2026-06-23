@@ -75,6 +75,16 @@ def test_scan_project_library_includes_recent_project_outside_runs(tmp_path: Pat
     assert items[0].path == project.path
 
 
+def test_scan_project_library_ignores_missing_recent_project(tmp_path: Path) -> None:
+    from ivo.core.project_library import scan_project_library
+
+    missing = tmp_path / "runs" / "Deleted.ivoproj"
+
+    items = scan_project_library(tmp_path / "runs", recent_projects=[missing])
+
+    assert items == []
+
+
 def test_scan_project_library_keeps_unreadable_projects_visible(tmp_path: Path) -> None:
     from ivo.core.project_library import scan_project_library
 

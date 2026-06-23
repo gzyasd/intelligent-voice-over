@@ -51,7 +51,7 @@ def test_export_command_places_segments_metadata_and_watermark(tmp_path) -> None
             background_audio=background_audio,
             segment_audio=[SegmentAudio(path=segment_audio, start_ms=250)],
             output_path=tmp_path / "final.mp4",
-            metadata={"ai_dubbing": "true", "target_language": "zh"},
+            metadata={"comment": "AI generated dubbing; source_language=en; target_language=zh", "genre": "AI Dubbed"},
             watermark_text="AI 中文配音",
         ),
         ExportConfirmation(accepted=True),
@@ -66,7 +66,7 @@ def test_export_command_places_segments_metadata_and_watermark(tmp_path) -> None
     assert any("adelay=250|250" in part for part in command)
     assert any("drawtext" in part for part in command)
     assert "-metadata" in command
-    assert "ai_dubbing=true" in command
+    assert "AI generated dubbing" in " ".join(command)
 
 
 def test_export_hides_ffmpeg_command_window_on_windows(monkeypatch, tmp_path) -> None:

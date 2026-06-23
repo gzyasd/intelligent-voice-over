@@ -10,10 +10,22 @@ Each local model service contains:
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from packaging.version import InvalidVersion, Version
+
+
+def is_newer_version(latest: str, current: str) -> bool:
+    if not latest or not current:
+        return False
+    try:
+        return Version(latest) > Version(current)
+    except InvalidVersion:
+        return False
 
 
 @dataclass
@@ -30,7 +42,7 @@ class DependencyStatus:
 
     @property
     def can_upgrade(self) -> bool:
-        return bool(self.latest_version and self.version and self.version != self.latest_version)
+        return is_newer_version(self.latest_version, self.version)
 
     @property
     def action_label(self) -> str:
@@ -62,6 +74,7 @@ class LocalModelService:
     display_name: str
     stage: str  # separation, asr, diarization, tts
     model_dir_name: str  # Relative to models/ root
+    model_dir_aliases: list[str] = field(default_factory=list)
     default_device: str = "auto"  # auto, cuda, cpu
     supported_devices: list[str] = field(default_factory=lambda: ["auto", "cuda", "cpu"])
     precision_options: list[str] = field(default_factory=lambda: ["auto", "float16", "float32", "int8"])
@@ -74,13 +87,31 @@ class LocalModelService:
     source_url: str = ""
     smoke_command: list[str] = field(default_factory=list)
     extra_info: dict[str, str] = field(default_factory=dict)
+    recommended: bool = False  # 是否为该阶段的推荐模型
+    tags: list[str] = field(default_factory=list)  # UI 标签：推荐/快速/高质量/测试
 
     def check_model_dir(self, models_root: Path) -> bool:
         """Check if the model directory exists under models_root."""
-        model_path = models_root / self.model_dir_name
-        return model_path.is_dir()
+        return self.resolve_model_path(models_root).is_dir()
 
-    def check_dependencies(self) -> list[str]:
+    def candidate_model_paths(self, models_root: Path) -> list[Path]:
+        """Return supported model directory locations under models_root."""
+        names = [self.model_dir_name, *self.model_dir_aliases]
+        return [models_root / name for name in names]
+
+    def resolve_model_path(self, models_root: Path) -> Path:
+        """Return the first existing model path, or the canonical path."""
+        candidates = self.candidate_model_paths(models_root)
+        for candidate in candidates:
+            if candidate.is_dir():
+                return candidate
+        return candidates[0]
+
+    def check_dependencies(
+        self,
+        *,
+        custom_pythons: dict[str, Path] | None = None,
+    ) -> list[str]:
         """Return list of missing dependency package names.
 
         Checks the current Python environment first, then falls back to
@@ -92,13 +123,17 @@ class LocalModelService:
             if _is_importable(dep.import_name):
                 continue
             # Try external venvs (works in both frozen and dev mode)
-            venv_python = _find_venv_python_for_dep(dep)
+            venv_python = _find_venv_python_for_dep(dep, custom_pythons=custom_pythons)
             if venv_python is not None and _is_importable_in_python(dep.import_name, venv_python):
                 continue
             missing.append(dep.package_name)
         return missing
 
-    def check_dependency_status(self) -> list[DependencyStatus]:
+    def check_dependency_status(
+        self,
+        *,
+        custom_pythons: dict[str, Path] | None = None,
+    ) -> list[DependencyStatus]:
         """Return detailed status for each dependency.
 
         Checks importability and version in the appropriate venv.
@@ -106,7 +141,7 @@ class LocalModelService:
         results: list[DependencyStatus] = []
         for dep in self.dependencies:
             venv_name = _VENV_MAPPING.get(dep.import_name, ".venv")
-            venv_python = _find_venv_python_for_dep(dep)
+            venv_python = _find_venv_python_for_dep(dep, custom_pythons=custom_pythons)
 
             # Determine which python to check
             check_python: Path | None = None
@@ -237,6 +272,8 @@ DEMUCS_SERVICE = LocalModelService(
     commercial_ok=True,
     source_url="https://github.com/facebookresearch/demucs",
     extra_info={"note": "官方仓库已归档但仍可用；CLI 支持 --two-stems=vocals"},
+    recommended=True,
+    tags=["推荐"],
 )
 
 FASTER_WHISPER_LARGE_V3_SERVICE = LocalModelService(
@@ -264,6 +301,8 @@ FASTER_WHISPER_LARGE_V3_SERVICE = LocalModelService(
     huggingface_repo="https://huggingface.co/Systran/faster-whisper-large-v3",
     source_url="https://github.com/SYSTRAN/faster-whisper",
     extra_info={"note": "优先 GPU，需检测 CUDA/compute_type"},
+    recommended=True,
+    tags=["推荐", "高质量"],
 )
 
 FASTER_WHISPER_SMALL_SERVICE = LocalModelService(
@@ -289,6 +328,7 @@ FASTER_WHISPER_SMALL_SERVICE = LocalModelService(
     commercial_ok=True,
     huggingface_repo="https://huggingface.co/Systran/faster-whisper-small",
     extra_info={"note": "低显存/速度优先，质量低于 large-v3"},
+    tags=["速度优先"],
 )
 
 FASTER_WHISPER_TINY_SERVICE = LocalModelService(
@@ -314,6 +354,7 @@ FASTER_WHISPER_TINY_SERVICE = LocalModelService(
     commercial_ok=True,
     huggingface_repo="https://huggingface.co/Systran/faster-whisper-tiny",
     extra_info={"note": "快速 smoke 测试或极低显存兜底，正式作品质量不推荐作为默认"},
+    tags=["快速测试"],
 )
 
 WHISPER_LARGE_V3_TURBO_SERVICE = LocalModelService(
@@ -342,8 +383,9 @@ WHISPER_LARGE_V3_TURBO_SERVICE = LocalModelService(
         "note": (
             "官方模型是 Transformers 格式；若要走 faster-whisper，"
             "需要 CTranslate2 转换或选择已转换的模型仓库"
-        ),
+        )
     },
+    tags=["快速"],
 )
 
 PYANNOTE_COMMUNITY_1_SERVICE = LocalModelService(
@@ -365,6 +407,8 @@ PYANNOTE_COMMUNITY_1_SERVICE = LocalModelService(
     huggingface_repo="https://huggingface.co/pyannote/speaker-diarization-community-1",
     source_url="https://www.pyannote.ai/blog/community-1",
     extra_info={"note": "UI 需给出 Hugging Face 授权状态检查"},
+    recommended=True,
+    tags=["推荐"],
 )
 
 F5_TTS_SERVICE = LocalModelService(
@@ -372,6 +416,7 @@ F5_TTS_SERVICE = LocalModelService(
     display_name="F5-TTS (本地音色克隆)",
     stage="tts",
     model_dir_name="tts/f5-tts",
+    model_dir_aliases=["tts/F5-TTS"],
     dependencies=[
         LocalModelDependency(
             package_name="f5-tts",
@@ -390,6 +435,8 @@ F5_TTS_SERVICE = LocalModelService(
     commercial_ok=False,
     source_url="https://github.com/SWivid/F5-TTS",
     extra_info={"note": "预训练模型 CC-BY-NC，UI 必须提示非商业限制"},
+    recommended=True,
+    tags=["推荐", "音色克隆"],
 )
 
 COSYVOICE3_SERVICE = LocalModelService(
@@ -397,6 +444,7 @@ COSYVOICE3_SERVICE = LocalModelService(
     display_name="CosyVoice3 (多语种 TTS)",
     stage="tts",
     model_dir_name="tts/cosyvoice3",
+    model_dir_aliases=["tts/Fun-CosyVoice3-0.5B"],
     dependencies=[
         LocalModelDependency(
             package_name="cosyvoice",
@@ -417,6 +465,7 @@ COSYVOICE3_SERVICE = LocalModelService(
     extra_info={
         "note": "默认支持 FunAudioLLM/Fun-CosyVoice3-0.5B-2512，不对商业可用性做默认承诺",
     },
+    tags=["多语种"],
 )
 
 # Registry of all built-in local model services
@@ -443,6 +492,19 @@ def get_local_service(provider_key: str) -> LocalModelService | None:
 def list_local_services_for_stage(stage: str) -> list[LocalModelService]:
     """Return all local model services for a given pipeline stage."""
     return [s for s in ALL_LOCAL_MODEL_SERVICES if s.stage == stage]
+
+
+def compute_shared_dep_counts() -> dict[str, int]:
+    """Return {package_name: count_of_models_using_it}.
+
+    Used by UI to show "shared by N models" hint for common dependencies
+    like torch (used by 6 models) and faster-whisper (used by 3 ASR models).
+    """
+    counts: dict[str, int] = {}
+    for svc in ALL_LOCAL_MODEL_SERVICES:
+        for dep in svc.dependencies:
+            counts[dep.package_name] = counts.get(dep.package_name, 0) + 1
+    return counts
 
 
 # ── Venv-aware import checking helpers ──────────────────────────────────────
@@ -527,17 +589,45 @@ def _get_latest_version(package_name: str, mirror_url: str = "") -> str:
     return ""
 
 
-def _find_venv_python_for_dep(dep: LocalModelDependency) -> Path | None:
-    """Find the Python executable in the appropriate venv for a dependency.
+def find_venv_python(
+    venv_name: str,
+    *,
+    custom_python: Path | None = None,
+) -> Path | None:
+    """Find the Python executable in a venv by name.
 
     Searches for .venv-pyannote or .venv next to the executable (frozen)
     or at the project root (dev mode).
+
+    优先级：
+    1. custom_python 参数（用户在设置中配置的自定义路径）
+    2. IVO_LOCAL_PYTHON 环境变量（用户显式指定 Python 解释器路径）
+    3. frozen 模式下 resources/ 目录中的 venv
+    4. dev 模式下项目根目录中的 venv
     """
-    venv_name = _VENV_MAPPING.get(dep.import_name, ".venv")
+    # 优先使用自定义路径（来自 UserSettings）
+    if custom_python is not None and Path(custom_python).is_file():
+        return Path(custom_python)
+
+    # 其次读取环境变量（与 resolve_local_python 保持一致）
+    env_var = (
+        "IVO_PYANNOTE_PYTHON"
+        if venv_name == ".venv-pyannote"
+        else "IVO_LOCAL_PYTHON"
+    )
+    configured = os.getenv(env_var)
+    if configured and Path(configured).is_file():
+        return Path(configured)
+
     exe_dir = Path(sys.executable).resolve().parent
 
     # Candidate base directories to search
     candidates: list[Path] = [exe_dir]
+
+    # Electron 打包后: resources/python/ivo-server.exe
+    # .venv 和 .venv-pyannote 通过 extraResources 复制到 resources/
+    if getattr(sys, "frozen", False):
+        candidates.append(exe_dir.parent)  # resources/
 
     # In dev mode (running from .venv/Scripts/python.exe), the project root
     # is typically two levels up from the Scripts directory.
@@ -550,3 +640,16 @@ def _find_venv_python_for_dep(dep: LocalModelDependency) -> Path | None:
         if venv_python.is_file():
             return venv_python
     return None
+
+
+def _find_venv_python_for_dep(
+    dep: LocalModelDependency,
+    *,
+    custom_pythons: dict[str, Path] | None = None,
+) -> Path | None:
+    """Find the Python executable in the appropriate venv for a dependency."""
+    venv_name = _VENV_MAPPING.get(dep.import_name, ".venv")
+    custom_python: Path | None = None
+    if custom_pythons is not None:
+        custom_python = custom_pythons.get(venv_name)
+    return find_venv_python(venv_name, custom_python=custom_python)

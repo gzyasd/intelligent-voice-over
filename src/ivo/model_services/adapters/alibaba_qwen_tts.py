@@ -98,6 +98,7 @@ class _AlibabaQwenTtsPipelineAdapter:
         reference_audio_path: Path | None,
         reference_text: str,
         target_duration_ms: int,
+        speech_rate: float = 1.0,
     ) -> int:
         response = httpx.post(
             f"{self._provider.BASE_URL}/services/aigc/multimodal-generation/generation",

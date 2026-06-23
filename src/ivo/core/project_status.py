@@ -11,6 +11,7 @@ ProjectLifecycle = Literal[
     "unreadable",
     "not_started",
     "running",
+    "paused",
     "interrupted",
     "incomplete",
     "failed",
@@ -41,6 +42,7 @@ def read_project_status_snapshot(
     project_path: Path,
     *,
     active_project_paths: set[Path],
+    paused_project_paths: set[Path] | None = None,
 ) -> ProjectStatusSnapshot:
     try:
         project = DubbingProject.load(project_path)
@@ -60,6 +62,10 @@ def read_project_status_snapshot(
     failed = next((record for record in records if record.status == "failed"), None)
     running = next((record for record in records if record.status == "running"), None)
     active = project.path.resolve() in active_project_paths
+    paused = (
+        paused_project_paths is not None
+        and project.path.resolve() in paused_project_paths
+    )
 
     lifecycle: ProjectLifecycle
     label: str
@@ -73,9 +79,14 @@ def read_project_status_snapshot(
         action = "resume"
     elif running is not None or project.metadata.generation_status == "running":
         if active:
-            lifecycle = "running"
-            label = "生成中"
-            action = "progress"
+            if paused:
+                lifecycle = "paused"
+                label = "已暂停"
+                action = "progress"
+            else:
+                lifecycle = "running"
+                label = "生成中"
+                action = "progress"
         else:
             lifecycle = "interrupted"
             label = "上次中断"

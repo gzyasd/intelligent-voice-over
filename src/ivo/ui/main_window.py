@@ -288,6 +288,7 @@ class MainWindow(QMainWindow):
         output_dir: Path,
         source_language: SourceLanguage,
         content_type: Literal["video", "audio"] = "video",
+        scheme_id: str | None = None,
     ) -> DubbingProject:
         project_path = output_dir / f"{project_name}.ivoproj"
         project = DubbingProject.create(
@@ -297,6 +298,7 @@ class MainWindow(QMainWindow):
             target_language="zh",
             source_media=source_media,
             content_type=content_type,
+            scheme_id=scheme_id,
         )
         self._set_current_project(project, remember=True)
         self.refresh_project_library()
@@ -312,6 +314,7 @@ class MainWindow(QMainWindow):
             output_dir=values.output_dir,
             source_language=values.source_language,
             content_type=values.content_type,
+            scheme_id=values.scheme_id,
         )
         project.settings.update_translation(
             TranslationSettings(

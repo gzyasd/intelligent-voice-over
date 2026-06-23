@@ -17,6 +17,8 @@ class ProjectLibraryItem(BaseModel):
     updated_at: float
     status: str
     status_detail: str = ""
+    lifecycle: str = ""
+    failed_stage: str | None = None
     elapsed_seconds: int | None = None
     final_output_path: Path | None = None
 
@@ -26,10 +28,15 @@ def scan_project_library(
     *,
     recent_projects: list[Path],
     active_project_paths: set[Path] | None = None,
+    paused_project_paths: set[Path] | None = None,
 ) -> list[ProjectLibraryItem]:
     active = active_project_paths or set()
+    paused = paused_project_paths or set()
     candidates = _candidate_project_paths(projects_dir, recent_projects)
-    items = [_read_project_item(path, active_project_paths=active) for path in candidates]
+    items = [
+        _read_project_item(path, active_project_paths=active, paused_project_paths=paused)
+        for path in candidates
+    ]
     return sorted(items, key=lambda item: item.updated_at, reverse=True)
 
 
@@ -43,6 +50,8 @@ def _candidate_project_paths(projects_dir: Path, recent_projects: list[Path]) ->
             candidates.append(resolved)
     for path in recent_projects:
         resolved = path.resolve()
+        if not resolved.is_dir():
+            continue
         if resolved not in seen:
             seen.add(resolved)
             candidates.append(resolved)
@@ -53,8 +62,22 @@ def _read_project_item(
     path: Path,
     *,
     active_project_paths: set[Path],
+    paused_project_paths: set[Path] | None = None,
 ) -> ProjectLibraryItem:
-    snapshot = read_project_status_snapshot(path, active_project_paths=active_project_paths)
+    snapshot = read_project_status_snapshot(
+        path,
+        active_project_paths=active_project_paths,
+        paused_project_paths=paused_project_paths,
+    )
+    # 从 status_detail 中提取失败阶段（格式为 "{stage}: {message} · 总耗时 ..."）
+    failed_stage: str | None = None
+    if snapshot.lifecycle == "failed" and snapshot.status_detail:
+        detail = snapshot.status_detail
+        # 去掉可能的 " · 总耗时 ..." 后缀
+        if " · " in detail:
+            detail = detail.split(" · ", 1)[0]
+        if ": " in detail:
+            failed_stage = detail.split(": ", 1)[0]
     return ProjectLibraryItem(
         name=snapshot.name,
         path=snapshot.project_path,
@@ -65,6 +88,8 @@ def _read_project_item(
         updated_at=snapshot.updated_at,
         status=snapshot.status_label,
         status_detail=snapshot.status_detail,
+        lifecycle=snapshot.lifecycle,
+        failed_stage=failed_stage,
         elapsed_seconds=snapshot.elapsed_seconds,
         final_output_path=snapshot.final_output_path,
     )

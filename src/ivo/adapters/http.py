@@ -75,6 +75,8 @@ class HttpStageAdapter:
         headers = {
             key: self._render_string(value, values) for key, value in self.profile.headers.items()
         }
+        # 防御：移除渲染后为空或仅空白的 header，避免 httpx "Illegal header value"
+        headers = {k: v for k, v in headers.items() if v and v.strip()}
         body = self._render_value(self.profile.request_template, values)
 
         if self.profile.method == "GET":

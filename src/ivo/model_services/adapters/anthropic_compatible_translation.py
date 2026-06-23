@@ -35,14 +35,17 @@ class AnthropicCompatibleTranslationProvider:
 
     def validate_credentials(self) -> ConnectionValidationResult:
         """Validate by sending a minimal messages request."""
+        # 空 api_key 时不发送 x-api-key header
+        headers: dict[str, str] = {
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        if self._api_key:
+            headers["x-api-key"] = self._api_key
         try:
             response = httpx.post(
                 f"{self._base_url}/v1/messages",
-                headers={
-                    "x-api-key": self._api_key,
-                    "anthropic-version": "2023-06-01",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 json={
                     "model": self._model_name,
                     "max_tokens": 1,
@@ -75,16 +78,19 @@ class AnthropicCompatibleTranslationProvider:
 
     def to_pipeline_adapter(self, *, project_path: Path = Path(".")) -> HttpTranslationAdapter:
         """Build an HttpTranslationAdapter for the pipeline."""
+        # 空 api_key 时不发送 x-api-key header
+        headers: dict[str, str] = {
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        if self._api_key:
+            headers["x-api-key"] = self._api_key
         profile = ApiAdapterProfile(
             id=f"anthropic_compatible_{self._config_id}",
             stage="translation",
             method="POST",
             url=f"{self._base_url}/v1/messages",
-            headers={
-                "x-api-key": self._api_key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             request_template={
                 "model": self._model_name,
                 "max_tokens": 1000,

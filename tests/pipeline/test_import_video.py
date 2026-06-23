@@ -7,8 +7,12 @@ import pytest
 
 
 def test_require_ffmpeg_reports_clear_setup_error(monkeypatch) -> None:
+    from ivo.pipeline import import_video
     from ivo.pipeline.import_video import FFmpegNotFoundError, require_ffmpeg
 
+    # Project ships a bundled ffmpeg/, so mock the resolver to simulate a fully
+    # missing FFmpeg (no env override, no bundled copy, nothing on PATH).
+    monkeypatch.setattr(import_video, "resolve_executable", lambda *a, **k: None)
     monkeypatch.setattr(shutil, "which", lambda name: None)
 
     with pytest.raises(FFmpegNotFoundError, match="FFmpeg"):

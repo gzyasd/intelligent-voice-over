@@ -11,10 +11,28 @@ from ivo.model_services.local_models import (
     F5_TTS_SERVICE,
     PYANNOTE_COMMUNITY_1_SERVICE,
     WHISPER_LARGE_V3_TURBO_SERVICE,
+    DependencyStatus,
     LocalModelService,
     get_local_service,
     list_local_services_for_stage,
 )
+
+
+def test_dependency_upgrade_requires_semantically_newer_version() -> None:
+    assert DependencyStatus(
+        package_name="demo",
+        import_name="demo",
+        status="installed",
+        version="1.9.0",
+        latest_version="1.10.0",
+    ).can_upgrade is True
+    assert DependencyStatus(
+        package_name="demo",
+        import_name="demo",
+        status="installed",
+        version="2.0.0",
+        latest_version="1.10.0",
+    ).can_upgrade is False
 
 
 class TestLocalModelServiceDefinitions:
@@ -115,3 +133,18 @@ class TestWhisperLargeV3Turbo:
     def test_has_note_about_format_difference(self) -> None:
         note = WHISPER_LARGE_V3_TURBO_SERVICE.extra_info.get("note", "")
         assert "Transformers" in note or "transformers" in note.lower()
+
+
+def test_find_pyannote_python_does_not_reuse_main_python_environment_variable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from ivo.model_services.local_models import find_venv_python
+
+    main_python = tmp_path / "main" / "python.exe"
+    main_python.parent.mkdir(parents=True)
+    main_python.write_bytes(b"python")
+    monkeypatch.setenv("IVO_LOCAL_PYTHON", str(main_python))
+    monkeypatch.delenv("IVO_PYANNOTE_PYTHON", raising=False)
+
+    assert find_venv_python(".venv-pyannote") != main_python

@@ -1,3 +1,9 @@
+"""Build the Windows desktop package.
+
+.. deprecated::
+    此脚本为旧版 PySide6 打包流程，已被 electron-builder + PyInstaller 工作流取代。
+    新项目请使用 `pnpm run build:win` / `build:mac` / `build:linux`。
+"""
 from __future__ import annotations
 
 import argparse
@@ -6,8 +12,15 @@ import os
 import shutil
 import subprocess
 import sys
+import warnings
 import zipfile
 from pathlib import Path
+
+warnings.warn(
+    "scripts/build_windows_package.py is deprecated. Use 'pnpm run build:win/mac/linux' instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 APP_NAME = "IntelligentVoiceOver"

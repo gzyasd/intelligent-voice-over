@@ -6,9 +6,13 @@ def test_metadata_marks_ai_dubbing() -> None:
 
     metadata = build_ai_dubbing_metadata(source_language="en", target_language="zh")
 
-    assert metadata["ai_dubbing"] == "true"
-    assert metadata["source_language"] == "en"
-    assert metadata["target_language"] == "zh"
+    # Uses standard MP4 container tags (FFmpeg does not persist custom keys in MP4)
+    assert "AI generated dubbing" in metadata["comment"]
+    assert "source_language=en" in metadata["comment"]
+    assert "target_language=zh" in metadata["comment"]
+    assert metadata["genre"] == "AI Dubbed"
+    assert metadata["artist"] == "Intelligent Voice Over"
+    assert "en" in metadata["title"] and "zh" in metadata["title"]
 
 
 def test_watermark_filter_is_optional_and_customizable() -> None:

@@ -31,13 +31,18 @@ def _make_config(
     )
 
 
-def _make_factory() -> ProviderAdapterFactory:
+def _make_factory(**kwargs: Any) -> ProviderAdapterFactory:
     registry = MagicMock()
     store = MagicMock()
     secret = MagicMock()
     store.get_account.return_value = MagicMock(api_base_url="https://api.test.com")
     secret.load.return_value = "test-api-key"
-    return ProviderAdapterFactory(registry=registry, provider_store=store, secret_store=secret)
+    return ProviderAdapterFactory(
+        registry=registry,
+        provider_store=store,
+        secret_store=secret,
+        **kwargs,
+    )
 
 
 class TestAdapterFactoryProtocols:
@@ -124,6 +129,40 @@ class TestAdapterFactoryProtocols:
         assert adapter.profile.request_template["temperature"] == 0.2
         assert adapter.profile.request_template["max_tokens"] == 1200
 
+    def test_openai_compatible_translation_accepts_base_url_with_v1(self) -> None:
+        factory = _make_factory()
+        factory._provider_store.get_account.return_value = MagicMock(
+            api_base_url="http://127.0.0.1:1995/v1"
+        )
+        config = _make_config(
+            stage="translation",
+            protocol="openai_compatible_translation",
+            provider_key="openai_compatible_translation",
+            model_name="qwen-local",
+        )
+
+        adapter = factory.create(config)
+
+        assert adapter.profile.url == "http://127.0.0.1:1995/v1/chat/completions"
+
+    def test_openai_compatible_translation_accepts_full_chat_completions_url(
+        self,
+    ) -> None:
+        factory = _make_factory()
+        factory._provider_store.get_account.return_value = MagicMock(
+            api_base_url="http://127.0.0.1:1995/v1/chat/completions"
+        )
+        config = _make_config(
+            stage="translation",
+            protocol="openai_compatible_translation",
+            provider_key="openai_compatible_translation",
+            model_name="qwen-local",
+        )
+
+        adapter = factory.create(config)
+
+        assert adapter.profile.url == "http://127.0.0.1:1995/v1/chat/completions"
+
     def test_anthropic_compatible_translation_uses_request_url_and_version(self) -> None:
         factory = _make_factory()
         config = _make_config(
@@ -155,6 +194,49 @@ class TestAdapterFactoryProtocols:
 
 
 class TestAdapterFactoryLocal:
+    def test_builtin_local_templates_use_configured_python_paths(
+        self,
+        tmp_path,
+        monkeypatch,
+    ) -> None:
+        app_root = tmp_path / "resources"
+        (app_root / "examples" / "local_commands").mkdir(parents=True)
+        main_python = tmp_path / "custom-main" / "python.exe"
+        pyannote_python = tmp_path / "custom-pyannote" / "python.exe"
+        main_python.parent.mkdir(parents=True)
+        pyannote_python.parent.mkdir(parents=True)
+        main_python.write_bytes(b"python")
+        pyannote_python.write_bytes(b"python")
+        monkeypatch.chdir(app_root)
+
+        factory = _make_factory(
+            local_python=main_python,
+            pyannote_python=pyannote_python,
+        )
+        separation = factory.create(
+            _make_config(
+                stage="separation",
+                protocol="local_demucs",
+                kind="local",
+                provider_key="demucs",
+                local_model_path="models/separation/demucs",
+            )
+        )
+        diarization = factory.create(
+            _make_config(
+                stage="diarization",
+                protocol="local_pyannote",
+                kind="local",
+                provider_key="pyannote-community-1",
+                local_model_path="models/diarization/pyannote-community-1",
+            )
+        )
+
+        assert separation.profile.extra["python_executable"] == str(main_python)
+        assert diarization.profile.extra["pyannote_python_executable"] == str(
+            pyannote_python
+        )
+
     def test_local_separation_creates_adapter(self) -> None:
         factory = _make_factory()
         config = _make_config(

@@ -54,6 +54,7 @@ class TtsAdapter(Protocol):
         reference_audio_path: Any | None,
         reference_text: str,
         target_duration_ms: int,
+        speech_rate: float,
     ) -> int: ...
 
 

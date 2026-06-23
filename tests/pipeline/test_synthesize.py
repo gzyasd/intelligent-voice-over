@@ -226,6 +226,106 @@ def test_synthesize_preserves_existing_quality_flags(tmp_path) -> None:
     assert project.timeline.get_segment("seg-001").quality_flags == result.quality_flags
 
 
+def test_synthesize_segment_passes_default_chinese_speech_rate(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import DEFAULT_CHINESE_TTS_SPEED, synthesize_segment
+
+    class CapturingRateTtsAdapter:
+        def __init__(self) -> None:
+            self.speech_rates: list[float] = []
+
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+            speech_rate: float,
+        ) -> int:
+            self.speech_rates.append(speech_rate)
+            _write_test_wav(output_path, duration_ms=target_duration_ms, silent=False)
+            return target_duration_ms
+
+    project = DubbingProject.create(
+        tmp_path / "tts-speed-default.ivoproj",
+        name="TTS Speed Default",
+        source_language="ja",
+        target_language="zh",
+    )
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        speaker_id="speaker-1",
+        source_language="ja",
+        source_text="konnichiwa",
+        target_language="zh",
+        target_text="ni hao",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+    adapter = CapturingRateTtsAdapter()
+
+    synthesize_segment(project, segment, adapter)
+
+    assert adapter.speech_rates == [DEFAULT_CHINESE_TTS_SPEED]
+
+
+def test_synthesize_segment_passes_explicit_speech_rate(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import synthesize_segment
+
+    class CapturingRateTtsAdapter:
+        def __init__(self) -> None:
+            self.speech_rates: list[float] = []
+
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+            speech_rate: float,
+        ) -> int:
+            self.speech_rates.append(speech_rate)
+            _write_test_wav(output_path, duration_ms=target_duration_ms, silent=False)
+            return target_duration_ms
+
+    project = DubbingProject.create(
+        tmp_path / "tts-speed-explicit.ivoproj",
+        name="TTS Speed Explicit",
+        source_language="en",
+        target_language="zh",
+    )
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Hello.",
+        target_language="zh",
+        target_text="Hello.",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+    adapter = CapturingRateTtsAdapter()
+
+    synthesize_segment(project, segment, adapter, speech_rate=0.75)
+
+    assert adapter.speech_rates == [0.75]
+
+
 def test_local_command_tts_adapter_generates_audio_from_json_contract(tmp_path) -> None:
     from ivo.adapters.local import LocalCommandProfile
     from ivo.core.project import DubbingProject
@@ -279,6 +379,8 @@ def test_local_command_tts_adapter_generates_audio_from_json_contract(tmp_path) 
                 "{{ speaker_id }}",
                 "--audio-out",
                 "{{ output_audio_path }}",
+                "--speed",
+                "{{ speech_rate }}",
                 "--json-out",
                 "{{ output_json_path }}",
             ],
@@ -292,6 +394,69 @@ def test_local_command_tts_adapter_generates_audio_from_json_contract(tmp_path) 
     assert result.generated_duration_ms == 1000
     assert result.audio_path.is_file()
     assert commands[0][commands[0].index("--text") + 1] == segment.target_text
+    assert commands[0][commands[0].index("--speed") + 1] == "0.9"
+
+
+def test_local_command_tts_adapter_adds_speed_to_legacy_f5_command(tmp_path) -> None:
+    from ivo.adapters.local import LocalCommandProfile
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import LocalCommandTtsAdapter, synthesize_segment
+
+    project = DubbingProject.create(
+        tmp_path / "legacy-f5-tts.ivoproj",
+        name="Legacy F5 TTS",
+        source_language="ja",
+        target_language="zh",
+    )
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1_000,
+        speaker_id="speaker-1",
+        source_language="ja",
+        source_text="konnichiwa",
+        target_language="zh",
+        target_text="ni hao",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+    output_json = tmp_path / "tts-result.json"
+    commands: list[list[str]] = []
+
+    def runner(command: list[str]) -> None:
+        commands.append(command)
+        audio_path = Path(command[command.index("--audio-out") + 1])
+        _write_test_wav(audio_path, duration_ms=1000)
+        output_json.write_text(
+            json.dumps({"audio_path": str(audio_path), "duration_ms": 1000}),
+            encoding="utf-8",
+        )
+
+    adapter = LocalCommandTtsAdapter(
+        LocalCommandProfile(
+            id="legacy-f5-command",
+            stage="tts",
+            command=[
+                "python",
+                "examples/local_commands/f5_tts_command.py",
+                "--text",
+                "{{ segment_text }}",
+                "--speaker",
+                "{{ speaker_id }}",
+                "--audio-out",
+                "{{ output_audio_path }}",
+                "--json-out",
+                "{{ output_json_path }}",
+            ],
+            output_json_path=str(output_json),
+        ),
+        runner=runner,
+    )
+
+    synthesize_segment(project, segment, adapter, speech_rate=0.75)
+
+    assert commands[0][commands[0].index("--speed") + 1] == "0.75"
 
 
 def test_local_command_tts_receives_extracted_reference_audio(tmp_path) -> None:
@@ -513,6 +678,56 @@ def test_extract_reference_audio_prefers_speaker_profile_reference_segment(tmp_p
     with wave.open(str(reference_path), "rb") as wav_file:
         duration_ms = int(wav_file.getnframes() / wav_file.getframerate() * 1000)
     assert duration_ms == 500
+
+
+def test_reference_sample_keeps_audio_and_source_text_from_same_segment(tmp_path) -> None:
+    from ivo.core.project import DubbingProject
+    from ivo.core.speakers import SpeakerProfile
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.synthesize import extract_reference_sample
+
+    project = DubbingProject.create(
+        tmp_path / "reference-sample.ivoproj",
+        name="Reference Sample",
+        source_language="en",
+        target_language="zh",
+    )
+    _write_test_wav(project.path / "assets" / "extracted_audio.wav", duration_ms=3_000)
+    reference = DubbingSegment(
+        id="seg-ref",
+        start_ms=0,
+        end_ms=500,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Reference transcript.",
+        target_language="zh",
+        target_text="参考文本。",
+        status="approved",
+    )
+    current = reference.model_copy(
+        update={
+            "id": "seg-current",
+            "start_ms": 1_000,
+            "end_ms": 2_000,
+            "source_text": "Current transcript.",
+        }
+    )
+    project.timeline.add_segment(reference)
+    project.timeline.add_segment(current)
+    project.speakers.upsert(
+        SpeakerProfile(
+            id="speaker-1",
+            display_name="Speaker 1",
+            reference_segment_ids=["seg-ref"],
+        )
+    )
+
+    sample = extract_reference_sample(project, current)
+
+    assert sample is not None
+    assert sample.segment_id == reference.id
+    assert sample.source_text == reference.source_text
+    assert sample.audio_path.name == "speaker-1-seg-ref.wav"
 
 
 def _write_test_wav(output_path: Path, *, duration_ms: int, silent: bool = True) -> None:

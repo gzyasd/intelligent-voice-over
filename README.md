@@ -2,10 +2,11 @@
 
 > 本地优先的 Windows 桌面端 AI 视频配音工具 —— 将英文 / 日文 / 韩文视频对白重新配成自然的中文音频。
 
+![Electron](https://img.shields.io/badge/Electron-31-blue)
+![Vue](https://img.shields.io/badge/Vue-3-42b883)
 ![Python](https://img.shields.io/badge/python-3.10-blue)
 ![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-orange)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
-![UI](https://img.shields.io/badge/UI-PySide6%20%2F%20Qt%206-green)
 
 [English](./README_EN.md) | **中文**
 
@@ -15,10 +16,33 @@
 
 - **本地优先**：核心流水线在本地运行，模型权重不上传云端，你的视频素材不离开电脑。
 - **双模式接入**：既支持本地模型（Demucs / faster-whisper / pyannote / F5-TTS / CosyVoice），也支持云端 API（OpenAI / Deepgram / ElevenLabs / 阿里云 / 讯飞 等）。
-- **可视化桌面端**：PySide6 单窗口应用，从项目创建到时间线审片全流程可视化操作，无需命令行。
+- **现代化桌面端**：Electron + Vue 3 + FastAPI 三层架构，响应式 UI，从项目创建到时间线审片全流程可视化操作，无需命令行。
 - **断点续跑**：每个阶段独立记录状态，中途失败后修复环境即可从断点继续，不浪费已完成的产物。
 - **合规内置**：导出时自动嵌入 AI 配音元数据，支持可见水印，确保 AI 生成内容透明标注。
 - **批量处理**：支持整季剧集批量跑，单集失败不影响后续，最终汇总报告。
+
+## 架构
+
+```
+┌─────────────────────────────────────────────┐
+│              Electron 壳 (主进程)             │
+│   管理窗口生命周期、启动/停止 Python 服务      │
+├─────────────────────────────────────────────┤
+│           Vue 3 渲染进程 (前端)               │
+│   项目管理 / 时间线编辑 / 模型配置 / 运行日志  │
+├─────────────────────────────────────────────┤
+│         FastAPI Python 服务 (后端)            │
+│   流水线编排 / 适配器调度 / SQLite 存储        │
+├─────────────────────────────────────────────┤
+│              本地模型 / HTTP API              │
+│   Demucs / faster-whisper / pyannote / F5-TTS │
+└─────────────────────────────────────────────┘
+```
+
+- **前端**：Vue 3 + Vite + Naive UI，TypeScript 严格模式
+- **后端**：FastAPI + uvicorn，PyInstaller 打包为独立可执行文件
+- **桌面壳**：Electron 31，负责窗口管理和 Python 服务生命周期
+- **通信**：前端通过 HTTP/WebSocket 调用本地 Python 服务（127.0.0.1:17000-17999）
 
 ## 流水线
 
@@ -35,54 +59,129 @@
   └─ 8. 混合导出      FFmpeg 混合背景音 + 对齐片段 + 水印 → 最终 MP4
 ```
 
-每个阶段独立记录状态，支持 `--resume-existing` 断点续跑。
+每个阶段独立记录状态，支持断点续跑。
 
 ## 快速开始
 
-### 前置要求
+### 方式一：下载安装包（推荐普通用户）
+
+1. 下载 `IVO Setup x.x.x.exe` 安装包
+2. 双击运行，按提示安装
+3. 从开始菜单或桌面快捷方式启动 IVO
+4. 首次使用前需配置本地模型（见下方「本地模型配置」）
+
+> 安装包已内置 FFmpeg 和 Python 运行时，无需额外安装。
+
+### 方式二：从源码构建（推荐开发者）
+
+#### 前置要求
 
 - Windows 10/11
-- Python 3.10
+- [Node.js](https://nodejs.org/) 20+
+- [pnpm](https://pnpm.io/) 10+
+- [Python](https://www.python.org/) 3.10
 - [uv](https://docs.astral.sh/uv/) 包管理器
 
-> FFmpeg 已内置在仓库的 `ffmpeg/bin/` 目录中，克隆后即可使用，无需单独安装或配置环境变量。
-
-### 安装
+#### 安装依赖
 
 ```powershell
 git clone <repo-url>
 cd Intelligent-Voice-Over
+
+# 安装前端依赖
+pnpm install
+
+# 安装 Python 依赖
 uv sync --dev
 ```
 
-### 环境诊断
+#### 开发模式运行
 
 ```powershell
-uv run ivo doctor
+# 同时启动前端开发服务器和 Electron
+pnpm dev
 ```
 
-### 启动桌面 UI
+#### 打包构建
+
+> **PowerShell 执行策略提示**：如果运行 `pnpm` 时报错 `无法加载文件 pnpm.ps1，因为在此系统上禁止运行脚本`，有两种解决方式：
+>
+> 1. **使用 `.cmd` 后缀**（推荐，无需管理员权限）：直接调用 `pnpm.cmd` 代替 `pnpm`，例如 `pnpm.cmd run build:win`
+> 2. **修改执行策略**（需管理员权限的 PowerShell）：`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+完整打包流程分三步：构建前端 → 打包 Python 后端 → 打包 Electron 安装包。
 
 ```powershell
-uv run python -m ivo.app
+# 1. 构建前端（Vue 3 + Vite，输出到 dist/renderer/ 和 dist-electron/）
+pnpm.cmd run build:frontend
+
+# 2. 打包 Python 后端（PyInstaller，输出到 dist/python/ivo-server.exe）
+pnpm.cmd run build:python
+
+# 3. 打包 Electron 安装包（NSIS，输出到 dist-installer3/）
+#    build:win 会自动依次执行 build:frontend + build:python + electron-builder
+pnpm.cmd run build:win
 ```
 
-### 生成测试样片（不含真实素材）
+也可以单独执行某一步：
 
 ```powershell
-uv run python .\scripts\create_sample_media.py --output-dir .\sample_media
+# 仅构建前端
+pnpm.cmd run build:frontend
+
+# 仅打包 Python 后端
+pnpm.cmd run build:python
+
+# 仅打包 Electron 安装包（前端和 Python 产物已就绪时）
+pnpm.cmd exec electron-builder --win
 ```
+
+构建产物位于 `dist-installer3/` 目录：
+
+- `IVO Setup 0.1.0.exe` — NSIS 安装包（约 230MB）
+- `win-unpacked/IVO.exe` — 免安装版
+
+> **注意**：安装包不包含 `.venv` 和 `.venv-pyannote`（超过 NSIS 32 位内存映射限制）。安装后需运行 `scripts/copy-venv-to-install.ps1` 将依赖环境复制到安装目录的 `resources/` 下：
+
+```powershell
+# 安装 IVO Setup 后，运行此脚本复制 .venv 和 .venv-pyannote
+.\scripts\copy-venv-to-install.ps1 -InstallDir "C:\Program Files\IVO"
+```
+
+> **打包失败排查**：如果 `electron-builder` 报错 `The process cannot access the file because it is being used by another process`（通常是 `app.asar` 被占用），可能是上次的 IVO 进程未退出或 Windows Defender 正在扫描。解决方法：
+> 1. 确认没有 IVO/ivo-server/electron 进程运行：`Get-Process -Name "IVO","ivo-server","electron" -ErrorAction SilentlyContinue`
+> 2. 修改 `electron-builder.yml` 的 `directories.output` 为新目录名（如 `dist-installer4`）绕过文件锁
+> 3. 或重启系统后重试
+
+### 本地模型配置
+
+项目不打包模型权重。首次使用本地模型流水线前，需要下载以下模型：
+
+| 阶段 | 推荐模型 | 下载方式 |
+|------|----------|----------|
+| 人声分离 | Demucs `htdemucs_ft` | 首次运行自动下载 |
+| 语音转写 | faster-whisper `large-v3` | HuggingFace Hub |
+| 说话人分离 | pyannote community-1 | 需接受 HF 模型条款 |
+| 文本翻译 | LM Studio + Qwen3 | 本地 HTTP 服务 |
+| 语音合成 | F5-TTS | HuggingFace Hub |
+
+模型目录结构：
+
+```
+models/
+  asr/
+    faster-whisper-large-v3/
+  diarization/
+    pyannote-community-1/
+  tts/
+    f5-tts/
+```
+
+在桌面端「模型中心」页面选择模型目录，点击「检查就绪」即可验证模型是否完整。
 
 ### FFmpeg 说明
 
-仓库已内置 FFmpeg 8.0.1 essentials build（位于 `ffmpeg/bin/`），覆盖音频提取、视频混合导出等全部流水线需求。程序会按以下优先级查找 FFmpeg：
-
-1. 项目内置的 `ffmpeg/bin/`（默认，开箱即用）
-2. `IVO_FFMPEG_PATH` 环境变量（完整路径）
-3. `IVO_FFMPEG_DIR` 环境变量（目录）
-4. 系统 PATH
-
-如需替换为其他 FFmpeg 版本，直接覆盖 `ffmpeg/bin/` 下的文件即可。打包便携版时也会自动包含此目录。
+安装包已内置 FFmpeg。从源码运行时，仓库的 `ffmpeg/bin/` 目录也包含 FFmpeg，无需单独安装。
 
 ## 桌面端使用
 
@@ -105,59 +204,11 @@ uv run python .\scripts\create_sample_media.py --output-dir .\sample_media
 4. 完成后在「时间线」审片，可单句重生成
 5. 确认后执行最终导出（含合规水印）
 
-## CLI 使用
-
-### Mock 预览（不依赖真实模型）
-
-```powershell
-uv run ivo mock-preview .\sample.mp4 .\demo-output --project-name "Episode 01" --source-language en
-```
-
-### 本地模型预览
-
-```powershell
-# CPU 小预览
-uv run ivo local-preview .\sample.mp4 ^
-  --profiles .\examples\local_command_profiles.real_separation_asr_tts_f5_cpu_small.json ^
-  --project-name "Episode 01" --source-language ja ^
-  --require-readiness --models-dir .\models --resume-existing --no-watermark
-
-# GPU 完整质量
-uv run ivo local-preview .\sample.mp4 ^
-  --profiles .\examples\local_command_profiles.real_full_gpu_f5_diarization.json ^
-  --translation-profile .\examples\http_translation_lm_studio_qwen36_35b.example.json ^
-  --project-name "Full GPU Episode 01" --source-language ja ^
-  --require-readiness --models-dir .\models --resume-existing --no-watermark
-```
-
-### 批量处理
-
-```powershell
-uv run ivo batch-local-preview .\episodes ^
-  --profiles .\examples\local_command_profiles.real_dry_run.json ^
-  --source-language en --no-watermark ^
-  --report .\demo-output\batch-report.json --skip-existing
-```
-
-### Profile 校验
-
-```powershell
-uv run ivo validate-local-profiles .\examples\local_command_profiles.real_dry_run.json --json
-uv run ivo check-local-readiness .\examples\local_command_profiles.real_full_gpu_f5_diarization.json --models-dir .\models --json
-```
-
 ## 两种接入模式
 
 ### 本地模型
 
-项目不打包模型权重。通过模型方案（scheme）配置本地模型：
-
-```powershell
-uv run ivo model setup-plan --models-dir .\models
-uv run ivo model write-setup-script --models-dir .\models
-```
-
-或在桌面端「模型中心」直接选择模型目录并一键检查。
+通过模型方案（scheme）配置本地模型，所有推理在本地 GPU/CPU 上运行：
 
 | 阶段 | 推荐模型 | 说明 |
 |------|----------|------|
@@ -169,24 +220,7 @@ uv run ivo model write-setup-script --models-dir .\models
 
 ### 云端 API
 
-通过 `ApiAdapterProfile` 描述 HTTP API，所有阶段均可替换为云端服务：
-
-```powershell
-# 添加 HTTP adapter
-uv run ivo adapter add-http .\adapters.json ^
-  --id translator --stage translation ^
-  --url https://api.example.test/translate ^
-  --response target_text=$.text
-
-# 使用 HTTP 翻译替换本地翻译
-uv run ivo local-preview .\sample.mp4 .\demo-output ^
-  --profiles .\examples\local_command_profiles.mock.json ^
-  --translation-profile .\examples\http_translation_profile.example.json ^
-  --translation-var api_key=YOUR_API_KEY ^
-  --project-name "HTTP Translation" --source-language ja
-```
-
-内置支持的云端提供商：
+通过 `ApiAdapterProfile` 描述 HTTP API，所有阶段均可替换为云端服务。内置支持的云端提供商：
 
 | 提供商 | 支持阶段 |
 |--------|----------|
@@ -217,19 +251,36 @@ uv run ivo local-preview .\sample.mp4 .\demo-output ^
 
 ## 开发
 
-```powershell
-# 运行全部测试
-uv run pytest
+> 如果 `pnpm` 命令因 PowerShell 执行策略报错，请改用 `pnpm.cmd`（见上方「打包构建」一节的说明）。
 
-# 代码检查
+```powershell
+# 前端类型检查
+pnpm.cmd run typecheck
+
+# 前端单元测试
+pnpm.cmd test
+
+# Python 代码检查
 uv run ruff check .
 
-# 类型检查（严格模式）
+# Python 类型检查（严格模式）
 uv run mypy src
 
-# Windows 打包（空运行）
-uv run python scripts/build_windows_package.py --dry-run --output-dir dist
+# Python 全部测试
+uv run pytest
 ```
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 桌面壳 | Electron 31 |
+| 前端 | Vue 3 + Vite + Naive UI + TypeScript |
+| 后端 | FastAPI + uvicorn + Pydantic v2 |
+| 存储 | SQLite（原生 sqlite3，无 ORM） |
+| 模板 | Jinja2（SandboxedEnvironment + StrictUndefined） |
+| HTTP | httpx |
+| 打包 | PyInstaller（Python）+ electron-builder（Electron） |
 
 ## 许可证
 
@@ -257,6 +308,4 @@ uv run python scripts/build_windows_package.py --dry-run --output-dir dist
 - [本地模型环境配置](./docs/local-model-setup.md)
 - [本地命令 Profile 指南](./docs/local-model-command-profiles.md)
 - [HTTP API Profile 指南](./docs/http-api-profiles.md)
-- [桌面端使用说明](./docs/ui-local-preview.md)
-- [Windows 打包说明](./docs/windows-packaging.md)
 - [合规与许可证](./docs/compliance-and-licenses.md)

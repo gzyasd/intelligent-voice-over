@@ -20,7 +20,7 @@ def test_run_mock_dubbing_pipeline_creates_preview_video_and_timeline(tmp_path) 
 
     assert result.final_output == project.path / "renders" / "preview.mp4"
     assert result.final_output.read_bytes() == b"mock-final-video"
-    assert result.metadata["ai_dubbing"] == "true"
+    assert "AI generated dubbing" in result.metadata["comment"]
     assert [segment.target_text for segment in project.timeline.list_segments()] == ["嗯，你好。"]
     assert project.timeline.get_segment("seg-001").status == "rendered"
 

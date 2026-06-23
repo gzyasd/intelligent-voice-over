@@ -105,7 +105,9 @@ class _OpenAITtsPipelineAdapter:
         reference_audio_path: Path | None,
         reference_text: str,
         target_duration_ms: int,
+        speech_rate: float = 1.0,
     ) -> int:
+        effective_speed = speech_rate if speech_rate > 0 else self._provider._speed
         response = httpx.post(
             f"{self._provider._base_url}/v1/audio/speech",
             headers={
@@ -117,7 +119,7 @@ class _OpenAITtsPipelineAdapter:
                 "input": text,
                 "voice": self._provider._voice,
                 "response_format": "wav",
-                "speed": self._provider._speed,
+                "speed": effective_speed,
             },
             timeout=120.0,
         )

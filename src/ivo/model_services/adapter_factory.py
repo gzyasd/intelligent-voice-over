@@ -13,7 +13,7 @@ from ivo.model_services.secret_store import SecretStore
 from ivo.profile_runtime import prepare_local_command_profiles, resolve_local_model_root
 
 if TYPE_CHECKING:
-    from ivo.adapters.local import LocalCommandProfile
+    from ivo.adapters.local import CommandOutputCallback, LocalCommandProfile
 
 
 def _coerce_float(value: object, *, default: float) -> float:
@@ -32,11 +32,31 @@ def _coerce_int(value: object, *, default: int) -> int:
         return default
 
 
+def _openai_chat_completions_url_from_endpoint(url: str) -> str:
+    """Resolve a chat-completions URL from an OpenAI-compatible base or request URL."""
+    root = url.rstrip("/")
+    for suffix in ("/v1/chat/completions", "/chat/completions"):
+        if root.endswith(suffix):
+            return root
+    if root.endswith("/v1"):
+        return f"{root}/chat/completions"
+    return f"{root}/v1/chat/completions"
+
+
 def _infer_runtime_root() -> Path:
     """Infer the app runtime root used by built-in local command templates."""
     candidates: list[Path] = []
     if getattr(sys, "frozen", False):
-        candidates.append(Path(sys.executable).resolve().parent)
+        # PyInstaller onefile 模式：资源解压到 sys._MEIPASS 临时目录
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass).resolve())
+        exe_dir = Path(sys.executable).resolve().parent
+        # Electron 打包后: resources/python/ivo-server.exe
+        # extraResources 把 examples/.venv/.venv-pyannote 复制到 resources/
+        candidates.append(exe_dir.parent)  # resources/
+        candidates.append(exe_dir / "_internal")  # PyInstaller onedir: _internal/examples/
+        candidates.append(exe_dir)
     candidates.append(Path.cwd().resolve())
     candidates.append(Path(__file__).resolve().parents[3])
 
@@ -49,6 +69,9 @@ def _infer_runtime_root() -> Path:
 def _prepare_scheme_local_profile(
     profile: "LocalCommandProfile",
     runtime_root: Path,
+    *,
+    local_python: Path | None = None,
+    pyannote_python: Path | None = None,
 ) -> "LocalCommandProfile":
     """Apply the same runtime context used by legacy JSON local profiles."""
     from ivo.pipeline.local_command_preview import LocalCommandPipelineProfiles
@@ -63,6 +86,8 @@ def _prepare_scheme_local_profile(
         profiles,
         profiles_path=runtime_root / "examples" / "scheme-local-profile.json",
         models_dir=runtime_root / "models",
+        python_executable=local_python,
+        pyannote_python_executable=pyannote_python,
     )
     return profile
 
@@ -123,7 +148,7 @@ _LOCAL_COMMAND_TEMPLATES: dict[str, dict[str, Any]] = {
     },
     "pyannote-community-1": {
         "command": [
-            "{{ python_executable }}",
+            "{{ pyannote_python_executable }}",
             "examples/local_commands/pyannote_diarization.py",
             "--audio", "{{ audio_path }}",
             "--model", "{{ model_path }}",
@@ -141,6 +166,12 @@ _LOCAL_COMMAND_TEMPLATES: dict[str, dict[str, Any]] = {
             "--speaker", "{{ speaker_id }}",
             "--audio-out", "{{ output_audio_path }}",
             "--reference-audio", "{{ reference_audio_path }}",
+            "--reference-text", "{{ reference_text }}",
+            "--duration-ms", "{{ target_duration_ms }}",
+            "--speed", "{{ speech_rate }}",
+            "--model-dir", "{{ model_path }}",
+            "--vocoder-dir", "{{ model_path }}/../vocos-mel-24khz",
+            "--device", "{{ device }}",
             "--json-out", "{{ output_json_path }}",
         ],
         "output_json_path": "{{ project_path }}/f5-tts-output.json",
@@ -175,10 +206,22 @@ class ProviderAdapterFactory:
         registry: ProviderRegistry,
         provider_store: ProviderStore,
         secret_store: SecretStore,
+        local_python: Path | None = None,
+        pyannote_python: Path | None = None,
+        command_output_callback: CommandOutputCallback | None = None,
     ) -> None:
         self._registry = registry
         self._provider_store = provider_store
         self._secret_store = secret_store
+        self._local_python = (
+            local_python if local_python is not None and local_python.is_file() else None
+        )
+        self._pyannote_python = (
+            pyannote_python
+            if pyannote_python is not None and pyannote_python.is_file()
+            else None
+        )
+        self._command_output_callback = command_output_callback
 
     def create(self, config: StageProviderConfig) -> Any:
         """Create a pipeline Protocol adapter for the given config.
@@ -245,6 +288,16 @@ class ProviderAdapterFactory:
         if not extra_values.get("hf_token_env"):
             extra_values["hf_token_env"] = "HF_TOKEN"
 
+        # pyannote 必须使用 .venv-pyannote 的 Python 解释器（主 .venv 无 pyannote.audio）
+        if config.stage == "diarization" and config.provider_key == "pyannote-community-1":
+            if not extra_values.get("pyannote_python_executable"):
+                from ivo.model_services.local_models import find_venv_python
+                pyannote_python = self._pyannote_python or find_venv_python(
+                    ".venv-pyannote"
+                )
+                if pyannote_python is not None:
+                    extra_values["pyannote_python_executable"] = str(pyannote_python)
+
         profile = LocalCommandProfile(
             id=f"local_{config.provider_key}_{config.id}",
             stage=config.stage,
@@ -252,20 +305,37 @@ class ProviderAdapterFactory:
             output_json_path=str(output_json),
             extra=extra_values,
         )
-        profile = _prepare_scheme_local_profile(profile, runtime_root)
+        profile = _prepare_scheme_local_profile(
+            profile,
+            runtime_root,
+            local_python=self._local_python,
+            pyannote_python=self._pyannote_python,
+        )
 
         if config.stage == "separation":
             from ivo.pipeline.separate_audio import LocalCommandSeparationAdapter
-            return LocalCommandSeparationAdapter(profile)
+            return LocalCommandSeparationAdapter(
+                profile,
+                command_output_callback=self._command_output_callback,
+            )
         elif config.stage == "asr":
             from ivo.pipeline.transcribe import LocalCommandAsrAdapter
-            return LocalCommandAsrAdapter(profile)
+            return LocalCommandAsrAdapter(
+                profile,
+                command_output_callback=self._command_output_callback,
+            )
         elif config.stage == "diarization":
             from ivo.pipeline.transcribe import LocalCommandDiarizationAdapter
-            return LocalCommandDiarizationAdapter(profile)
+            return LocalCommandDiarizationAdapter(
+                profile,
+                command_output_callback=self._command_output_callback,
+            )
         elif config.stage == "tts":
             from ivo.pipeline.synthesize import LocalCommandTtsAdapter
-            return LocalCommandTtsAdapter(profile)
+            return LocalCommandTtsAdapter(
+                profile,
+                command_output_callback=self._command_output_callback,
+            )
         else:
             raise NotImplementedError(
                 f"Local adapter not implemented for stage={config.stage!r}"
@@ -282,19 +352,21 @@ class ProviderAdapterFactory:
         if not request_url:
             account = self._provider_store.get_account(config.account_id or "")
             base_url = account.api_base_url if account else "https://api.openai.com"
-            request_url = f"{base_url.rstrip('/')}/v1/chat/completions"
+            request_url = _openai_chat_completions_url_from_endpoint(base_url)
         temperature = _coerce_float(config.extra.get("temperature"), default=0.3)
         max_tokens = _coerce_int(config.extra.get("max_tokens"), default=1000)
+
+        # 空 api_key 时不发送 Authorization header，避免 httpx "Illegal header value"
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
         profile = ApiAdapterProfile(
             id=f"openai_compatible_{config.id}",
             stage="translation",
             method="POST",
             url=request_url,
-            headers={
-                "Authorization": f"Bearer {api_key or ''}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             request_template={
                 "model": config.model_name or "gpt-4o-mini",
                 "messages": [
@@ -331,16 +403,20 @@ class ProviderAdapterFactory:
         temperature = _coerce_float(config.extra.get("temperature"), default=0.3)
         max_tokens = _coerce_int(config.extra.get("max_tokens"), default=1000)
 
+        # 空 api_key 时不发送 x-api-key header
+        headers: dict[str, str] = {
+            "anthropic-version": anthropic_version,
+            "Content-Type": "application/json",
+        }
+        if api_key:
+            headers["x-api-key"] = api_key
+
         profile = ApiAdapterProfile(
             id=f"anthropic_compatible_{config.id}",
             stage="translation",
             method="POST",
             url=request_url,
-            headers={
-                "x-api-key": api_key or "",
-                "anthropic-version": anthropic_version,
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             request_template={
                 "model": config.model_name or "claude-sonnet-4-20250514",
                 "max_tokens": max_tokens,
