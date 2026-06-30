@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -33,6 +34,9 @@ class ProjectStatusSnapshot(BaseModel):
     status_detail: str = ""
     primary_action: ProjectPrimaryAction
     elapsed_seconds: int | None = None
+    generation_started_at: float | None = None
+    generation_completed_at: float | None = None
+    generation_elapsed_seconds: int | None = None
     final_output_path: Path | None = None
     open_output_enabled: bool = False
     updated_at: float = 0.0
@@ -105,6 +109,12 @@ def read_project_status_snapshot(
         label = "未开始"
         action = "start"
 
+    elapsed_seconds = _resolve_elapsed_seconds(
+        started_at=project.metadata.generation_started_at,
+        persisted_elapsed_seconds=project.metadata.generation_elapsed_seconds,
+        lifecycle=lifecycle,
+    )
+
     return ProjectStatusSnapshot(
         project_path=project.path,
         name=project.name,
@@ -114,9 +124,12 @@ def read_project_status_snapshot(
         target_language=project.target_language,
         lifecycle=lifecycle,
         status_label=label,
-        status_detail=_append_elapsed_detail(detail, project.metadata.generation_elapsed_seconds),
+        status_detail=_append_elapsed_detail(detail, elapsed_seconds),
         primary_action=action,
-        elapsed_seconds=project.metadata.generation_elapsed_seconds,
+        elapsed_seconds=elapsed_seconds,
+        generation_started_at=project.metadata.generation_started_at,
+        generation_completed_at=project.metadata.generation_completed_at,
+        generation_elapsed_seconds=elapsed_seconds,
         final_output_path=final_output,
         open_output_enabled=final_output is not None,
         updated_at=_path_updated_at(project.path),
@@ -149,6 +162,17 @@ def _format_elapsed(seconds: int) -> str:
     if hours:
         return f"{hours:02d}:{minutes:02d}:{rest:02d}"
     return f"{minutes:02d}:{rest:02d}"
+
+
+def _resolve_elapsed_seconds(
+    *,
+    started_at: float | None,
+    persisted_elapsed_seconds: int | None,
+    lifecycle: ProjectLifecycle,
+) -> int | None:
+    if started_at is not None and lifecycle in {"running", "paused", "interrupted"}:
+        return max(0, round(time.time() - started_at))
+    return persisted_elapsed_seconds
 
 
 def _path_updated_at(path: Path) -> float:

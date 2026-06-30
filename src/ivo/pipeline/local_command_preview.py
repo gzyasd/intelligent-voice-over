@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
@@ -271,16 +272,33 @@ def _run_stage(
             _emit_progress(progress_callback, stage, "completed", output_path=_output_path(resumed))
             return resumed
 
-    _emit_progress(progress_callback, stage, "started")
-    project.jobs.mark_running(stage, "running")
+    started_at = time.time()
+    _emit_progress(progress_callback, stage, "started", started_at=started_at)
+    project.jobs.mark_running(stage, "running", now=started_at)
     try:
         result = action()
     except Exception as exc:
-        project.jobs.mark_failed(stage, str(exc))
-        _emit_progress(progress_callback, stage, "failed", message=str(exc))
+        failed_at = time.time()
+        project.jobs.mark_failed(stage, str(exc), now=failed_at)
+        _emit_progress(
+            progress_callback,
+            stage,
+            "failed",
+            message=str(exc),
+            started_at=started_at,
+            elapsed_seconds=max(0, round(failed_at - started_at)),
+        )
         raise
-    project.jobs.mark_completed(stage, "completed")
-    _emit_progress(progress_callback, stage, "completed", output_path=_output_path(result))
+    completed_at = time.time()
+    project.jobs.mark_completed(stage, "completed", now=completed_at)
+    _emit_progress(
+        progress_callback,
+        stage,
+        "completed",
+        output_path=_output_path(result),
+        started_at=started_at,
+        elapsed_seconds=max(0, round(completed_at - started_at)),
+    )
     return result
 
 
@@ -332,20 +350,42 @@ def _synthesize_segments(
     control: PipelineControl | None = None,
 ) -> None:
     total_items = len(dubbed_segments)
-    for index, segment in enumerate(dubbed_segments, start=1):
-        if control is not None:
-            control.wait_if_paused()
-        resumed_audio = _resume_segment_audio(project, segment)
-        if resumed_audio is not None:
-            generated_segments.append(resumed_audio)
-            segment_audio.append(SegmentAudio(path=resumed_audio, start_ms=segment.start_ms))
-            _emit_tts_progress(progress_callback, index, total_items, segment.id, resumed_audio)
-            continue
-        project.timeline.update_segment(segment.id, status="approved")
-        synthesis = synthesize_segment(project, segment, active_tts_adapter)
-        generated_segments.append(synthesis.audio_path)
-        segment_audio.append(SegmentAudio(path=synthesis.audio_path, start_ms=segment.start_ms))
-        _emit_tts_progress(progress_callback, index, total_items, segment.id, synthesis.audio_path)
+    try:
+        for index, segment in enumerate(dubbed_segments, start=1):
+            if control is not None:
+                control.wait_if_paused()
+            segment_started_at = time.time()
+            resumed_audio = _resume_segment_audio(project, segment)
+            if resumed_audio is not None:
+                generated_segments.append(resumed_audio)
+                segment_audio.append(SegmentAudio(path=resumed_audio, start_ms=segment.start_ms))
+                _emit_tts_progress(
+                    progress_callback,
+                    index,
+                    total_items,
+                    segment.id,
+                    resumed_audio,
+                    started_at=segment_started_at,
+                    elapsed_seconds=0,
+                )
+                continue
+            project.timeline.update_segment(segment.id, status="approved")
+            synthesis = synthesize_segment(project, segment, active_tts_adapter)
+            generated_segments.append(synthesis.audio_path)
+            segment_audio.append(SegmentAudio(path=synthesis.audio_path, start_ms=segment.start_ms))
+            _emit_tts_progress(
+                progress_callback,
+                index,
+                total_items,
+                segment.id,
+                synthesis.audio_path,
+                started_at=segment_started_at,
+                elapsed_seconds=max(0, round(time.time() - segment_started_at)),
+            )
+    finally:
+        close = getattr(active_tts_adapter, "close", None)
+        if callable(close):
+            close()
 
 
 def _resume_segment_audio(project: DubbingProject, segment: DubbingSegment) -> Path | None:
@@ -379,6 +419,8 @@ def _emit_progress(
     current_item: int | None = None,
     total_items: int | None = None,
     output_path: Path | None = None,
+    started_at: float | None = None,
+    elapsed_seconds: int | None = None,
 ) -> None:
     if callback is None:
         return
@@ -397,6 +439,8 @@ def _emit_progress(
             current_item=current_item,
             total_items=total_items,
             output_path=output_path,
+            started_at=started_at,
+            elapsed_seconds=elapsed_seconds,
         )
     )
 
@@ -407,6 +451,8 @@ def _emit_tts_progress(
     total_items: int,
     segment_id: str,
     output_path: Path,
+    started_at: float | None = None,
+    elapsed_seconds: int | None = None,
 ) -> None:
     if callback is None or total_items == 0:
         return
@@ -425,6 +471,8 @@ def _emit_tts_progress(
             current_item=current_item,
             total_items=total_items,
             output_path=output_path,
+            started_at=started_at,
+            elapsed_seconds=elapsed_seconds,
         )
     )
 

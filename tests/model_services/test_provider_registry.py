@@ -72,6 +72,16 @@ def test_registry_local_models_present() -> None:
     assert "cosyvoice3" in provider_ids
 
 
+def test_f5_tts_provider_exposes_runtime_mode_setting() -> None:
+    from ivo.model_services.provider_registry import ProviderRegistry
+
+    registry = ProviderRegistry()
+    entry = registry.get("f5-tts")
+    assert entry is not None
+    field_names = {field.name for field in entry.config_fields}
+    assert "runtime_mode" in field_names
+
+
 def test_registry_get_entry_by_id() -> None:
     from ivo.model_services.provider_registry import ProviderRegistry
 

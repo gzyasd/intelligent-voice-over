@@ -64,6 +64,9 @@ export interface ProjectLibraryItem {
   lifecycle: ProjectLifecycle | ''
   failed_stage: string | null
   elapsed_seconds: number | null
+  generation_started_at: number | null
+  generation_completed_at: number | null
+  generation_elapsed_seconds: number | null
   final_output_path: string | null
 }
 
@@ -80,6 +83,9 @@ export interface ProjectStatusSnapshot {
   status_detail: string
   primary_action: ProjectPrimaryAction
   elapsed_seconds: number | null
+  generation_started_at: number | null
+  generation_completed_at: number | null
+  generation_elapsed_seconds: number | null
   final_output_path: string | null
   open_output_enabled: boolean
   updated_at: number

@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Query
 
 from ivo.core.project import DubbingProject
+from ivo.core.project_status import read_project_status_snapshot
 
 from .. import pipeline_runner
 
@@ -67,7 +68,16 @@ async def pipeline_ws(websocket: WebSocket) -> None:
                 # 超时期间检查 runner 是否已结束
                 if runner.is_finished:
                     # 推送一次 finished 兜底（防止事件丢失）
-                    await websocket.send_json({"type": "finished", "error": runner.error})
+                    snapshot = read_project_status_snapshot(
+                        Path(project_path),
+                        active_project_paths=pipeline_runner.get_active_project_paths(),
+                        paused_project_paths=pipeline_runner.get_paused_project_paths(),
+                    )
+                    await websocket.send_json({
+                        "type": "finished",
+                        "error": runner.error,
+                        "elapsed_seconds": snapshot.elapsed_seconds,
+                    })
                     break
                 continue
             await websocket.send_json(event)
@@ -121,13 +131,29 @@ async def resume_pipeline(project_path: str = Query(..., description="项目路�
 async def get_pipeline_status(project_path: str = Query(..., description="项目路径")) -> dict[str, Any]:
     """获取流水线状态"""
     runner = pipeline_runner.get_runner(project_path)
+    snapshot = read_project_status_snapshot(
+        Path(project_path),
+        active_project_paths=pipeline_runner.get_active_project_paths(),
+        paused_project_paths=pipeline_runner.get_paused_project_paths(),
+    )
     if runner is None:
-        return {"running": False, "paused": False, "finished": False, "error": None}
+        return {
+            "running": False,
+            "paused": False,
+            "finished": False,
+            "error": None,
+            "started_at": snapshot.generation_started_at,
+            "completed_at": snapshot.generation_completed_at,
+            "elapsed_seconds": snapshot.elapsed_seconds,
+        }
     return {
         "running": runner.is_running,
         "paused": runner.is_paused(),
         "finished": runner.is_finished,
         "error": runner.error,
+        "started_at": snapshot.generation_started_at,
+        "completed_at": snapshot.generation_completed_at,
+        "elapsed_seconds": snapshot.elapsed_seconds,
     }
 
 
@@ -157,6 +183,9 @@ def get_pipeline_history(project_path: str = Query(..., description="项目路�
                 "stage": record.stage,
                 "status": record.status,
                 "message": record.message,
+                "started_at": record.started_at,
+                "completed_at": record.completed_at,
+                "elapsed_seconds": record.elapsed_seconds,
             })
             if record.status == "running":
                 current_stage = record.stage
@@ -164,7 +193,14 @@ def get_pipeline_history(project_path: str = Query(..., description="项目路�
                 failed_stage = record.stage
                 error_message = record.message
         else:
-            stages.append({"stage": stage_name, "status": "pending", "message": ""})
+            stages.append({
+                "stage": stage_name,
+                "status": "pending",
+                "message": "",
+                "started_at": None,
+                "completed_at": None,
+                "elapsed_seconds": None,
+            })
 
     has_history = any(s["status"] != "pending" for s in stages)
     # 判断是否已完成（所有阶段都 completed）
@@ -177,4 +213,7 @@ def get_pipeline_history(project_path: str = Query(..., description="项目路�
         "all_completed": all_completed,
         "failed_stage": failed_stage,
         "error_message": error_message,
+        "started_at": project.metadata.generation_started_at,
+        "completed_at": project.metadata.generation_completed_at,
+        "elapsed_seconds": project.metadata.generation_elapsed_seconds,
     }

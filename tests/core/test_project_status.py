@@ -95,3 +95,47 @@ def test_project_status_snapshot_finds_audio_output(tmp_path: Path) -> None:
     assert snapshot.content_type == "audio"
     assert snapshot.final_output_path == output
     assert snapshot.open_output_enabled is True
+
+
+def test_job_store_records_stage_elapsed_seconds(tmp_path: Path) -> None:
+    from ivo.core.jobs import JobStore
+
+    store = JobStore(tmp_path / "jobs.sqlite")
+    store.mark_running("tts", "running", now=100.0)
+    store.mark_completed("tts", "completed", now=145.4)
+
+    record = store.get("tts")
+
+    assert record is not None
+    assert record.stage == "tts"
+    assert record.status == "completed"
+    assert record.started_at == 100.0
+    assert record.completed_at == 145.4
+    assert record.elapsed_seconds == 45
+
+
+def test_project_status_snapshot_exposes_running_elapsed_seconds(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import ivo.core.project_status as project_status
+    from ivo.core.project import DubbingProject
+
+    project = DubbingProject.create(
+        tmp_path / "RunningTimed.ivoproj",
+        name="RunningTimed",
+        source_language="ja",
+        target_language="zh",
+    )
+    project.mark_generation_started(now=100.0)
+    project.jobs.mark_running("tts", now=110.0)
+    monkeypatch.setattr(project_status.time, "time", lambda: 145.0)
+
+    snapshot = project_status.read_project_status_snapshot(
+        project.path,
+        active_project_paths={project.path.resolve()},
+    )
+
+    assert snapshot.elapsed_seconds == 45
+    assert snapshot.generation_started_at == 100.0
+    assert snapshot.generation_elapsed_seconds == 45

@@ -90,6 +90,27 @@ async def test_project_status_uses_active_pipeline_runner(
     assert response.json()["primary_action"] == "progress"
 
 
+async def test_pipeline_history_returns_stage_timing(client, tmp_path: Path) -> None:
+    from ivo.core.project import DubbingProject
+
+    project = DubbingProject.create(
+        tmp_path / "History.ivoproj",
+        name="History",
+        source_language="ja",
+        target_language="zh",
+    )
+    project.jobs.mark_running("tts", now=100.0)
+    project.jobs.mark_completed("tts", now=130.0)
+
+    response = await client.get("/pipeline/history", params={"project_path": str(project.path)})
+
+    assert response.status_code == 200
+    tts = next(stage for stage in response.json()["stages"] if stage["stage"] == "tts")
+    assert tts["started_at"] == 100.0
+    assert tts["completed_at"] == 130.0
+    assert tts["elapsed_seconds"] == 30
+
+
 async def test_create_project_with_scheme_persists_selection(
     client, patch_settings, tmp_path: Path, monkeypatch
 ):

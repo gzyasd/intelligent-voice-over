@@ -637,6 +637,14 @@ _F5_TTS = ProviderRegistryEntry(
             default="auto",
             options=("auto", "cuda", "cpu"),
         ),
+        ConfigField(
+            name="runtime_mode",
+            display_name="运行模式",
+            field_type="select",
+            required=False,
+            default="worker",
+            options=("worker", "subprocess"),
+        ),
     ),
     external_docs_url="https://github.com/SWivid/F5-TTS",
 )

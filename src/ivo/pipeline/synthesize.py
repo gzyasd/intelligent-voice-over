@@ -264,6 +264,12 @@ def synthesize_segment(
         )
         if duration_flag == "duration_ok" or attempt >= max_duration_retries:
             break
+        if not should_retry_duration_mismatch(
+            generated_duration_ms=generated_duration_ms,
+            target_duration_ms=target_duration_ms,
+            tolerance_ms=tolerance_ms,
+        ):
+            break
         retried = True
         style_prompt = _retry_style_prompt(style_prompt, duration_flag)
     quality_flags = _merge_synthesis_quality_flags(
@@ -398,6 +404,21 @@ def _retry_style_prompt(style_prompt: str | None, duration_flag: str) -> str:
 
 def normalize_tts_speed(value: float) -> float:
     return min(max(float(value), MIN_TTS_SPEED), MAX_TTS_SPEED)
+
+
+def should_retry_duration_mismatch(
+    *,
+    generated_duration_ms: int,
+    target_duration_ms: int,
+    tolerance_ms: int,
+    retry_ratio_threshold: float = 0.35,
+) -> bool:
+    if abs(generated_duration_ms - target_duration_ms) <= tolerance_ms:
+        return False
+    if target_duration_ms <= 0:
+        return False
+    ratio = abs(generated_duration_ms - target_duration_ms) / target_duration_ms
+    return ratio >= retry_ratio_threshold
 
 
 def _ensure_f5_tts_speed_argument(profile: LocalCommandProfile) -> LocalCommandProfile:

@@ -61,6 +61,8 @@ class PipelineProgressEvent(BaseModel):
     current_item: int | None = None
     total_items: int | None = None
     output_path: Path | None = None
+    started_at: float | None = None
+    elapsed_seconds: int | None = None
 
 
 def stage_percent(

@@ -23,12 +23,15 @@ export interface PipelineProgressEvent {
   current_item: number | null
   total_items: number | null
   output_path: string | null
+  started_at?: number | null
+  elapsed_seconds?: number | null
 }
 
 export interface PipelineFinishedEvent {
   type: 'finished'
   event_id?: number
   error: string | null
+  elapsed_seconds?: number | null
 }
 
 export interface PipelineErrorEvent {
@@ -59,12 +62,18 @@ export interface PipelineStatus {
   paused: boolean
   finished: boolean
   error: string | null
+  started_at: number | null
+  completed_at: number | null
+  elapsed_seconds: number | null
 }
 
 export interface PipelineHistoryStage {
   stage: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
   message: string
+  started_at: number | null
+  completed_at: number | null
+  elapsed_seconds: number | null
 }
 
 export interface PipelineHistory {
@@ -74,6 +83,9 @@ export interface PipelineHistory {
   all_completed: boolean
   failed_stage: string | null
   error_message: string | null
+  started_at: number | null
+  completed_at: number | null
+  elapsed_seconds: number | null
 }
 
 export const pipelineApi = {

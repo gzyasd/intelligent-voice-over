@@ -105,6 +105,22 @@ function formatTime(ts: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
 }
 
+function formatElapsed(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return '-'
+  const safe = Math.max(0, Math.round(seconds))
+  const h = Math.floor(safe / 3600)
+  const m = Math.floor((safe % 3600) / 60)
+  const s = safe % 60
+  if (h > 0) {
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+const displayElapsedSeconds = computed(() => {
+  return pipelineStore.elapsedSeconds ?? snapshot.value?.elapsed_seconds ?? null
+})
+
 async function copyStatusDetail(): Promise<void> {
   if (!snapshot.value?.status_detail) return
   try {
@@ -224,6 +240,7 @@ onMounted(async () => {
             <NDescriptionsItem label="内容类型">{{ snapshot.content_type }}</NDescriptionsItem>
             <NDescriptionsItem label="源语言">{{ languageLabel(snapshot.source_language) }}</NDescriptionsItem>
             <NDescriptionsItem label="目标语言">{{ languageLabel(snapshot.target_language) }}</NDescriptionsItem>
+            <NDescriptionsItem label="生成耗时">{{ formatElapsed(displayElapsedSeconds) }}</NDescriptionsItem>
             <NDescriptionsItem label="源文件">
               <span class="file-path">{{ snapshot.source_media_path || '-' }}</span>
             </NDescriptionsItem>
@@ -267,7 +284,9 @@ onMounted(async () => {
         <NCard v-if="showPipelinePanel" class="pipeline-card" title="生成进度" content-class="pipeline-card-content">
           <div class="pipeline-progress-row">
             <span class="pipeline-progress-label">总进度</span>
-            <span class="pipeline-progress-value">{{ pipelineStore.overallPercent }}%</span>
+            <span class="pipeline-progress-value">
+              {{ pipelineStore.overallPercent }}% · {{ formatElapsed(displayElapsedSeconds) }}
+            </span>
           </div>
           <NProgress
             type="line"

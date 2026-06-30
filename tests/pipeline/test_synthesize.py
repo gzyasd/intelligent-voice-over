@@ -5,6 +5,23 @@ import wave
 from pathlib import Path
 
 
+def test_tts_duration_retry_only_happens_for_large_mismatch() -> None:
+    from ivo.pipeline.synthesize import should_retry_duration_mismatch
+
+    assert should_retry_duration_mismatch(
+        generated_duration_ms=1250,
+        target_duration_ms=1000,
+        tolerance_ms=300,
+        retry_ratio_threshold=0.35,
+    ) is False
+    assert should_retry_duration_mismatch(
+        generated_duration_ms=1600,
+        target_duration_ms=1000,
+        tolerance_ms=300,
+        retry_ratio_threshold=0.35,
+    ) is True
+
+
 def test_select_reference_segments_returns_approved_speaker_segments(tmp_path) -> None:
     from ivo.core.project import DubbingProject
     from ivo.core.timeline import DubbingSegment

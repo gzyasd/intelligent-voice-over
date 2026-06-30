@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 import sys
 from unittest.mock import MagicMock
@@ -260,6 +261,94 @@ class TestAdapterFactoryLocal:
         )
         adapter = factory.create(config)
         assert hasattr(adapter, "transcribe")
+
+    def test_local_f5_tts_defaults_to_worker_adapter(self) -> None:
+        from ivo.pipeline.f5_tts_worker_adapter import F5TtsWorkerAdapter
+
+        factory = _make_factory()
+        config = _make_config(
+            stage="tts",
+            protocol="local_f5_tts",
+            kind="local",
+            provider_key="f5-tts",
+            local_model_path="models/tts/f5-tts",
+        )
+
+        adapter = factory.create(config)
+
+        assert isinstance(adapter, F5TtsWorkerAdapter)
+
+    def test_local_f5_tts_can_fallback_to_subprocess_adapter(self) -> None:
+        from ivo.pipeline.synthesize import LocalCommandTtsAdapter
+
+        factory = _make_factory()
+        config = _make_config(
+            stage="tts",
+            protocol="local_f5_tts",
+            kind="local",
+            provider_key="f5-tts",
+            local_model_path="models/tts/f5-tts",
+            extra={"runtime_mode": "subprocess"},
+        )
+
+        adapter = factory.create(config)
+
+        assert isinstance(adapter, LocalCommandTtsAdapter)
+
+    def test_local_f5_tts_worker_requires_real_python_when_frozen(
+        self,
+        monkeypatch,
+    ) -> None:
+        from ivo.model_services import adapter_factory
+
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setattr(
+            adapter_factory,
+            "_prepare_scheme_local_profile",
+            lambda profile, runtime_root, local_python=None, pyannote_python=None: profile,
+        )
+        factory = _make_factory()
+        config = _make_config(
+            stage="tts",
+            protocol="local_f5_tts",
+            kind="local",
+            provider_key="f5-tts",
+            local_model_path="models/tts/f5-tts",
+        )
+
+        with pytest.raises(RuntimeError, match="local Python interpreter is not configured"):
+            factory.create(config)
+
+    def test_local_f5_tts_worker_emits_command_log_on_start(self, tmp_path) -> None:
+        logs = []
+        factory = _make_factory(command_output_callback=logs.append)
+        config = _make_config(
+            stage="tts",
+            protocol="local_f5_tts",
+            kind="local",
+            provider_key="f5-tts",
+            local_model_path="models/tts/f5-tts",
+        )
+        adapter = factory.create(config)
+        adapter.dry_run = True
+        adapter.model_dir = tmp_path / "model"
+        adapter.worker_script = Path("examples/local_commands/f5_tts_worker.py")
+
+        adapter.synthesize(
+            text="一",
+            speaker_id="SPEAKER_00",
+            output_path=tmp_path / "one.wav",
+            style_prompt=None,
+            reference_audio_path=None,
+            reference_text="",
+            target_duration_ms=1000,
+            speech_rate=0.9,
+        )
+        adapter.close()
+
+        assert logs
+        assert logs[0].stage == "tts"
+        assert logs[0].exit_code == -1
 
     def test_local_pyannote_uses_default_hf_token_env_when_unset(
         self, tmp_path

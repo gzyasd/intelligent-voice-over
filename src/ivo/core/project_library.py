@@ -20,6 +20,9 @@ class ProjectLibraryItem(BaseModel):
     lifecycle: str = ""
     failed_stage: str | None = None
     elapsed_seconds: int | None = None
+    generation_started_at: float | None = None
+    generation_completed_at: float | None = None
+    generation_elapsed_seconds: int | None = None
     final_output_path: Path | None = None
 
 
@@ -91,6 +94,9 @@ def _read_project_item(
         lifecycle=snapshot.lifecycle,
         failed_stage=failed_stage,
         elapsed_seconds=snapshot.elapsed_seconds,
+        generation_started_at=snapshot.generation_started_at,
+        generation_completed_at=snapshot.generation_completed_at,
+        generation_elapsed_seconds=snapshot.generation_elapsed_seconds,
         final_output_path=snapshot.final_output_path,
     )
 

@@ -125,3 +125,85 @@ def test_scheme_pipeline_passes_configured_python_paths_to_adapter_factory(
 
     assert captured["local_python"] == main_python
     assert captured["pyannote_python"] == pyannote_python
+
+
+def test_runner_marks_project_generation_lifecycle(tmp_path: Path, monkeypatch) -> None:
+    from ivo.core.project import DubbingProject
+    from server import pipeline_runner
+
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+    project = DubbingProject.create(
+        tmp_path / "Timed.ivoproj",
+        name="Timed",
+        source_language="ja",
+        target_language="zh",
+        source_media=source,
+    )
+
+    def fake_run(project_arg, **kwargs) -> None:
+        assert project_arg.path == project.path
+
+    monkeypatch.setattr(pipeline_runner, "run_local_command_preview", fake_run)
+    monkeypatch.setattr(
+        pipeline_runner,
+        "_build_adapters_from_project_settings",
+        lambda project_arg, command_output_callback=None: SimpleNamespace(
+            profiles=None,
+            separation=None,
+            asr=None,
+            diarization=None,
+            translation=None,
+            tts=None,
+            ffmpeg_path=None,
+        ),
+    )
+
+    runner = pipeline_runner.PipelineRunner(str(project.path))
+    runner._run()
+
+    reloaded = DubbingProject.load(project.path)
+    assert reloaded.metadata.generation_status == "completed"
+    assert reloaded.metadata.generation_started_at is not None
+    assert reloaded.metadata.generation_completed_at is not None
+    assert reloaded.metadata.generation_elapsed_seconds is not None
+
+
+def test_runner_marks_generation_failed_on_exception(tmp_path: Path, monkeypatch) -> None:
+    from ivo.core.project import DubbingProject
+    from server import pipeline_runner
+
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+    project = DubbingProject.create(
+        tmp_path / "Failed.ivoproj",
+        name="Failed",
+        source_language="ja",
+        target_language="zh",
+        source_media=source,
+    )
+
+    def fake_run(project_arg, **kwargs) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(pipeline_runner, "run_local_command_preview", fake_run)
+    monkeypatch.setattr(
+        pipeline_runner,
+        "_build_adapters_from_project_settings",
+        lambda project_arg, command_output_callback=None: SimpleNamespace(
+            profiles=None,
+            separation=None,
+            asr=None,
+            diarization=None,
+            translation=None,
+            tts=None,
+            ffmpeg_path=None,
+        ),
+    )
+
+    runner = pipeline_runner.PipelineRunner(str(project.path))
+    runner._run()
+
+    reloaded = DubbingProject.load(project.path)
+    assert reloaded.metadata.generation_status == "failed"
+    assert reloaded.metadata.generation_elapsed_seconds is not None

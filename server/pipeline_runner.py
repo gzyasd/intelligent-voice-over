@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -96,8 +97,10 @@ class PipelineRunner:
 
     def _run(self) -> None:
         """后台线程执行体"""
+        project: DubbingProject | None = None
         try:
             project = DubbingProject.load(self.project_path)
+            project.mark_generation_started(now=time.time())
             source_media = project.source_media_path
             if source_media is None:
                 raise ValueError("项目缺少源素材路径")
@@ -138,7 +141,10 @@ class PipelineRunner:
                 command_output_callback=command_output_callback,
                 control=self.control,
             )
+            project.mark_generation_completed()
         except Exception as exc:
+            if project is not None:
+                project.mark_generation_failed()
             self._error = str(exc)
             stage = self._failed_stage or "export"
             stage_labels = {
@@ -163,7 +169,14 @@ class PipelineRunner:
             })
         finally:
             self._finished = True
-            self._push_event({"type": "finished", "error": self._error})
+            elapsed_seconds = None
+            if project is not None:
+                elapsed_seconds = project.metadata.generation_elapsed_seconds
+            self._push_event({
+                "type": "finished",
+                "error": self._error,
+                "elapsed_seconds": elapsed_seconds,
+            })
 
     def _push_event(self, event: dict[str, Any]) -> None:
         """将事件推送到所有订阅者的 asyncio 队列（线程安全）"""

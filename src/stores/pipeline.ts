@@ -22,6 +22,9 @@ export interface StageState {
   label: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
   message: string
+  startedAt: number | null
+  completedAt: number | null
+  elapsedSeconds: number | null
 }
 
 const STAGE_ORDER = [
@@ -59,6 +62,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
       label: STAGE_LABELS[name],
       status: 'pending',
       message: '',
+      startedAt: null,
+      completedAt: null,
+      elapsedSeconds: null,
     })),
   )
   const logs = ref<LogEntry[]>([])
@@ -66,8 +72,12 @@ export const usePipelineStore = defineStore('pipeline', () => {
   // 是否已从后端恢复历史进度（用于打开失败/中断项目时显示已有阶段状态）
   const hasHistory = ref(false)
   const lastEventId = ref(0)
+  const startedAt = ref<number | null>(null)
+  const completedAt = ref<number | null>(null)
+  const elapsedSeconds = ref<number | null>(null)
 
   let ws: PipelineWebSocketHandle | null = null
+  let elapsedTimer: ReturnType<typeof setInterval> | null = null
 
   const isRunning = computed(() => running.value && !finished.value)
   const canPause = computed(() => isRunning.value && !paused.value)
@@ -90,11 +100,18 @@ export const usePipelineStore = defineStore('pipeline', () => {
     currentStage.value = ''
     hasHistory.value = false
     lastEventId.value = 0
+    startedAt.value = null
+    completedAt.value = null
+    elapsedSeconds.value = null
+    stopElapsedTimer()
     stages.value = STAGE_ORDER.map((name) => ({
       name,
       label: STAGE_LABELS[name],
       status: 'pending',
       message: '',
+      startedAt: null,
+      completedAt: null,
+      elapsedSeconds: null,
     }))
     logs.value = []
   }
@@ -108,6 +125,11 @@ export const usePipelineStore = defineStore('pipeline', () => {
         finished.value = true
         running.value = false
         error.value = event.error
+        if (event.elapsed_seconds !== undefined) {
+          elapsedSeconds.value = event.elapsed_seconds
+        }
+        completedAt.value = Date.now() / 1000
+        stopElapsedTimer()
         addLog('info', 'system', '系统', event.error ? `流水线结束（错误）: ${event.error}` : '流水线执行完成')
         closeWs()
       } else if (event.type === 'error') {
@@ -129,6 +151,13 @@ export const usePipelineStore = defineStore('pipeline', () => {
     const evt = event as PipelineProgressEvent
     overallPercent.value = evt.overall_percent
     currentStage.value = evt.stage
+    if (evt.started_at !== undefined && evt.started_at !== null) {
+      startedAt.value = evt.started_at
+      startElapsedTimer()
+    }
+    if (evt.elapsed_seconds !== undefined) {
+      elapsedSeconds.value = evt.elapsed_seconds
+    }
 
     // 更新阶段状态
     const stageIdx = STAGE_ORDER.indexOf(evt.stage as (typeof STAGE_ORDER)[number])
@@ -137,18 +166,28 @@ export const usePipelineStore = defineStore('pipeline', () => {
       if (evt.status === 'started') {
         stage.status = 'running'
         stage.message = evt.message || '开始执行'
+        stage.startedAt = evt.started_at ?? stage.startedAt ?? Date.now() / 1000
+        stage.completedAt = null
+        stage.elapsedSeconds = evt.elapsed_seconds ?? null
       } else if (evt.status === 'progress') {
         stage.status = 'running'
         stage.message = evt.message
+        stage.elapsedSeconds = evt.elapsed_seconds ?? stage.elapsedSeconds
       } else if (evt.status === 'completed') {
         stage.status = 'completed'
         stage.message = evt.message || '已完成'
+        stage.completedAt = Date.now() / 1000
+        stage.elapsedSeconds = evt.elapsed_seconds ?? stage.elapsedSeconds
       } else if (evt.status === 'failed') {
         stage.status = 'failed'
         stage.message = evt.message || '失败'
+        stage.completedAt = Date.now() / 1000
+        stage.elapsedSeconds = evt.elapsed_seconds ?? stage.elapsedSeconds
       } else if (evt.status === 'skipped') {
         stage.status = 'skipped'
         stage.message = evt.message || '已跳过'
+        stage.completedAt = Date.now() / 1000
+        stage.elapsedSeconds = evt.elapsed_seconds ?? stage.elapsedSeconds
       }
     }
 
@@ -203,6 +242,37 @@ export const usePipelineStore = defineStore('pipeline', () => {
     }
   }
 
+  function startElapsedTimer(): void {
+    if (elapsedTimer) return
+    elapsedTimer = setInterval(() => {
+      if (startedAt.value !== null && running.value && !paused.value) {
+        elapsedSeconds.value = Math.max(0, Math.round(Date.now() / 1000 - startedAt.value))
+      }
+    }, 1000)
+  }
+
+  function stopElapsedTimer(): void {
+    if (elapsedTimer) {
+      clearInterval(elapsedTimer)
+      elapsedTimer = null
+    }
+  }
+
+  function applyTiming(timing: {
+    started_at?: number | null
+    completed_at?: number | null
+    elapsed_seconds?: number | null
+  }): void {
+    if (timing.started_at !== undefined) startedAt.value = timing.started_at
+    if (timing.completed_at !== undefined) completedAt.value = timing.completed_at
+    if (timing.elapsed_seconds !== undefined) elapsedSeconds.value = timing.elapsed_seconds
+    if (running.value && startedAt.value !== null && !paused.value) {
+      startElapsedTimer()
+    } else {
+      stopElapsedTimer()
+    }
+  }
+
   /**
    * 从后端 JobStore 恢复历史进度。
    * 用于打开项目时显示已有阶段状态（失败/中断/已完成但未在前端会话中）。
@@ -221,11 +291,18 @@ export const usePipelineStore = defineStore('pipeline', () => {
     currentStage.value = ''
     hasHistory.value = false
     lastEventId.value = 0
+    startedAt.value = null
+    completedAt.value = null
+    elapsedSeconds.value = null
+    stopElapsedTimer()
     stages.value = STAGE_ORDER.map((name) => ({
       name,
       label: STAGE_LABELS[name],
       status: 'pending',
       message: '',
+      startedAt: null,
+      completedAt: null,
+      elapsedSeconds: null,
     }))
     logs.value = []
 
@@ -236,9 +313,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
       }
 
       // 按后端返回更新阶段状态
-      const stageMap = new Map<string, { status: string; message: string }>()
+      const stageMap = new Map<string, PipelineHistory['stages'][number]>()
       for (const s of history.stages) {
-        stageMap.set(s.stage, { status: s.status, message: s.message })
+        stageMap.set(s.stage, s)
       }
       stages.value = STAGE_ORDER.map((name) => {
         const rec = stageMap.get(name)
@@ -247,8 +324,12 @@ export const usePipelineStore = defineStore('pipeline', () => {
           label: STAGE_LABELS[name],
           status: (rec?.status as StageState['status']) || 'pending',
           message: rec?.message || '',
+          startedAt: rec?.started_at ?? null,
+          completedAt: rec?.completed_at ?? null,
+          elapsedSeconds: rec?.elapsed_seconds ?? null,
         }
       })
+      applyTiming(history)
 
       // 计算总进度百分比
       const completedCount = stages.value.filter(
@@ -287,6 +368,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
       paused.value = status.paused
       finished.value = false
       error.value = status.error
+      applyTiming(status)
       if (!ws) {
         openWs()
       }
@@ -298,6 +380,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
       paused.value = false
       finished.value = true
       error.value = status.error
+      applyTiming(status)
       if (logs.value.length > 0 || hasHistory.value) {
         return
       }
@@ -310,6 +393,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
     if (!projectPath.value) throw new Error('Project path is not set')
     running.value = true
     finished.value = false
+    completedAt.value = null
+    if (startedAt.value === null) startedAt.value = Date.now() / 1000
+    startElapsedTimer()
     if (!ws) {
       openWs()
     }
@@ -319,11 +405,15 @@ export const usePipelineStore = defineStore('pipeline', () => {
     if (!projectPath.value) throw new Error('未设置项目路径')
     reset()
     running.value = true
+    startedAt.value = Date.now() / 1000
+    elapsedSeconds.value = 0
+    startElapsedTimer()
     try {
       await pipelineApi.start(projectPath.value)
       openWs()
     } catch (err) {
       running.value = false
+      stopElapsedTimer()
       closeWs()
       throw err
     }
@@ -332,11 +422,13 @@ export const usePipelineStore = defineStore('pipeline', () => {
   async function pause(): Promise<void> {
     await pipelineApi.pause(projectPath.value)
     paused.value = true
+    stopElapsedTimer()
   }
 
   async function resume(): Promise<void> {
     await pipelineApi.resume(projectPath.value)
     paused.value = false
+    startElapsedTimer()
   }
 
   return {
@@ -351,6 +443,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
     logs,
     currentStage,
     hasHistory,
+    startedAt,
+    completedAt,
+    elapsedSeconds,
     // 计算属性
     isRunning,
     canPause,

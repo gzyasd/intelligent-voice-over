@@ -66,6 +66,17 @@ def _infer_runtime_root() -> Path:
     return candidates[0]
 
 
+def _resolve_worker_python(value: object) -> str:
+    if value:
+        return str(value)
+    if getattr(sys, "frozen", False):
+        raise RuntimeError(
+            "local Python interpreter is not configured. Configure the custom "
+            "virtual-environment Python path in Settings or set IVO_LOCAL_PYTHON."
+        )
+    return sys.executable
+
+
 def _prepare_scheme_local_profile(
     profile: "LocalCommandProfile",
     runtime_root: Path,
@@ -331,6 +342,33 @@ class ProviderAdapterFactory:
                 command_output_callback=self._command_output_callback,
             )
         elif config.stage == "tts":
+            if config.provider_key == "f5-tts" and config.extra.get("runtime_mode") != "subprocess":
+                from ivo.adapters.local import CommandExecutionLog
+                from ivo.pipeline.f5_tts_worker_adapter import F5TtsWorkerAdapter
+
+                python_executable = _resolve_worker_python(profile.extra.get("python_executable"))
+
+                def _emit_worker_start(command: list[str]) -> None:
+                    if self._command_output_callback is not None:
+                        self._command_output_callback(
+                            CommandExecutionLog(
+                                stage="tts",
+                                provider=profile.id,
+                                command=command,
+                                stdout="",
+                                stderr="",
+                                exit_code=-1,
+                            )
+                        )
+
+                return F5TtsWorkerAdapter(
+                    python_executable=python_executable,
+                    worker_script=runtime_root / "examples" / "local_commands" / "f5_tts_worker.py",
+                    model_dir=model_path,
+                    vocoder_dir=model_path.parent / "vocos-mel-24khz",
+                    device=config.device,
+                    on_process_start=_emit_worker_start,
+                )
             from ivo.pipeline.synthesize import LocalCommandTtsAdapter
             return LocalCommandTtsAdapter(
                 profile,

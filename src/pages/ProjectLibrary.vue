@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   NGrid,
   NGridItem,
@@ -27,6 +27,8 @@ const message = useMessage()
 
 const filterStatus = ref<string>('all')
 const showCreateDialog = ref(false)
+const nowSeconds = ref(Math.round(Date.now() / 1000))
+let timer: ReturnType<typeof setInterval> | null = null
 
 const statusOptions = [
   { label: '全部', value: 'all' },
@@ -79,6 +81,28 @@ function stageLabel(stage: string | null): string {
   return STAGE_LABELS[stage] || stage
 }
 
+function formatElapsed(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return '-'
+  const safe = Math.max(0, Math.round(seconds))
+  const h = Math.floor(safe / 3600)
+  const m = Math.floor((safe % 3600) / 60)
+  const s = safe % 60
+  if (h > 0) {
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function itemElapsedSeconds(item: ProjectLibraryItem): number | null {
+  if (
+    (item.lifecycle === 'running' || item.lifecycle === 'paused' || item.lifecycle === 'interrupted') &&
+    item.generation_started_at !== null
+  ) {
+    return nowSeconds.value - item.generation_started_at
+  }
+  return item.elapsed_seconds ?? item.generation_elapsed_seconds
+}
+
 async function handleDelete(item: ProjectLibraryItem) {
   try {
     await projectsApi.delete(item.path)
@@ -110,9 +134,19 @@ async function playOutput(path: string): Promise<void> {
 }
 
 onMounted(() => {
+  timer = setInterval(() => {
+    nowSeconds.value = Math.round(Date.now() / 1000)
+  }, 1000)
   projectStore.refreshLibrary().catch((e) => {
     message.error(e instanceof Error ? e.message : String(e))
   })
+})
+
+onBeforeUnmount(() => {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
 })
 </script>
 
@@ -156,6 +190,7 @@ onMounted(() => {
               <span>目标语言：{{ languageLabel(item.target_language) }}</span>
             </div>
             <div>类型：{{ item.content_type }}</div>
+            <div>生成耗时：{{ formatElapsed(itemElapsedSeconds(item)) }}</div>
             <!-- 失败阶段单独显示为标签 -->
             <div v-if="item.failed_stage" class="card-failed-stage">
               <span class="failed-stage-label">失败阶段：</span>
