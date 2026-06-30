@@ -288,6 +288,15 @@ onMounted(async () => {
               {{ pipelineStore.overallPercent }}% · {{ formatElapsed(displayElapsedSeconds) }}
             </span>
           </div>
+          <div
+            v-if="pipelineStore.currentStageElapsedSeconds !== null"
+            class="pipeline-progress-row"
+          >
+            <span class="pipeline-progress-label">当前阶段耗时</span>
+            <span class="pipeline-progress-value">
+              {{ formatElapsed(pipelineStore.currentStageElapsedSeconds) }}
+            </span>
+          </div>
           <NProgress
             type="line"
             :percentage="pipelineStore.overallPercent"
@@ -309,6 +318,9 @@ onMounted(async () => {
                   </NTag>
                 </div>
                 <div v-if="stage.message" class="stage-message">{{ stage.message }}</div>
+                <div v-if="stage.elapsedSeconds !== null" class="stage-elapsed">
+                  耗时 {{ formatElapsed(stage.elapsedSeconds) }}
+                </div>
               </div>
             </div>
 
@@ -531,11 +543,17 @@ onMounted(async () => {
   font-size: 14px;
   font-weight: 500;
 }
-.stage-message {
+.stage-message,
+.stage-elapsed {
   margin-top: 2px;
   font-size: 11px;
   line-height: 1.25;
+}
+.stage-message {
   color: var(--text-secondary);
+}
+.stage-elapsed {
+  color: var(--text-tertiary);
 }
 .pipeline-logs {
   flex: 1;

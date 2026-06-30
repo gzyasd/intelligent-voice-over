@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TypeVar
 
@@ -350,7 +351,21 @@ def _synthesize_segments(
     control: PipelineControl | None = None,
 ) -> None:
     total_items = len(dubbed_segments)
+    max_parallelism = max(1, int(getattr(active_tts_adapter, "max_parallelism", 1) or 1))
     try:
+        if max_parallelism > 1:
+            _synthesize_segments_parallel(
+                project,
+                dubbed_segments,
+                active_tts_adapter,
+                generated_segments,
+                segment_audio,
+                progress_callback=progress_callback,
+                control=control,
+                total_items=total_items,
+                max_parallelism=max_parallelism,
+            )
+            return
         for index, segment in enumerate(dubbed_segments, start=1):
             if control is not None:
                 control.wait_if_paused()
@@ -386,6 +401,61 @@ def _synthesize_segments(
         close = getattr(active_tts_adapter, "close", None)
         if callable(close):
             close()
+
+
+def _synthesize_segments_parallel(
+    project: DubbingProject,
+    dubbed_segments: list[DubbingSegment],
+    active_tts_adapter: TtsAdapter,
+    generated_segments: list[Path],
+    segment_audio: list[SegmentAudio],
+    *,
+    progress_callback: Callable[[PipelineProgressEvent], None] | None,
+    control: PipelineControl | None,
+    total_items: int,
+    max_parallelism: int,
+) -> None:
+    # 预处理：主线程检查 resumed 片段并更新 timeline 状态（SQLite 不可跨线程）
+    results_by_index: dict[int, tuple[DubbingSegment, Path, int, float]] = {}
+    pending: list[tuple[int, DubbingSegment, float]] = []
+    for index, segment in enumerate(dubbed_segments, start=1):
+        if control is not None:
+            control.wait_if_paused()
+        segment_started_at = time.time()
+        resumed_audio = _resume_segment_audio(project, segment)
+        if resumed_audio is not None:
+            results_by_index[index] = (segment, resumed_audio, 0, segment_started_at)
+        else:
+            project.timeline.update_segment(segment.id, status="approved")
+            pending.append((index, segment, segment_started_at))
+
+    # 并发合成：synthesize_segment 只读 project.path、写独立输出路径、调用线程安全 adapter
+    if pending:
+        with ThreadPoolExecutor(max_workers=max_parallelism) as pool:
+            future_to_meta = {
+                pool.submit(synthesize_segment, project, seg, active_tts_adapter): (idx, seg, t0)
+                for idx, seg, t0 in pending
+            }
+            for future in as_completed(future_to_meta):
+                index, segment, started_at = future_to_meta[future]
+                synthesis = future.result()
+                elapsed = max(0, round(time.time() - started_at))
+                results_by_index[index] = (segment, synthesis.audio_path, elapsed, started_at)
+
+    # 按原始时间线顺序输出结果和进度
+    for index in sorted(results_by_index.keys()):
+        segment, audio_path, elapsed, started_at = results_by_index[index]
+        generated_segments.append(audio_path)
+        segment_audio.append(SegmentAudio(path=audio_path, start_ms=segment.start_ms))
+        _emit_tts_progress(
+            progress_callback,
+            index,
+            total_items,
+            segment.id,
+            audio_path,
+            started_at=started_at,
+            elapsed_seconds=elapsed,
+        )
 
 
 def _resume_segment_audio(project: DubbingProject, segment: DubbingSegment) -> Path | None:

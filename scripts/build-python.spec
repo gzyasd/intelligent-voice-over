@@ -56,6 +56,16 @@ a = Analysis(
         'pytest',
         'mypy',
         'ruff',
+        # GPU 推理库通过 subprocess 调用 .venv 的 Python 运行，不打包进 ivo-server.exe。
+        # 排除后 PyInstaller 不再分析这些大库的 DLL 依赖，打包速度从数分钟恢复到约 30 秒。
+        'torch', 'torchaudio', 'torchvision', 'functorch',
+        'bitsandbytes',
+        'onnxruntime', 'onnxruntime_gpu',
+        'numba',
+        'scipy', 'matplotlib',
+        'demucs', 'f5_tts',
+        'transformers',
+        'pytorch_lightning', 'torchdiffeq', 'torchmetrics', 'ema_pytorch',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

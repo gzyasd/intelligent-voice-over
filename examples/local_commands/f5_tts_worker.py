@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -14,6 +15,9 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 
 def main() -> int:
+    # 强制 stdout/stdin 用 UTF-8，避免中文路径/输出在 GBK 系统上解码失败
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdin.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Persistent JSONL worker for local F5-TTS.")
     parser.add_argument("--model-dir")
     parser.add_argument("--vocoder-dir")
@@ -23,7 +27,11 @@ def main() -> int:
 
     engine = None
     if not args.dry_run:
-        engine = _load_engine(args)
+        # _load_engine 会 import torch/transformers/f5_tts，这些库可能往 stdout
+        # 打印日志（版本/进度/警告），会污染 JSONL 协议流。重定向到 stderr（adapter
+        # 已将 stderr 设为 DEVNULL，安全丢弃）。
+        with contextlib.redirect_stdout(sys.stderr):
+            engine = _load_engine(args)
 
     for line in sys.stdin:
         line = line.strip()
@@ -59,13 +67,16 @@ def _handle_request(
             if not reference_audio:
                 raise ValueError("reference_audio is required")
             audio_path.parent.mkdir(parents=True, exist_ok=True)
-            engine.infer(
-                ref_file=reference_audio,
-                ref_text=str(request.get("reference_text") or ""),
-                gen_text=str(request["text"]),
-                file_wave=str(audio_path),
-                speed=float(request.get("speed") or 1.0),
-            )
+            # infer 期间 F5-TTS 可能用 tqdm 往 stdout 打印推理进度，污染 JSONL 协议流。
+            # 重定向到 stderr（adapter 已丢弃）。
+            with contextlib.redirect_stdout(sys.stderr):
+                engine.infer(
+                    ref_file=reference_audio,
+                    ref_text=str(request.get("reference_text") or ""),
+                    gen_text=str(request["text"]),
+                    file_wave=str(audio_path),
+                    speed=float(request.get("speed") or 1.0),
+                )
             duration_ms = wav_duration_ms(audio_path)
         return {
             "ok": True,
@@ -118,7 +129,7 @@ def _load_engine(args: argparse.Namespace) -> Any:
 
 
 def _write_response(response: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+    sys.stdout.write(json.dumps(response, ensure_ascii=True) + "\n")
     sys.stdout.flush()
 
 

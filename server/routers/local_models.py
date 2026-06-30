@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -21,6 +20,7 @@ from ivo.model_services.local_models import (
     get_local_service,
     is_newer_version,
 )
+from ivo.subprocess_utils import utf8_env
 
 from .. import dependencies
 
@@ -75,14 +75,6 @@ def _get_custom_pythons() -> dict[str, Path]:
     return result
 
 
-def _utf8_env() -> dict[str, str]:
-    """返回强制 UTF-8 输出的环境变量，避免中文路径乱码。"""
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
-    return env
-
-
 def _repo_id_from_huggingface_url(repo_url: str) -> str:
     raw = repo_url.strip().rstrip("/")
     if not raw:
@@ -126,7 +118,7 @@ async def _ensure_pip_available(venv_python: Path) -> tuple[bool, str]:
         str(venv_python), "-m", "pip", "--version",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=_utf8_env(),
+        env=utf8_env(),
     )
     stdout_bytes, stderr_bytes = await check.communicate()
     if check.returncode == 0:
@@ -136,7 +128,7 @@ async def _ensure_pip_available(venv_python: Path) -> tuple[bool, str]:
         str(venv_python), "-m", "ensurepip", "--upgrade",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=_utf8_env(),
+        env=utf8_env(),
     )
     boot_stdout, boot_stderr = await boot.communicate()
     if boot.returncode == 0:
@@ -168,7 +160,7 @@ async def _run_pip_install(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=_utf8_env(),
+            env=utf8_env(),
         )
     except OSError as exc:
         return False, str(exc)

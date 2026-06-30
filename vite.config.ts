@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import electron from 'vite-plugin-electron/simple'
@@ -42,5 +43,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+  },
+  test: {
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.worktrees/**'],
   },
 })

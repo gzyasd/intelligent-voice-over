@@ -83,6 +83,15 @@ export const usePipelineStore = defineStore('pipeline', () => {
   const canPause = computed(() => isRunning.value && !paused.value)
   const canResume = computed(() => isRunning.value && paused.value)
 
+  // 当前运行中阶段的耗时（秒）。阶段运行中由 startedAt 本地计时，完成后采用后端阶段结果。
+  // 阶段非 running 或无数据时为 null。
+  const currentStageElapsedSeconds = computed<number | null>(() => {
+    if (!currentStage.value) return null
+    const stage = stages.value.find((s) => s.name === currentStage.value)
+    if (!stage || stage.status !== 'running') return null
+    return stage.elapsedSeconds ?? null
+  })
+
   function setProject(path: string): void {
     // 路径未变时不重置，避免切换菜单回来后生成进度消失
     if (projectPath.value === path) return
@@ -151,13 +160,6 @@ export const usePipelineStore = defineStore('pipeline', () => {
     const evt = event as PipelineProgressEvent
     overallPercent.value = evt.overall_percent
     currentStage.value = evt.stage
-    if (evt.started_at !== undefined && evt.started_at !== null) {
-      startedAt.value = evt.started_at
-      startElapsedTimer()
-    }
-    if (evt.elapsed_seconds !== undefined) {
-      elapsedSeconds.value = evt.elapsed_seconds
-    }
 
     // 更新阶段状态
     const stageIdx = STAGE_ORDER.indexOf(evt.stage as (typeof STAGE_ORDER)[number])
@@ -172,7 +174,6 @@ export const usePipelineStore = defineStore('pipeline', () => {
       } else if (evt.status === 'progress') {
         stage.status = 'running'
         stage.message = evt.message
-        stage.elapsedSeconds = evt.elapsed_seconds ?? stage.elapsedSeconds
       } else if (evt.status === 'completed') {
         stage.status = 'completed'
         stage.message = evt.message || '已完成'
@@ -247,6 +248,20 @@ export const usePipelineStore = defineStore('pipeline', () => {
     elapsedTimer = setInterval(() => {
       if (startedAt.value !== null && running.value && !paused.value) {
         elapsedSeconds.value = Math.max(0, Math.round(Date.now() / 1000 - startedAt.value))
+      }
+      const runningStage = stages.value.find(
+        (stage) => stage.name === currentStage.value && stage.status === 'running',
+      )
+      if (
+        running.value &&
+        !paused.value &&
+        runningStage?.startedAt !== null &&
+        runningStage?.startedAt !== undefined
+      ) {
+        runningStage.elapsedSeconds = Math.max(
+          0,
+          Math.round(Date.now() / 1000 - runningStage.startedAt),
+        )
       }
     }, 1000)
   }
@@ -450,6 +465,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     isRunning,
     canPause,
     canResume,
+    currentStageElapsedSeconds,
     // 方法
     setProject,
     reset,

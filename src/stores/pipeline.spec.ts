@@ -91,4 +91,71 @@ describe('pipeline runtime synchronization', () => {
 
     expect(mocks.getHistory).toHaveBeenCalledWith('D:/runs/test.ivoproj')
   })
+
+  it('exposes current stage elapsed seconds when a stage is running', () => {
+    const store = usePipelineStore()
+    store.currentStage = 'tts'
+    store.stages = [
+      {
+        name: 'tts',
+        label: '生成配音',
+        status: 'running',
+        message: '',
+        startedAt: 1000,
+        completedAt: null,
+        elapsedSeconds: 42,
+      },
+    ]
+
+    expect(store.currentStageElapsedSeconds).toBe(42)
+  })
+
+  it('keeps project total elapsed separate from stage progress elapsed', () => {
+    const store = usePipelineStore()
+    store.setProject('D:/runs/test.ivoproj')
+    store.elapsedSeconds = 120
+    store.attach()
+    const calls = mocks.createPipelineWebSocket.mock.calls as unknown as Array<
+      [string, (event: unknown) => void]
+    >
+    const onEvent = calls[0]?.[1]
+    expect(onEvent).toBeDefined()
+
+    onEvent?.({
+      event_id: 1,
+      stage: 'tts',
+      stage_label: '生成配音',
+      status: 'started',
+      message: 'started',
+      overall_percent: 70,
+      output_path: null,
+      started_at: 1000,
+      elapsed_seconds: 0,
+    })
+
+    onEvent?.({
+      event_id: 2,
+      stage: 'tts',
+      stage_label: '生成配音',
+      status: 'progress',
+      message: '正在生成第 1 / 10 句：seg-001',
+      overall_percent: 75,
+      current_item: 1,
+      total_items: 10,
+      output_path: null,
+      started_at: 1000,
+      elapsed_seconds: 3,
+    })
+
+    expect(store.elapsedSeconds).toBe(120)
+    expect(store.stages.find((stage) => stage.name === 'tts')?.elapsedSeconds).toBe(0)
+  })
+
+  it('returns null for current stage elapsed seconds when no stage is running', () => {
+    const store = usePipelineStore()
+    store.currentStage = ''
+    store.stages = []
+
+    expect(store.currentStageElapsedSeconds).toBeNull()
+  })
 })

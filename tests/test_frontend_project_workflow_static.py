@@ -88,3 +88,22 @@ def test_project_library_cards_keep_equal_height_with_fixed_actions() -> None:
     assert ":deep(.project-card > .n-card__action)" in source
     assert ".project-grid {" in source
     assert "align-items: stretch" in source
+
+
+def test_project_overview_shows_total_and_current_stage_elapsed_time() -> None:
+    """ProjectOverview 应同时显示总耗时和当前阶段耗时。"""
+    source = Path("src/pages/ProjectOverview.vue").read_text(encoding="utf-8")
+
+    assert "总进度" in source
+    assert "当前阶段耗时" in source
+    assert "currentStageElapsedSeconds" in source
+    assert "stage.elapsedSeconds" in source
+    assert "stage-elapsed" in source
+    assert "formatElapsed" in source
+
+
+def test_project_library_displays_generation_elapsed_time() -> None:
+    """ProjectLibrary 卡片应显示生成耗时字段。"""
+    source = Path("src/pages/ProjectLibrary.vue").read_text(encoding="utf-8")
+
+    assert "elapsed_seconds" in source or "elapsedSeconds" in source

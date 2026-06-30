@@ -950,3 +950,138 @@ def _write_silent_wav(output_path: Path, *, duration_ms: int) -> None:
         wav_file.setsampwidth(2)
         wav_file.setframerate(sample_rate)
         wav_file.writeframes(b"\x00\x00" * sample_count)
+
+
+def test_synthesize_segments_parallel_preserves_order_and_reports_elapsed(tmp_path) -> None:
+    """max_parallelism>1 时并发合成，结果按原始顺序输出，progress 依次发出且带 elapsed_seconds。"""
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.local_command_preview import _synthesize_segments
+    from ivo.pipeline.mix_export import SegmentAudio
+    from ivo.pipeline.progress import PipelineProgressEvent
+
+    class ParallelSilentTtsAdapter:
+        max_parallelism = 2
+
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+        ) -> int:
+            _write_silent_wav(output_path, duration_ms=target_duration_ms)
+            return target_duration_ms
+
+    project = DubbingProject.create(
+        tmp_path / "parallel-tts.ivoproj",
+        name="Parallel TTS",
+        source_language="en",
+        target_language="zh",
+    )
+    segments = [
+        DubbingSegment(
+            id=f"seg-00{i}",
+            start_ms=i * 1000,
+            end_ms=(i + 1) * 1000,
+            speaker_id="speaker-1",
+            source_language="en",
+            source_text=f"Line {i}.",
+            target_language="zh",
+            target_text=f"第{i}句。",
+            status="approved",
+        )
+        for i in range(3)
+    ]
+    for seg in segments:
+        project.timeline.add_segment(seg)
+
+    generated: list[Path] = []
+    audio: list[SegmentAudio] = []
+    events: list[PipelineProgressEvent] = []
+
+    _synthesize_segments(
+        project,
+        dubbed_segments=segments,
+        active_tts_adapter=ParallelSilentTtsAdapter(),
+        generated_segments=generated,
+        segment_audio=audio,
+        progress_callback=events.append,
+    )
+
+    # segment_audio 按原始 start_ms 顺序
+    assert [sa.start_ms for sa in audio] == [0, 1000, 2000]
+    # progress 依次发出 1/3, 2/3, 3/3
+    assert [e.current_item for e in events] == [1, 2, 3]
+    assert all(e.total_items == 3 for e in events)
+    # 每个事件都有非负 elapsed_seconds
+    assert all(e.elapsed_seconds is not None and e.elapsed_seconds >= 0 for e in events)
+    # 生成了 3 个 wav 文件
+    assert len(generated) == 3
+    assert all(p.is_file() for p in generated)
+
+
+def test_synthesize_segments_serial_reports_elapsed_seconds(tmp_path) -> None:
+    """串行模式（max_parallelism=1）下 progress 事件也应带 elapsed_seconds。"""
+    from ivo.core.project import DubbingProject
+    from ivo.core.timeline import DubbingSegment
+    from ivo.pipeline.local_command_preview import _synthesize_segments
+    from ivo.pipeline.mix_export import SegmentAudio
+    from ivo.pipeline.progress import PipelineProgressEvent
+
+    class SerialSilentTtsAdapter:
+        def synthesize(
+            self,
+            *,
+            text: str,
+            speaker_id: str,
+            output_path: Path,
+            style_prompt: str | None,
+            reference_audio_path: Path | None,
+            reference_text: str,
+            target_duration_ms: int,
+        ) -> int:
+            _write_silent_wav(output_path, duration_ms=target_duration_ms)
+            return target_duration_ms
+
+    project = DubbingProject.create(
+        tmp_path / "serial-tts.ivoproj",
+        name="Serial TTS",
+        source_language="en",
+        target_language="zh",
+    )
+    segment = DubbingSegment(
+        id="seg-001",
+        start_ms=0,
+        end_ms=1000,
+        speaker_id="speaker-1",
+        source_language="en",
+        source_text="Line one.",
+        target_language="zh",
+        target_text="第一句。",
+        status="approved",
+    )
+    project.timeline.add_segment(segment)
+
+    generated: list[Path] = []
+    audio: list[SegmentAudio] = []
+    events: list[PipelineProgressEvent] = []
+
+    _synthesize_segments(
+        project,
+        dubbed_segments=[segment],
+        active_tts_adapter=SerialSilentTtsAdapter(),
+        generated_segments=generated,
+        segment_audio=audio,
+        progress_callback=events.append,
+    )
+
+    assert len(events) == 1
+    assert events[0].current_item == 1
+    assert events[0].total_items == 1
+    assert events[0].elapsed_seconds is not None
+    assert events[0].elapsed_seconds >= 0
