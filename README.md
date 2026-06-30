@@ -65,12 +65,45 @@
 
 ### 方式一：下载安装包（推荐普通用户）
 
-1. 下载 `IVO Setup x.x.x.exe` 安装包
+1. 前往 [Releases 页面](https://github.com/gzyasd/intelligent-voice-over/releases) 下载最新版 `IVO.Setup.x.x.x.exe`
 2. 双击运行，按提示安装
-3. 从开始菜单或桌面快捷方式启动 IVO
-4. 首次使用前需配置本地模型（见下方「本地模型配置」）
+3. **安装 AI 运行环境**（必需，见下方「安装 AI 运行环境」）
+4. 从开始菜单或桌面快捷方式启动 IVO
+5. 首次使用前需配置本地模型（见下方「本地模型配置」）
 
-> 安装包已内置 FFmpeg 和 Python 运行时，无需额外安装。
+> 安装包已内置 FFmpeg 和 Python 后端运行时，无需额外安装。
+
+#### 安装 AI 运行环境
+
+IVO 的本地模型流水线依赖两个 Python 环境：`.venv`（主环境，含 torch / demucs / faster-whisper / F5-TTS 等）和 `.venv-pyannote`（说话人分离）。由于体积较大（合计约 6 GB），它们不打包进安装程序，需要单独安装。提供两种方式，任选其一：
+
+**方式 A：下载预置环境包（推荐，离线可用）**
+
+由于 GitHub 单文件 2 GB 限制，环境包已分卷上传到 Release：
+
+1. 主环境 `.venv`（约 3.5 GB）：
+   - 下载 `ivo-venv-portable.zip.01.part`、`ivo-venv-portable.zip.02.part`、`merge-ivo-venv-portable.bat`
+   - 将三个文件放在同一文件夹，双击 `merge-ivo-venv-portable.bat` 合并出 `ivo-venv-portable.zip`
+   - 解压该 zip，将得到的 `.venv` 文件夹复制到 IVO 安装目录的 `resources\` 下
+2. 说话人分离环境 `.venv-pyannote`（约 2.7 GB）：
+   - 下载 `ivo-venv-pyannote-portable.zip.01.part`、`ivo-venv-pyannote-portable.zip.02.part`、`merge-ivo-venv-pyannote-portable.bat`
+   - 同上合并出 `ivo-venv-pyannote-portable.zip`，解压后将 `.venv-pyannote` 文件夹复制到 `resources\` 下
+
+安装完成后，IVO 安装目录结构应为：
+
+```
+IVO/
+├── IVO.exe
+└── resources/
+    ├── python/            （后端服务，安装时自带）
+    ├── ffmpeg/bin/        （音视频处理，安装时自带）
+    ├── .venv/             （主 AI 环境，手动下载解压）
+    └── .venv-pyannote/   （说话人分离环境，手动下载解压）
+```
+
+**方式 B：应用内自动安装（在线，可选镜像源）**
+
+启动 IVO 后，若检测到环境缺失，「设置」页面会显示警告。点击「自动安装环境」，选择镜像源（官方 / 清华 / 阿里 / 中科大），向导会自动创建两个 venv 并安装依赖，全程可视化进度。
 
 ### 方式二：从源码构建（推荐开发者）
 
@@ -141,10 +174,10 @@ pnpm.cmd exec electron-builder --win
 - `IVO Setup 0.1.0.exe` — NSIS 安装包（约 230MB）
 - `win-unpacked/IVO.exe` — 免安装版
 
-> **注意**：安装包不包含 `.venv` 和 `.venv-pyannote`（超过 NSIS 32 位内存映射限制）。安装后需运行 `scripts/copy-venv-to-install.ps1` 将依赖环境复制到安装目录的 `resources/` 下：
+> **注意**：安装包不包含 `.venv` 和 `.venv-pyannote`（超过 NSIS 32 位内存映射限制）。终端用户请按上方「方式一 → 安装 AI 运行环境」从 Release 下载预置环境包，或在应用内自动安装。开发者本机已有 `.venv` 和 `.venv-pyannote` 时，可运行 `scripts/copy-venv-to-install.ps1` 直接复制到安装目录：
 
 ```powershell
-# 安装 IVO Setup 后，运行此脚本复制 .venv 和 .venv-pyannote
+# 开发者本机已有 venv 时，复制到安装目录
 .\scripts\copy-venv-to-install.ps1 -InstallDir "C:\Program Files\IVO"
 ```
 

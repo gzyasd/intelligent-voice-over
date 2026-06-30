@@ -37,7 +37,6 @@ const baseEntries: MenuEntry[] = [
   { label: '当前项目', key: '/current' },
   { label: '模型服务', key: '/model-services' },
   { label: '方案管理', key: '/schemes' },
-  { label: '新建项目', key: '/create' },
   { label: '设置', key: '/settings' },
 ]
 

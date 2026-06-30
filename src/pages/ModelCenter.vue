@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   NTabs,
   NTabPane,
@@ -37,6 +38,7 @@ import type {
   CreateStageConfigRequest,
   ProviderRegistryEntry,
   LocalModelService,
+  ModelDownloadSource,
   DependencyStatus,
   LocalModelCard,
   LocalModelStageGroup,
@@ -45,6 +47,7 @@ import type {
 const store = useModelServicesStore()
 const message = useMessage()
 const dialog = useDialog()
+const router = useRouter()
 
 const STAGES: StageName[] = ['separation', 'asr', 'diarization', 'translation', 'tts']
 const STAGE_LABELS: Record<StageName, string> = {
@@ -508,6 +511,11 @@ function stageConfigsOf(stage: StageName): StageProviderConfig[] {
 
 // Local models
 const localModelsRefreshing = ref(false)
+const modelDownloadSource = ref<ModelDownloadSource>('hf_mirror')
+const modelDownloadSourceOptions: Array<{ label: string; value: ModelDownloadSource }> = [
+  { label: '国内镜像 https://hf-mirror.com/', value: 'hf_mirror' },
+  { label: 'Hugging Face https://huggingface.co/', value: 'huggingface' },
+]
 
 async function refreshLocalModels(): Promise<void> {
   localModelsRefreshing.value = true
@@ -525,6 +533,29 @@ async function checkLocalModel(model: LocalModelCard): Promise<void> {
   try {
     await store.refreshLocalModel(model.provider_key)
     message.success(`${model.display_name} 检测完成`)
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+function openModelPathSettings(): void {
+  router.push('/settings')
+}
+
+async function downloadLocalModel(model: LocalModelCard): Promise<void> {
+  if (!model.huggingface_repo) {
+    message.warning('该模型暂未配置可自动下载的 Hugging Face 仓库，请在设置中确认模型目录后手动放置。')
+    return
+  }
+  try {
+    const res = await store.downloadLocalModel(model.provider_key, {
+      source: modelDownloadSource.value,
+    })
+    if (res.ok) {
+      message.success(res.skipped ? '模型目录已存在，无需重复下载。' : `模型已下载到 ${res.local_dir}`)
+    } else {
+      message.error(`模型下载失败：${res.output.slice(0, 220)}`)
+    }
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e))
   }
@@ -747,13 +778,6 @@ async function handleCheckUpgrade(): Promise<void> {
   }
 }
 
-// 打开 HuggingFace 下载页面
-function openDownloadPage(url: string): void {
-  if (url) {
-    window.open(url, '_blank')
-  }
-}
-
 const apiProviders = computed(() => store.apiProviders.filter((provider) => provider.mvp_enabled))
 const localProviders = computed(() => store.localProviders)
 
@@ -833,7 +857,13 @@ onMounted(() => {
               <span class="stat-value stat-warning">{{ store.modelSummary?.missing_deps_count ?? 0 }}</span>
             </div>
           </div>
-          <NSpace :size="8">
+          <NSpace :size="8" align="center">
+            <NSelect
+              v-model:value="modelDownloadSource"
+              :options="modelDownloadSourceOptions"
+              size="small"
+              class="model-download-source-select"
+            />
             <NButton
               :loading="upgradeChecking"
               :disabled="store.installBusy"
@@ -940,11 +970,23 @@ onMounted(() => {
                           v-if="model.huggingface_repo && !model.model_dir_exists"
                           size="tiny"
                           type="primary"
-                          ghost
-                          @click="openDownloadPage(model.huggingface_repo)"
+                          :loading="store.isModelDownloading(model.provider_key)"
+                          :disabled="store.downloadingModelKey !== null && !store.isModelDownloading(model.provider_key)"
+                          @click="downloadLocalModel(model)"
                         >
                           下载模型
                         </NButton>
+                        <NButton
+                          v-if="!model.model_dir_exists"
+                          size="tiny"
+                          quaternary
+                          @click="openModelPathSettings"
+                        >
+                          设置模型路径
+                        </NButton>
+                      </div>
+                      <div v-if="!model.model_dir_exists" class="model-path-hint">
+                        模型会下载到上方路径；根目录可在“设置 → 模型文件目录”中维护。
                       </div>
                       <div v-if="model.readiness.messages.length > 0" class="model-messages">
                         <div v-for="(msg, idx) in model.readiness.messages" :key="idx" class="model-message">
@@ -1390,6 +1432,9 @@ onMounted(() => {
 .stat-warning {
   color: var(--warning-color, #f0a020);
 }
+.model-download-source-select {
+  width: 230px;
+}
 .model-card-content {
   display: flex;
   flex-direction: column;
@@ -1436,6 +1481,11 @@ onMounted(() => {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   font-size: 12px;
+}
+.model-path-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
 }
 .model-messages {
   display: flex;

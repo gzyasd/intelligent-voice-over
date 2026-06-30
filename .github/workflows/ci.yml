@@ -12,8 +12,6 @@ jobs:
   python:
     name: Python checks
     runs-on: ubuntu-latest
-    env:
-      QT_QPA_PLATFORM: offscreen
 
     steps:
       - name: Checkout
@@ -29,11 +27,6 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install Qt runtime dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
-
       - name: Install dependencies
         run: uv sync --locked --dev
 
@@ -46,8 +39,8 @@ jobs:
       - name: Test
         run: uv run pytest
 
-      - name: Build package dry-run
-        run: uv run python scripts/build_windows_package.py --dry-run --output-dir dist
+      - name: Validate Python package entrypoint
+        run: uv run python -c "from server.main import app; assert app.title == 'IVO API'"
 
   frontend:
     name: Frontend checks

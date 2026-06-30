@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -14,6 +15,7 @@ from pydantic import BaseModel
 from ivo.core.user_settings import PYPI_MIRRORS
 from ivo.model_services.local_models import (
     ALL_LOCAL_MODEL_SERVICES,
+    DependencyStatus,
     compute_shared_dep_counts,
     find_venv_python,
     get_local_service,
@@ -26,6 +28,13 @@ router = APIRouter()
 
 # 安装锁：防止并发 pip install 导致 venv 损坏
 _install_lock = asyncio.Lock()
+_download_lock = asyncio.Lock()
+
+DownloadSource = Literal["huggingface", "hf_mirror"]
+_HF_DOWNLOAD_ENDPOINTS: dict[DownloadSource, str] = {
+    "huggingface": "https://huggingface.co",
+    "hf_mirror": "https://hf-mirror.com",
+}
 
 
 class InstallRequest(BaseModel):
@@ -37,6 +46,10 @@ class InstallRequest(BaseModel):
 class UpgradeRequest(BaseModel):
     package_name: str
     venv_name: str = ".venv"
+
+
+class DownloadLocalModelRequest(BaseModel):
+    source: DownloadSource = "huggingface"
 
 
 def _models_root() -> Path:
@@ -68,6 +81,38 @@ def _utf8_env() -> dict[str, str]:
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     return env
+
+
+def _repo_id_from_huggingface_url(repo_url: str) -> str:
+    raw = repo_url.strip().rstrip("/")
+    if not raw:
+        raise ValueError("empty Hugging Face repository URL")
+    parsed = urlparse(raw)
+    path = parsed.path.strip("/") if parsed.scheme else raw
+    for marker in ("/tree/", "/blob/", "/resolve/"):
+        if marker in path:
+            path = path.split(marker, 1)[0]
+    parts = [part for part in path.split("/") if part]
+    if len(parts) < 2:
+        raise ValueError(f"invalid Hugging Face repository URL: {repo_url}")
+    return "/".join(parts[:2])
+
+
+def _snapshot_download_model(repo_id: str, target_dir: Path, endpoint: str) -> str:
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as exc:  # pragma: no cover - exercised through API error handling
+        raise RuntimeError(
+            "huggingface_hub is not installed. Please run `uv sync --dev` or reinstall IVO."
+        ) from exc
+
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path = snapshot_download(
+        repo_id=repo_id,
+        local_dir=str(target_dir),
+        endpoint=endpoint,
+    )
+    return str(snapshot_path)
 
 
 async def _ensure_pip_available(venv_python: Path) -> tuple[bool, str]:
@@ -141,6 +186,81 @@ async def _run_pip_install(
     if process.returncode == 0:
         return True, stdout
     return False, stderr or stdout
+
+
+@router.post("/{provider_key}/download")
+async def download_local_model(
+    provider_key: str,
+    request: DownloadLocalModelRequest,
+) -> dict[str, Any]:
+    """Download a Hugging Face local model into the configured models directory."""
+    if _download_lock.locked():
+        raise HTTPException(status_code=409, detail="Another model download is already running.")
+
+    svc = get_local_service(provider_key)
+    if svc is None:
+        raise HTTPException(status_code=404, detail=f"Local model does not exist: {provider_key}")
+    if not svc.huggingface_repo:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This local model does not have a Hugging Face repository configured for "
+                "automatic download."
+            ),
+        )
+
+    endpoint = _HF_DOWNLOAD_ENDPOINTS[request.source]
+    try:
+        repo_id = _repo_id_from_huggingface_url(svc.huggingface_repo)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    target_dir = svc.resolve_model_path(_models_root())
+    if target_dir.is_dir():
+        return {
+            "ok": True,
+            "skipped": True,
+            "provider_key": provider_key,
+            "repo_id": repo_id,
+            "source": request.source,
+            "endpoint": endpoint,
+            "local_dir": str(target_dir),
+            "output": "Model directory already exists.",
+        }
+
+    async with _download_lock:
+        try:
+            snapshot_path = await asyncio.to_thread(
+                _snapshot_download_model,
+                repo_id,
+                target_dir,
+                endpoint,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:  # pragma: no cover - depends on network/provider responses
+            return {
+                "ok": False,
+                "skipped": False,
+                "provider_key": provider_key,
+                "repo_id": repo_id,
+                "source": request.source,
+                "endpoint": endpoint,
+                "local_dir": str(target_dir),
+                "output": str(exc),
+            }
+
+    _invalidate_stage_groups_cache()
+    return {
+        "ok": True,
+        "skipped": False,
+        "provider_key": provider_key,
+        "repo_id": repo_id,
+        "source": request.source,
+        "endpoint": endpoint,
+        "local_dir": str(target_dir),
+        "output": f"Downloaded to {snapshot_path}",
+    }
 
 
 @router.get("")
@@ -553,13 +673,15 @@ def _serialize_model_card(
 
 
 # stage-groups 缓存：避免短时间内重复检查（10 秒 TTL）
-_stage_groups_cache: dict[str, Any] = {"data": None, "ts": 0.0}
 _STAGE_GROUPS_CACHE_TTL = 10.0
+_stage_groups_cache_data: dict[str, Any] | None = None
+_stage_groups_cache_ts = 0.0
 
 
 def _invalidate_stage_groups_cache() -> None:
-    _stage_groups_cache["data"] = None
-    _stage_groups_cache["ts"] = 0.0
+    global _stage_groups_cache_data, _stage_groups_cache_ts
+    _stage_groups_cache_data = None
+    _stage_groups_cache_ts = 0.0
 
 
 @router.get("/{provider_key}/status")
@@ -608,9 +730,13 @@ async def get_stage_groups() -> dict[str, Any]:
     # 检查缓存
     import time as _time
 
+    global _stage_groups_cache_data, _stage_groups_cache_ts
     now = _time.time()
-    if _stage_groups_cache["data"] is not None and now - _stage_groups_cache["ts"] < _STAGE_GROUPS_CACHE_TTL:
-        return _stage_groups_cache["data"]
+    if (
+        _stage_groups_cache_data is not None
+        and now - _stage_groups_cache_ts < _STAGE_GROUPS_CACHE_TTL
+    ):
+        return _stage_groups_cache_data
 
     models_root = _models_root()
     shared_counts = compute_shared_dep_counts()
@@ -619,17 +745,15 @@ async def get_stage_groups() -> dict[str, Any]:
     # 并行检查所有模型的依赖状态（在线程池中运行同步的 check_dependency_status）
     import asyncio
 
-    loop = asyncio.get_running_loop()
     # 注意：LocalModelService 是 dataclass，不可哈希，不能作为 dict 的键。
     # 用 provider_key（字符串）作为键，避免 TypeError: unhashable type。
-    deps_tasks: dict[str, Any] = {
-        svc.provider_key: loop.run_in_executor(
-            None,
-            lambda s=svc: s.check_dependency_status(custom_pythons=custom_pythons),
+    deps_tasks: dict[str, asyncio.Future[list[DependencyStatus]]] = {
+        svc.provider_key: asyncio.ensure_future(
+            asyncio.to_thread(svc.check_dependency_status, custom_pythons=custom_pythons)
         )
         for svc in ALL_LOCAL_MODEL_SERVICES
     }
-    deps_results: dict[str, Any] = {}
+    deps_results: dict[str, list[DependencyStatus]] = {}
     for key, task in deps_tasks.items():
         deps_results[key] = await task
 
@@ -694,6 +818,6 @@ async def get_stage_groups() -> dict[str, Any]:
     }
 
     # 更新缓存
-    _stage_groups_cache["data"] = result
-    _stage_groups_cache["ts"] = now
+    _stage_groups_cache_data = result
+    _stage_groups_cache_ts = now
     return result

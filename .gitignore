@@ -10,6 +10,11 @@ build/
 dist/
 dist-electron/
 dist-installer/
+dist-installer2/
+dist-installer3/
+dist-installer4/
+dist-portable-venv/
+build-portable-tmp/
 node_modules/
 *.tsbuildinfo
 .env

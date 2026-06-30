@@ -11,11 +11,13 @@ import {
   NSpace,
   NTag,
   NInputGroup,
+  NAlert,
   useMessage,
 } from 'naive-ui'
 import { useSettingsStore } from '@/stores/settings'
 import environmentApi from '@/api/environment'
 import settingsApi from '@/api/settings'
+import VenvSetupModal from '@/components/VenvSetupModal.vue'
 import type { VenvInfo } from '@/api/environment'
 import type { MirrorTestResult, PipMirrorKey, ThemeMode } from '@/types'
 
@@ -53,6 +55,13 @@ async function handleTestMirrors() {
 // venv 路径诊断信息（只读）
 const venvs = ref<VenvInfo[]>([])
 const venvsLoading = ref(false)
+
+// venv 自动安装向导
+const showVenvSetup = ref(false)
+
+const anyVenvMissing = computed(() =>
+  venvs.value.some((v) => !v.exists),
+)
 
 const themeOptions = [
   { label: '深色', value: 'dark' },
@@ -215,8 +224,21 @@ onMounted(async () => {
     <!-- venv 路径诊断信息 -->
     <NCard class="settings-card venv-card" title="依赖环境路径">
       <template #header-extra>
-        <NButton size="small" :loading="venvsLoading" @click="loadVenvs">刷新</NButton>
+        <NSpace>
+          <NButton size="small" type="primary" @click="showVenvSetup = true">
+            自动安装环境
+          </NButton>
+          <NButton size="small" :loading="venvsLoading" @click="loadVenvs">刷新</NButton>
+        </NSpace>
       </template>
+      <NAlert
+        v-if="anyVenvMissing"
+        type="warning"
+        title="检测到缺少依赖环境"
+        style="margin-bottom: 16px"
+      >
+        本地模型功能需要 Python 虚拟环境。点击上方"自动安装环境"按钮，可选择下载源并自动创建 .venv 和 .venv-pyannote。
+      </NAlert>
       <div class="venv-info-list">
         <div class="venv-info-row">
           <div class="venv-info-label">
@@ -260,12 +282,16 @@ onMounted(async () => {
           可点击"浏览"按钮选择自定义 Python 解释器（如
           <code>D:\myenv\.venv\Scripts\python.exe</code>），保存后生效。
           留空则自动搜索安装目录 resources/ 下的 .venv 和 .venv-pyannote。
-          也可运行
-          <code>scripts/copy-venv-to-install.ps1 -InstallDir "&lt;IVO 安装目录&gt;"</code>
-          将 .venv 和 .venv-pyannote 复制到安装目录的 resources/ 下。
+          也可点击上方"自动安装环境"按钮在线创建。
         </div>
       </div>
     </NCard>
+
+    <!-- venv 自动安装向导 -->
+    <VenvSetupModal
+      v-model:show="showVenvSetup"
+      @completed="loadVenvs"
+    />
   </div>
 </template>
 

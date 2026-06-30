@@ -217,26 +217,3 @@ class TestSchemePipelineIntegration:
         assert compiled.diarization is not None
         # Diarization should be marked as skipped (merged with ASR)
         assert "diarization" in compiled.skipped_stages
-
-
-class TestMainWindowSchemeIntegration:
-    def test_try_compile_returns_none_for_empty_scheme(self, qtbot) -> None:
-        """When scheme has no bindings, _try_compile_scheme_adapters returns None."""
-        from ivo.ui.main_window import MainWindow
-
-        window = MainWindow()
-        qtbot.addWidget(window)
-
-        # Ensure no scheme is applied regardless of disk state
-        window.scheme_management_page._current_scheme = None
-
-        result = window._try_compile_scheme_adapters()
-        assert result is None
-
-    def test_scheme_management_page_accessible(self, qtbot) -> None:
-        """MainWindow should have a scheme_management_page attribute."""
-        from ivo.ui.main_window import MainWindow
-
-        window = MainWindow()
-        qtbot.addWidget(window)
-        assert window.scheme_management_page is not None

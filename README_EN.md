@@ -65,12 +65,45 @@ Each stage records its state independently, supporting resumable execution.
 
 ### Option 1: Download Installer (Recommended for Users)
 
-1. Download `IVO Setup x.x.x.exe`
+1. Go to the [Releases page](https://github.com/gzyasd/intelligent-voice-over/releases) and download the latest `IVO.Setup.x.x.x.exe`
 2. Double-click to run and follow the installer
-3. Launch IVO from Start Menu or desktop shortcut
-4. Configure local models before first use (see "Local Model Setup" below)
+3. **Install the AI runtime** (required, see "Install AI Runtime" below)
+4. Launch IVO from Start Menu or desktop shortcut
+5. Configure local models before first use (see "Local Model Setup" below)
 
-> The installer includes FFmpeg and Python runtime — no additional installation required.
+> The installer includes FFmpeg and the Python backend runtime — no additional installation required.
+
+#### Install AI Runtime
+
+IVO's local-model pipeline depends on two Python environments: `.venv` (main environment with torch / demucs / faster-whisper / F5-TTS, etc.) and `.venv-pyannote` (speaker diarization). Due to their size (~6 GB combined), they are not bundled in the installer and must be installed separately. Choose one of the two methods:
+
+**Method A: Download prebuilt environment packages (recommended, offline-friendly)**
+
+Due to GitHub's 2 GB single-file limit, the environment packages are uploaded to the Release as split volumes:
+
+1. Main environment `.venv` (~3.5 GB):
+   - Download `ivo-venv-portable.zip.01.part`, `ivo-venv-portable.zip.02.part`, and `merge-ivo-venv-portable.bat`
+   - Put all three files in the same folder, then double-click `merge-ivo-venv-portable.bat` to merge them into `ivo-venv-portable.zip`
+   - Extract the zip and copy the resulting `.venv` folder into the `resources\` directory of the IVO install location
+2. Diarization environment `.venv-pyannote` (~2.7 GB):
+   - Download `ivo-venv-pyannote-portable.zip.01.part`, `ivo-venv-pyannote-portable.zip.02.part`, and `merge-ivo-venv-pyannote-portable.bat`
+   - Merge them the same way to get `ivo-venv-pyannote-portable.zip`, then extract and copy the `.venv-pyannote` folder into `resources\`
+
+After installation, the IVO install directory should look like:
+
+```
+IVO/
+├── IVO.exe
+└── resources/
+    ├── python/            (backend service, bundled with installer)
+    ├── ffmpeg/bin/        (audio/video processing, bundled with installer)
+    ├── .venv/             (main AI environment, manual download)
+    └── .venv-pyannote/   (diarization environment, manual download)
+```
+
+**Method B: In-app automatic install (online, mirror selectable)**
+
+After launching IVO, if the environments are missing, the Settings page will show a warning. Click "Auto Install Environment", choose a mirror (Official / Tsinghua / Aliyun / USTC), and the wizard will create both venvs and install dependencies with a visible progress UI.
 
 ### Option 2: Build from Source (Recommended for Developers)
 

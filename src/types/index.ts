@@ -383,6 +383,23 @@ export interface UpgradeDependencyRequest {
   venv_name: string
 }
 
+export type ModelDownloadSource = 'huggingface' | 'hf_mirror'
+
+export interface DownloadLocalModelRequest {
+  source: ModelDownloadSource
+}
+
+export interface DownloadLocalModelResponse {
+  ok: boolean
+  skipped: boolean
+  provider_key: string
+  repo_id: string
+  source: ModelDownloadSource
+  endpoint: string
+  local_dir: string
+  output: string
+}
+
 // 安装/升级单个依赖的响应
 export interface InstallDependencyResponse {
   ok: boolean

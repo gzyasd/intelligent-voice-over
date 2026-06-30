@@ -17,6 +17,7 @@ import {
 import { useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import projectsApi from '@/api/projects'
+import CreateProjectDialog from '@/components/CreateProjectDialog.vue'
 import type { ProjectLibraryItem } from '@/types'
 import { languageLabel } from '@/utils/language'
 
@@ -25,6 +26,7 @@ const projectStore = useProjectStore()
 const message = useMessage()
 
 const filterStatus = ref<string>('all')
+const showCreateDialog = ref(false)
 
 const statusOptions = [
   { label: '全部', value: 'all' },
@@ -130,14 +132,14 @@ onMounted(() => {
             {{ opt.label }}
           </NButton>
         </NButtonGroup>
-        <NButton type="primary" @click="router.push('/create')">创建项目</NButton>
+        <NButton type="primary" @click="showCreateDialog = true">创建项目</NButton>
       </NSpace>
     </div>
 
     <NEmpty v-if="filteredLibrary.length === 0" description="暂无项目" class="library-empty" />
 
-    <NGrid v-else :cols="3" :x-gap="16" :y-gap="16" responsive="screen">
-      <NGridItem v-for="item in filteredLibrary" :key="item.path">
+    <NGrid v-else class="project-grid" :cols="3" :x-gap="16" :y-gap="16" responsive="screen">
+      <NGridItem v-for="item in filteredLibrary" :key="item.path" class="project-grid-item">
         <NCard class="project-card" hoverable @click="openProject(item)">
           <div class="card-header">
             <NEllipsis :line-clamp="1" class="card-name" :tooltip="{ width: 'trigger' }">
@@ -199,6 +201,8 @@ onMounted(() => {
         </NCard>
       </NGridItem>
     </NGrid>
+
+    <CreateProjectDialog v-model:show="showCreateDialog" />
   </div>
 </template>
 
@@ -222,6 +226,25 @@ onMounted(() => {
 }
 .project-card {
   cursor: pointer;
+  height: 100%;
+  min-height: 184px;
+  display: flex;
+  flex-direction: column;
+}
+.project-grid {
+  align-items: stretch;
+}
+.project-grid-item {
+  height: 100%;
+}
+:deep(.project-card > .n-card__content) {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 116px;
+}
+:deep(.project-card > .n-card__action) {
+  flex: 0 0 auto;
 }
 .card-header {
   display: flex;
@@ -243,6 +266,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  flex: 1;
 }
 .meta-row {
   display: flex;

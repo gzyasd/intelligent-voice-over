@@ -53,7 +53,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'PySide6',
         'pytest',
         'mypy',
         'ruff',

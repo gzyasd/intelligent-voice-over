@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from ivo.environment import collect_environment_diagnostics, collect_optional_model_dependencies
 from ivo.model_services.local_models import find_venv_python
 
 from .. import dependencies
+from ..venv_setup import setup_venv_stream
 
 router = APIRouter()
+
+
+class SetupVenvRequest(BaseModel):
+    mirror: Literal["official", "tsinghua", "aliyun", "ustc"] = "official"
 
 
 @router.get("/diagnostics")
@@ -55,3 +62,12 @@ def list_venvs() -> dict[str, Any]:
             }
         )
     return {"venvs": venvs}
+
+
+@router.post("/setup-venv")
+async def setup_venv(req: SetupVenvRequest) -> StreamingResponse:
+    """自动创建 .venv 和 .venv-pyannote（SSE 流式推送进度）。
+
+    流程：检查/下载 uv → 创建 .venv → 安装依赖 → 创建 .venv-pyannote → 安装 pyannote.audio
+    """
+    return await setup_venv_stream(req.mirror)

@@ -12,6 +12,8 @@ import type {
   UpdateSchemeRequest,
   LocalModelService,
   ServiceDependencyGroup,
+  DownloadLocalModelRequest,
+  DownloadLocalModelResponse,
   InstallDependencyRequest,
   UpgradeDependencyRequest,
   InstallDependencyResponse,
@@ -99,6 +101,13 @@ export const localModelsApi = {
   },
   status(providerKey: string): Promise<LocalModelCard> {
     return client.get(`/local-models/${providerKey}/status`, { timeout: 60000 }).then((r) => r.data)
+  },
+  download(
+    providerKey: string,
+    req: DownloadLocalModelRequest,
+  ): Promise<DownloadLocalModelResponse> {
+    return client.post(`/local-models/${providerKey}/download`, req, { timeout: 3600000 })
+      .then((r) => r.data)
   },
 
   // 依赖管理

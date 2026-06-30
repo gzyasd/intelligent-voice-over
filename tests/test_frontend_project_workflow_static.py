@@ -73,3 +73,18 @@ def test_current_project_layout_is_compact_and_logs_scroll_independently() -> No
     assert ".pipeline-grid {" in source
     assert "min-height: 0" in source
     assert ".pipeline-logs {" in source
+
+
+def test_project_library_cards_keep_equal_height_with_fixed_actions() -> None:
+    source = Path("src/pages/ProjectLibrary.vue").read_text(encoding="utf-8")
+
+    assert 'class="project-grid"' in source
+    assert 'class="project-grid-item"' in source
+    assert ".project-card {" in source
+    assert "height: 100%" in source
+    assert "display: flex" in source
+    assert "flex-direction: column" in source
+    assert ":deep(.project-card > .n-card__content)" in source
+    assert ":deep(.project-card > .n-card__action)" in source
+    assert ".project-grid {" in source
+    assert "align-items: stretch" in source

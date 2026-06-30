@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { NH1, NP, NCard, NButton, NSpace } from 'naive-ui'
 import { useRouter } from 'vue-router'
+import CreateProjectDialog from '@/components/CreateProjectDialog.vue'
 
 const router = useRouter()
+const showCreateDialog = ref(false)
 </script>
 
 <template>
@@ -13,10 +16,11 @@ const router = useRouter()
         将英文 / 日文 / 韩文视频对白重新配成自然的中文音频，支持本地模型流水线与自定义 HTTP API 适配器两种接入模式。
       </NP>
       <NSpace>
-        <NButton type="primary" @click="router.push('/create')">新建项目</NButton>
+        <NButton type="primary" @click="showCreateDialog = true">新建项目</NButton>
         <NButton @click="router.push('/projects')">打开项目库</NButton>
       </NSpace>
     </NCard>
+    <CreateProjectDialog v-model:show="showCreateDialog" />
   </div>
 </template>
 

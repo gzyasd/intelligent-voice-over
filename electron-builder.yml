@@ -39,6 +39,8 @@ extraResources:
   - from: examples
     to: examples
     filter: ['**/*']
+  - from: requirements-venv.txt
+    to: requirements-venv.txt
   # .venv 和 .venv-pyannote 不打包进 NSIS 安装包（超过 NSIS 32 位内存限制）
   # 改为单独提供，用户手动解压到安装目录的 resources/ 下
   # 或由程序首次启动时检测并提示用户下载解压

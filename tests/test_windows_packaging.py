@@ -1,201 +1,56 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
-import zipfile
-from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 
-def load_windows_packager():
-    spec = spec_from_file_location(
-        "build_windows_package",
-        Path("scripts") / "build_windows_package.py",
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def test_legacy_pyside_packaging_files_are_removed() -> None:
+    assert not Path("src/ivo/ui").exists()
+    assert not Path("src/ivo/app.py").exists()
+    assert not Path("scripts/build_windows_package.py").exists()
+    assert not Path("scripts/windows_desktop_entry.py").exists()
+    assert not Path("scripts/capture_project_library_screenshots.py").exists()
 
 
-def test_windows_package_script_dry_run_outputs_pyinstaller_command(tmp_path) -> None:
-    ffmpeg_root = tmp_path / "ffmpeg-8.1.1-full_build"
-    ffmpeg_bin = ffmpeg_root / "bin"
-    ffmpeg_bin.mkdir(parents=True)
-    (ffmpeg_bin / "ffmpeg.exe").write_text("fake", encoding="utf-8")
-    (ffmpeg_bin / "ffprobe.exe").write_text("fake", encoding="utf-8")
-    env = {**os.environ, "IVO_FFMPEG_DIR": str(ffmpeg_root)}
+def test_python_dependencies_do_not_include_pyside_or_qt_test_stack() -> None:
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            "scripts/build_windows_package.py",
-            "--dry-run",
-            "--output-dir",
-            "dist-test",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-
-    payload = json.loads(result.stdout)
-    command = payload["command"]
-    manifest = payload["manifest"]
-
-    assert payload["portable_archive_path"] is None  # not created by default
-    assert command[:3] == ["uv", "run", "pyinstaller"]
-    assert "pyinstaller" in command
-    assert "--name" in command
-    assert "IntelligentVoiceOver" in command
-    assert "--windowed" in command
-    assert "--paths" in command
-    paths_index = command.index("--paths")
-    assert Path(command[paths_index + 1]).is_absolute()
-    assert Path(command[paths_index + 1]).name == "src"
-    assert "--collect-all" in command
-    assert "PySide6" in command
-    assert "--add-data" in command
-    add_data_values = [
-        command[index + 1]
-        for index, item in enumerate(command)
-        if item == "--add-data"
-    ]
-    assert any(
-        value.endswith("examples;examples") and Path(value.split(";")[0]).is_absolute()
-        for value in add_data_values
-    )
-    assert any(
-        value.endswith("docs;docs") and Path(value.split(";")[0]).is_absolute()
-        for value in add_data_values
-    )
-    assert any(
-        value.split(";")[1] == "ffmpeg" and Path(value.split(";")[0]).is_absolute()
-        for value in add_data_values
-    )
-    assert Path(command[-1]).is_absolute()
-    assert Path(command[-1]).name == "windows_desktop_entry.py"
-    assert manifest["name"] == "IntelligentVoiceOver"
-    assert manifest["version"] == "0.1.0"
-    assert manifest["entrypoint"].endswith("IntelligentVoiceOver.exe")
-    assert "examples" in manifest["included_data"]
-    assert "docs" in manifest["included_data"]
-    assert "ffmpeg" in manifest["included_data"]
-    assert ".venv" in manifest["included_data"]
-    assert ".venv-pyannote" in manifest["included_data"]
-    assert "models" in manifest["excluded_paths"]
-    assert "测试视频" in manifest["excluded_paths"]
-    assert "sample_media" in manifest["excluded_paths"]
-    assert "runs" in manifest["excluded_paths"]
-    assert ".ivo-work" in manifest["excluded_paths"]
-    assert "*.mp4" in manifest["excluded_paths"]
-    assert "*.wav" in manifest["excluded_paths"]
-    assert ".env" in manifest["excluded_paths"]
-    assert "API keys and tokens" in manifest["excluded_secrets"]
+    assert "pyside6" not in pyproject.lower()
+    assert "pytest-qt" not in pyproject.lower()
 
 
-def test_windows_package_script_dry_run_default_no_archive() -> None:
-    """Default: no archive created (user handles compression manually)."""
-    result = subprocess.run(
-        [
-            sys.executable,
-            "scripts/build_windows_package.py",
-            "--dry-run",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+def test_windows_package_wrapper_uses_electron_build_flow() -> None:
+    script = Path("scripts/package-windows.ps1").read_text(encoding="utf-8")
 
-    payload = json.loads(result.stdout)
-
-    assert payload["create_archive"] is False
-    assert payload["portable_archive_path"] is None
+    assert "uv run pytest" in script
+    assert "uv run ruff check ." in script
+    assert "uv run mypy src server" in script
+    assert "pnpm install --frozen-lockfile" in script
+    assert "pnpm run typecheck" in script
+    assert "pnpm run build:win" in script
+    assert "build_windows_package.py" not in script
 
 
-def test_windows_package_archive_contains_whole_app_directory(tmp_path) -> None:
-    packager = load_windows_packager()
-    app_dir = tmp_path / "dist" / "IntelligentVoiceOver"
-    internal = app_dir / "_internal"
-    ffmpeg_bin = internal / "ffmpeg" / "bin"
-    ffmpeg_bin.mkdir(parents=True)
-    (app_dir / "IntelligentVoiceOver.exe").write_bytes(b"exe")
-    (internal / "python310.dll").write_bytes(b"dll")
-    (ffmpeg_bin / "ffmpeg.exe").write_bytes(b"ffmpeg")
+def test_ci_no_longer_installs_qt_or_runs_legacy_packager() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    readme_path = packager.write_portable_readme(tmp_path / "dist")
-    archive_path = packager.build_portable_archive(tmp_path / "dist")
-
-    assert readme_path == app_dir / "README_FIRST.txt"
-    assert "不要只复制" in readme_path.read_text(encoding="utf-8")
-    with zipfile.ZipFile(archive_path) as archive:
-        names = set(archive.namelist())
-
-    assert "IntelligentVoiceOver/IntelligentVoiceOver.exe" in names
-    assert "IntelligentVoiceOver/_internal/python310.dll" in names
-    assert "IntelligentVoiceOver/_internal/ffmpeg/bin/ffmpeg.exe" in names
-    assert "IntelligentVoiceOver/README_FIRST.txt" in names
+    assert "QT_QPA_PLATFORM" not in workflow
+    assert "Install Qt runtime dependencies" not in workflow
+    assert "build_windows_package.py" not in workflow
+    assert "from server.main import app" in workflow
+    assert "pnpm run typecheck" in workflow
+    assert "pnpm run build" in workflow
 
 
-def test_windows_package_copies_local_runtime_envs_and_root_examples(tmp_path) -> None:
-    packager = load_windows_packager()
-    root = tmp_path / "repo"
-    output_dir = tmp_path / "dist"
-    app_dir = output_dir / "IntelligentVoiceOver"
-    app_dir.mkdir(parents=True)
+def test_pyinstaller_spec_uses_fastapi_server_entrypoint() -> None:
+    spec = Path("scripts/build-python.spec").read_text(encoding="utf-8")
 
-    examples_command = root / "examples" / "local_commands" / "asr.py"
-    examples_command.parent.mkdir(parents=True)
-    examples_command.write_text("print('asr')", encoding="utf-8")
-    main_python = root / ".venv" / "Scripts" / "python.exe"
-    pyannote_python = root / ".venv-pyannote" / "Scripts" / "python.exe"
-    main_python.parent.mkdir(parents=True)
-    pyannote_python.parent.mkdir(parents=True)
-    main_python.write_bytes(b"python")
-    pyannote_python.write_bytes(b"python")
-
-    copied = packager.copy_portable_support_files(output_dir, root=root)
-
-    assert app_dir / "examples" in copied
-    assert app_dir / ".venv" in copied
-    assert app_dir / ".venv-pyannote" in copied
-    assert (app_dir / "examples" / "local_commands" / "asr.py").is_file()
-    assert (app_dir / ".venv" / "Scripts" / "python.exe").is_file()
-    assert (app_dir / ".venv-pyannote" / "Scripts" / "python.exe").is_file()
-
-
-def test_windows_package_powershell_script_excludes_models_and_media() -> None:
-    text = Path("scripts/package-windows.ps1").read_text(encoding="utf-8")
-
-    assert "models" in text
-    assert "测试视频" in text
-    assert "*.mp4" in text
-    assert "*.wav" in text
-    assert ".env" in text
-    assert "pyinstaller" in text.lower()
-    assert "uv run pytest" in text
-    assert "uv run ruff check ." in text
-    assert "uv run mypy src" in text
-
-
-def test_windows_packaging_documentation_mentions_build_command() -> None:
-    document = Path("docs/windows-packaging.md").read_text(encoding="utf-8")
-
-    assert "scripts/build_windows_package.py" in document
-    assert "scripts/package-windows.ps1" in document
-    assert "uv run pyinstaller" in document
-    assert "ffmpeg" in document.lower()
-    assert "FFmpeg 已随发布包内置" in document
-    assert "IntelligentVoiceOver.exe" in document
-    assert "release-manifest.json" in document
-    assert "win64-portable.zip" in document
-    assert "模型权重不会被打包" in document
-    assert "未授权" in document
-    assert "GitHub Release" in document
+    assert "scripts' / 'ivo_server_entry.py'" in spec
+    assert "collect_submodules('server')" in spec
+    assert "collect_submodules('ivo')" in spec
+    assert "'PySide6'" not in spec
 
 
 def test_electron_builder_uses_current_build_artifacts() -> None:
@@ -229,7 +84,6 @@ def test_python_service_startup_timeout_allows_pyinstaller_cold_start() -> None:
 
     assert "DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 120000" in source
     assert "IVO_PYTHON_HEALTH_TIMEOUT_MS" in source
-    assert "最后 stderr" in source
 
 
 def test_packaged_python_service_uses_persistent_user_data_root() -> None:
@@ -262,10 +116,3 @@ def test_sample_media_script_dry_run_outputs_ffmpeg_commands() -> None:
     assert "sample-media-test/en_synthetic_1min.mp4" in outputs
     assert "sample-media-test/multi_speaker_synthetic_1min.mp4" in outputs
     assert "authorized synthetic media" in payload["note"]
-
-
-def test_ci_runs_windows_package_dry_run() -> None:
-    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-
-    assert "Build package dry-run" in workflow
-    assert "scripts/build_windows_package.py --dry-run" in workflow

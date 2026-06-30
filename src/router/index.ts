@@ -33,11 +33,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/pages/Settings.vue'),
   },
   {
-    path: '/create',
-    name: 'create',
-    component: () => import('@/pages/CreateProject.vue'),
-  },
-  {
     path: '/pipeline',
     name: 'pipeline',
     component: () => import('@/pages/PipelineRun.vue'),

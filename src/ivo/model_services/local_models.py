@@ -433,6 +433,7 @@ F5_TTS_SERVICE = LocalModelService(
     license_url="https://github.com/SWivid/F5-TTS",
     license_notes="预训练权重 CC-BY-NC，非商业限制",
     commercial_ok=False,
+    huggingface_repo="https://huggingface.co/SWivid/F5-TTS",
     source_url="https://github.com/SWivid/F5-TTS",
     extra_info={"note": "预训练模型 CC-BY-NC，UI 必须提示非商业限制"},
     recommended=True,
@@ -461,6 +462,7 @@ COSYVOICE3_SERVICE = LocalModelService(
     license_url="https://github.com/FunAudioLLM/CosyVoice",
     license_notes="需按模型卡核实具体权重许可",
     commercial_ok=None,
+    huggingface_repo="https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
     source_url="https://github.com/FunAudioLLM/CosyVoice",
     extra_info={
         "note": "默认支持 FunAudioLLM/Fun-CosyVoice3-0.5B-2512，不对商业可用性做默认承诺",

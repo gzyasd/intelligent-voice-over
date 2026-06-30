@@ -14,6 +14,8 @@ import type {
   CreateSchemeRequest,
   UpdateSchemeRequest,
   ServiceDependencyGroup,
+  DownloadLocalModelRequest,
+  DownloadLocalModelResponse,
   InstallDependencyRequest,
   UpgradeDependencyRequest,
   InstallAllMissingResponse,
@@ -43,6 +45,7 @@ export const useModelServicesStore = defineStore('modelServices', () => {
   const modelSummary = ref<LocalModelSummary | null>(null)
   const stageGroupsLoading = ref(false)
   const checkingModelKeys = ref<string[]>([])
+  const downloadingModelKey = ref<string | null>(null)
 
   // 计算属性
   const apiProviders = computed(() => providers.value.filter((p) => p.requires_api_key))
@@ -187,6 +190,10 @@ export const useModelServicesStore = defineStore('modelServices', () => {
     return checkingModelKeys.value.includes(providerKey)
   }
 
+  function isModelDownloading(providerKey: string): boolean {
+    return downloadingModelKey.value === providerKey
+  }
+
   function recomputeModelSummary(): void {
     const models = stageGroups.value.flatMap((group) => group.models)
     for (const group of stageGroups.value) {
@@ -234,6 +241,23 @@ export const useModelServicesStore = defineStore('modelServices', () => {
       recomputeModelSummary()
     } finally {
       checkingModelKeys.value = checkingModelKeys.value.filter((key) => key !== providerKey)
+    }
+  }
+
+  async function downloadLocalModel(
+    providerKey: string,
+    req: DownloadLocalModelRequest,
+  ): Promise<DownloadLocalModelResponse> {
+    if (downloadingModelKey.value) {
+      throw new Error('已有模型下载任务正在进行中，请等待完成。')
+    }
+    downloadingModelKey.value = providerKey
+    try {
+      const res = await modelServicesApi.localModels.download(providerKey, req)
+      await Promise.all([loadLocalModels(), refreshLocalModel(providerKey)])
+      return res
+    } finally {
+      downloadingModelKey.value = null
     }
   }
 
@@ -342,6 +366,7 @@ export const useModelServicesStore = defineStore('modelServices', () => {
     modelSummary,
     stageGroupsLoading,
     checkingModelKeys,
+    downloadingModelKey,
     // 计算属性
     apiProviders,
     localProviders,
@@ -374,6 +399,8 @@ export const useModelServicesStore = defineStore('modelServices', () => {
     loadStageGroups,
     refreshLocalModel,
     isModelChecking,
+    isModelDownloading,
+    downloadLocalModel,
     loadDependenciesStatus,
     installDependency,
     upgradeDependency,
